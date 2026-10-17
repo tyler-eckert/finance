@@ -1,7 +1,8 @@
-/* Public client config. The publishable (anon) key is safe in the browser:
-   every table is protected by row-level security and needs a signed-in household member. */
+/* Public client config. The publishable key is safe in the browser:
+   every table is protected by row-level security and needs a signed-in household member.
+   NEVER put the secret (sb_secret_…) key in this file or anywhere in the repo. */
 window.FIN_CONFIG = {
-  supabaseUrl: 'https://YOUR-PROJECT-REF.supabase.co',
-  supabaseKey: 'YOUR-PUBLISHABLE-ANON-KEY',
-  version: '1',   // bump to bust browser caches after a deploy
+  supabaseUrl: 'https://sbloucgjyndaqnruxhxv.supabase.co',
+  supabaseKey: 'sb_publishable_pyWZmZNwvqWpNapWOqaDAg_RmLfguVW',
+  version: '2',   // bump to bust browser caches after a deploy
 };
