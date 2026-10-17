@@ -1,0 +1,89 @@
+/* =====================================================================
+   PLAN ON OVERVIEW & INVESTMENTS — historical actuals + projected values
+   ===================================================================== */
+const PV = {h: '10y', sc: SCN[0].id, pm: 'total', real: true, ...(CTX.prefs.pv || {})};
+const pvDefl = (sc, k) => PV.real ? Math.pow(1 + sc.p.infl, k / 12) : 1; // k = months from latest actual (negative = past)
+const pvSc = () => SCN.find(s => s.id === PV.sc) || SCN[0];
+let LASTM = BS.months[L];
+const pvYears = sc => PV.h === 'off' ? 0 : PV.h === '10y' ? 10 : PV.h === 'retire' ? Math.max(1, sc.p.retire - ageNow + 2) : 95 - ageNow;
+const PB = new Map();
+function planBands(sc) { const k = pkey(sc.p); if (!PB.has(k)) { const r = scnRun(sc); PB.set(k, {a25: pctl(r.paths, .25), a50: pctl(r.paths, .5), a75: pctl(r.paths, .75)}); } return PB.get(k); }
+const interpA = (arr, mi) => { const t = mi / 12, i = Math.floor(t), f = t - i; return i + 1 < arr.length ? arr[i] * (1 - f) + arr[i + 1] * f : arr[arr.length - 1]; };
+function valueAtM(a, m) { const lv = lastVal(a), yrs = Math.max(0, ymDiff(lastChange(a), m)) / 12, r = (a.ratePct || 0) / 100;
+  return a.method === 'appreciation' ? lv.v * Math.pow(1 + r, yrs) : a.method === 'depreciation' ? lv.v * Math.pow(1 - r, yrs) : lv.v; }
+const equityAt = m => sum(ST.assets.filter(a => a.status === 'active').map(a => valueAtM(a, m) - (a.loan && loanById(a.loan) ? loanBal(loanById(a.loan), m) : 0)));
+const otherLoansAt = m => sum(ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id)).map(l => m <= NOW && !Object.keys(l.actual).length && m < l.start ? 0 : loanBal(l, m)));
+function collegeAt(m) {
+  return sum(DATA.kids.map(k => { const b0 = BS[k.key]?.[L] || 0, born = new Date(k.dob), y18 = born.getFullYear() + 18 + (born.getMonth() >= 8 ? 1 : 0), start = `${y18}-08`, r = .045 / 12;
+    const grow = n => b0 * Math.pow(1 + r, n) + DATA.assume.college529Monthly * ((Math.pow(1 + r, n) - 1) / r);
+    if (m < start) return grow(Math.max(0, ymDiff(LASTM, m)));
+    return grow(Math.max(0, ymDiff(LASTM, start))) * Math.max(0, 1 - ymDiff(start, m) / 48); }));
+}
+/* future months + investable bands; kind = 'nw' adds cash, 529s, asset equity, other loans */
+function planFuture(sc, years, kind) {
+  const B = planBands(sc), months = [], p25 = [], p50 = [], p75 = [];
+  for (let k = 1; k <= years * 12; k++) {
+    const m = ymAdd(LASTM, k), add = kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : 0;
+    const d = pvDefl(sc, k); months.push(m); p25.push((interpA(B.a25, k) + add) / d); p50.push((interpA(B.a50, k) + add) / d); p75.push((interpA(B.a75, k) + add) / d);
+  }
+  return {months, p25, p50, p75};
+}
+function planAt(sc, age, kind) { const k = (age - ageNow) * 12; const B = planBands(sc), m = ymAdd(LASTM, k); return (interpA(B.a50, k) + (kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : 0)) / pvDefl(sc, k); }
+function planVsActual(sc) { // investable, Dec of last year → latest month, expected path vs actual
+  const n = ymDiff(`${PY}-12`, LASTM), start = investable(iDecPY), exp = start * Math.pow(1 + sc.p.ret, n / 12) + (contrib401 + sc.p.pre) * n / 12, act = investable(L);
+  return {exp, act, diff: act - exp, n};
+}
+function planControls(id) {
+  return `<div class="plan-ctl"><div class="seg" id="${id}H">${[['off', 'Actuals'], ['10y', '+10 yrs'], ['retire', 'To retirement'], ['95', 'To 95']].map(([k, l]) => `<button data-h="${k}" class="${PV.h === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="seg" id="${id}R"><button data-r="1" class="${PV.real ? 'on' : ''}">Today's $</button><button data-r="0" class="${PV.real ? '' : 'on'}">Future $</button></div>
+    <select class="in sel" id="${id}S" title="Plan scenario">${SCN.map(s => `<option value="${s.id}" ${s.id === PV.sc ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`;
+}
+function wirePlanControls(id) {
+  $$(`#${id}H button`).forEach(b => b.onclick = () => { PV.h = b.dataset.h; render(); });
+  $$(`#${id}R button`).forEach(b => b.onclick = () => { PV.real = b.dataset.r === '1'; render(); });
+  const s = $(`#${id}S`); if (s) s.onchange = e => { PV.sc = e.target.value; render(); };
+}
+function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = []}) {
+  const sc = pvSc(), yrs = pvYears(sc), F = yrs ? planFuture(sc, yrs, kind) : {months: [], p25: [], p50: [], p75: []};
+  hVals = hVals.map((v, i) => v * pvDefl(sc, -(hLabels.length - 1 - i)) ** -1);
+  const labels = hLabels.concat(F.months), nH = hLabels.length, last = hVals[nH - 1];
+  const actual = hVals.concat(F.months.map(() => null));
+  const med = hLabels.map((_, i) => i === nH - 1 ? last : null).concat(F.p50);
+  const lo = hLabels.map((_, i) => i === nH - 1 ? last : null).concat(F.p25), hi = hLabels.map((_, i) => i === nH - 1 ? last : null).concat(F.p75);
+  const series = [{name: name + ' · actual', values: actual, color: 'var(--s1)', area: !yrs}];
+  if (yrs) series.push({name: 'Plan median · ' + sc.name, values: med, color: 'var(--s1)', dash: '6 5', width: 2});
+  const vl = events.slice(); if (yrs) { vl.push({i: nH - 1, label: 'Today'}); const ri = labels.indexOf(`${YNOW + sc.p.retire - ageNow}-${LASTM.slice(5)}`); if (ri > 0) vl.push({i: ri, label: 'Retire ' + sc.p.retire}); }
+  lineChart(el, {labels, series, band: yrs ? {lo, hi, color: 'var(--s1)', name: 'Middle half of outcomes'} : null, height, vlines: vl, zero: kind !== 'nw' || true, xGap: 74,
+    xFmt: (lb, i, e) => i % e === 0 ? (labels.length > 200 ? "'" + lb.slice(2, 4) : mShort(lb)) : null, tipTitle: (lb, i) => mLabel(lb) + (i >= nH ? ' · age ' + (ageNow + Math.round(ymDiff(CTX.TODAY.slice(0, 7), lb) / 12)) : '')});
+}
+function planLegend(name) {
+  return PV.h === 'off' ? '' : `<div class="legend"><span><i class="sw" style="background:var(--s1)"></i>${name} · actual</span><span><i class="sw" style="background:transparent;border:1.5px dashed var(--s1)"></i>Plan median</span><span><i class="sw" style="background:var(--s1);opacity:.2"></i>Middle half of outcomes</span></div>`;
+}
+function planStats(kind) {
+  const sc = pvSc(), pva = planVsActual(sc), now = kind === 'nw' ? NW : investable(L);
+  const ret = sc.p.retire, a10 = ageNow + 10;
+  return `<div class="stat-row plan-stats">
+    <div class="mini"><div class="l">${kind === 'nw' ? 'Net worth' : 'Investable'} · ${mShort(LASTM)}</div><div class="v num">${short(now)}</div></div>
+    <div class="mini"><div class="l">Plan · age ${a10} (${YNOW + 10})</div><div class="v num">${short(planAt(sc, a10, kind))}</div></div>
+    <div class="mini"><div class="l">Plan · retire at ${ret}</div><div class="v num">${short(planAt(sc, ret, kind))}</div></div>
+    <div class="mini"><div class="l">Actual vs plan · since Dec</div><div class="v num ${pva.diff >= 0 ? 'pos' : 'neg'}">${pva.diff >= 0 ? '+' : '−'}${short(Math.abs(pva.diff))}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${pva.diff >= 0 ? 'ahead of' : 'behind'} the ${(sc.p.ret * 100).toFixed(1)}% path</div></div></div>`;
+}
+
+/* ---------- projected balances by account (expected path, before market swings) ---------- */
+function accountProjection() {
+  const sc = pvSc(), r = sc.p.ret, ages = [ageNow + 5, ageNow + 10, sc.p.retire].filter((v, i, a) => a.indexOf(v) === i).sort((x, y) => x - y);
+  const grow = (b, add, yrs) => { for (let t = 0; t < yrs; t++) b = b * (1 + r) + add; return b; };
+  const rows = CTX.invAccts.filter(a => a.group !== 'College').map(a => ({n: a.n, b: BS[a.k][L],
+    add: a.k === CTX.flowKey ? sc.p.pre : a.k === CTX.contribKey ? contrib401 : 0,
+    note: a.k === CTX.flowKey ? `${short(sc.p.pre)}/yr net cash flow` : a.k === CTX.contribKey ? `+${short(contrib401)}/yr incl. match` : 'growth only'}));
+  const coll = {n: `529s (${DATA.kids.length} kid${DATA.kids.length === 1 ? '' : 's'})`, b: BS.college[L], note: `${money(DATA.assume.college529Monthly)}/mo each at 4.5% until college`};
+  const at = (row, age) => grow(row.b, row.add, Math.min(age, sc.p.retire) - ageNow) * (age > sc.p.retire ? Math.pow(1 + r, age - sc.p.retire) : 1) / (PV.real ? Math.pow(1 + sc.p.infl, age - ageNow) : 1);
+  const dfl = age => PV.real ? Math.pow(1 + sc.p.infl, age - ageNow) : 1;
+  const cAt = age => collegeAt(ymAdd(LASTM, (age - ageNow) * 12)) / dfl(age);
+  return `<div class="card c-12"><div class="card-h"><div><h3>Projected balances by account</h3><div class="sub">${esc(sc.name)} · expected path at ${(r * 100).toFixed(1)}% a year, before market swings · ${PV.real ? "today's dollars" : 'nominal dollars'}</div></div></div>
+    <div class="scroll-x"><table class="table cmp"><tr><th>Account</th><th>Today</th>${ages.map(a => `<th>Age ${a} · ${YNOW + a - ageNow}${a === sc.p.retire ? ' (retire)' : ''}</th>`).join('')}<th class="hide-sm">Assumption</th></tr>
+    ${rows.map(x => `<tr><td>${x.n}</td><td>${short(x.b)}</td>${ages.map(a => `<td>${short(at(x, a))}</td>`).join('')}<td class="hide-sm muted">${x.note}</td></tr>`).join('')}
+    <tr><td>${coll.n}</td><td>${short(coll.b)}</td>${ages.map(a => `<td>${short(cAt(a))}</td>`).join('')}<td class="hide-sm muted">${coll.note}</td></tr>
+    <tr class="tot"><td>Total</td><td>${short(sum(rows.map(x => x.b)) + coll.b)}</td>${ages.map(a => `<td>${short(sum(rows.map(x => at(x, a))) + cAt(a))}</td>`).join('')}<td class="hide-sm"></td></tr></table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Expected (average) values run above the median line in the charts because market returns compound unevenly. Edit the assumptions on Plan → Retirement.</p></div>`;
+}
