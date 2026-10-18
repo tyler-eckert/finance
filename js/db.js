@@ -97,7 +97,7 @@ async function signOut() { await sb.auth.signOut(); location.hash = ''; location
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/shell.js'];
+  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/shell.js'];
   const v = CFG.version || '';
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = f + (v ? '?v=' + v : ''); s.async = false;
@@ -411,7 +411,7 @@ const SYNC = {
   queue(fn) { this.hooks.push(fn); this.schedule(0); },
 };
 const RENDER_SILENT = () => { const r = window.render; r.keep = true; const s = SYNC.schedule; SYNC.schedule = () => {}; try { r(); } finally { SYNC.schedule = s; } };
-const prefsNow = () => ({excl: [...ST.excl].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme});
+const prefsNow = () => ({excl: [...ST.excl].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
 const smartSave = s => ({enabled: !!s.enabled, cadence: s.cadence, autoAccept: s.autoAccept, basis: s.basis, condition: s.condition, vin: s.vin, miles: s.miles, annualMiles: s.annualMiles, address: s.address, zip: s.zip, off: [...(s.off || [])].sort()});
 
 const ORDER = ['cats', 'acct', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'plan', 'prefs'];
