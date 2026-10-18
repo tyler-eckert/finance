@@ -22,6 +22,7 @@ const DENSITY = [{k: 'compact', l: 'Compact', py: 5, fs: 13}, {k: 'cozy', l: 'Co
 function applyDensity() {
   const r = document.documentElement.style;
   r.setProperty('--td-py', UI.density.py + 'px'); r.setProperty('--td-fs', UI.density.fs + 'px');
+  const tb = UI.mobile?.tabBottom; if (tb == null) r.removeProperty('--tab-bottom'); else r.setProperty('--tab-bottom', tb + 'px');
 }
 applyDensity();
 
@@ -126,6 +127,11 @@ function renderAdmin(pg) {
       ${IS_OWNER ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn" id="hhDef">Save my display & layout as household default</button></div>` : ''}
       ${CTX.household.settings?.ui ? `<button class="link" id="useDef" style="margin-top:10px">Use the household default</button>` : ''}</div>
 
+    <div class="card c-12"><div class="card-h"><div><h3>Phone bottom bar</h3><div class="sub">How far the tab bar sits above the bottom edge of the screen · Auto follows the phone's safe area (home indicator)</div></div>
+      <div class="right"><button class="btn ${UI.mobile?.tabBottom == null ? 'active-f' : ''}" id="tbAuto">Auto</button></div></div>
+      <div class="ctrl"><div><label>Distance from the bottom<b id="tbV">${UI.mobile?.tabBottom == null ? 'Auto' : UI.mobile.tabBottom + 'px'}</b></label><input type="range" id="tbR" min="0" max="60" step="1" value="${UI.mobile?.tabBottom ?? 24}"></div></div>
+      <p class="muted" style="font-size:11.5px;margin-top:6px">Applies on phones (the bar is hidden on wide screens). Try 4–10px if the bar floats too high when opened from the Home Screen.</p></div>
+
     <div class="card c-12"><div class="card-h"><div><h3>Page layout</h3><div class="sub">Show, hide and order the cards on each page · or open a page and press <b>Layout</b> to drag cards around</div></div>
       <div class="right"><button class="btn" id="layResetAll">Reset all pages</button></div></div>
       <div class="adm-pages">${PAGES.filter(p => p.k !== 'admin').map(p => { const L = UI.layout[p.k] || {order: [], hidden: []}; const cards = (ADM.scan[p.k] || []).map((c, i) => ({...c, o: L.order.indexOf(c.k) < 0 ? 1000 + i : L.order.indexOf(c.k)})).sort((a, b) => a.o - b.o);
@@ -152,6 +158,10 @@ function renderAdmin(pg) {
     const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
     if (error) return toast('Couldn’t save: ' + error.message); CTX.household.settings = settings; render(); toast('Saved as the household default for everyone without their own layout'); };
   if ($('#useDef')) $('#useDef').onclick = () => { const d = clone(CTX.household.settings.ui); UI.density = {...UI_DEFAULT.density, ...d.density}; UI.layout = d.layout || {}; applyDensity(); render(); toast('Using the household default'); };
+  // phone bar
+  $('#tbR').oninput = e => { (UI.mobile ||= {}).tabBottom = +e.target.value; $('#tbV').textContent = e.target.value + 'px'; applyDensity(); SYNC.schedule(); };
+  $('#tbR').onchange = () => render();
+  $('#tbAuto').onclick = () => { (UI.mobile ||= {}).tabBottom = null; applyDensity(); render(); };
   // layout
   $$('[data-phd]', pg).forEach(b => b.onclick = () => { const [pk, k] = b.dataset.phd.split('|'), H = pageLayout(pk).hidden; H.includes(k) ? H.splice(H.indexOf(k), 1) : H.push(k); render(); });
   $$('[data-pmv]', pg).forEach(b => b.onclick = () => { const [pk, k, d] = b.dataset.pmv.split('|'); const L = pageLayout(pk), all = ADM.scan[pk].map((c, i) => ({k: c.k, o: L.order.indexOf(c.k) < 0 ? 1000 + i : L.order.indexOf(c.k)})).sort((a, b) => a.o - b.o).map(c => c.k);

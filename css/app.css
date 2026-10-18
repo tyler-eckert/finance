@@ -281,7 +281,7 @@ code{font-size:12px;background:var(--surface-3);padding:1px 5px;border-radius:5p
 .stepper button:first-child svg{transform:rotate(180deg)}
 .stepper button svg{width:14px;height:14px}
 .stepper button:disabled{opacity:.35}
-.bal-row{display:grid;grid-template-columns:1fr 76px 170px 58px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border)}
+.bal-row{display:grid;grid-template-columns:1fr 76px 170px 58px 28px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--border)}
 .bal-row:first-of-type{border-top:0}
 .bal-row .nm{font-weight:600;font-size:13.5px}
 .bal-row .ds{font-size:11.5px;color:var(--text-3)}
@@ -338,7 +338,7 @@ code{font-size:12px;background:var(--surface-3);padding:1px 5px;border-radius:5p
   .split-row{grid-template-columns:1fr 1fr;padding:10px;border-radius:14px;background:var(--surface-2)}
   .split-row .sNote{grid-column:1/2}
   .imp-sum{grid-template-columns:1fr 1fr}
-  .bal-row{grid-template-columns:1fr 140px 50px}
+  .bal-row{grid-template-columns:1fr 130px 46px 28px}
   .mob-only-inline{display:inline}
   .tx-d{max-width:44vw}
   .txt td:last-child,.txt th:last-child{padding-right:0}
@@ -507,7 +507,7 @@ code{font-size:12px;background:var(--surface-3);padding:1px 5px;border-radius:5p
 @media (max-width:860px){
   .app{grid-template-columns:1fr}
   .side{display:none}
-  .main{padding:16px 16px calc(96px + env(safe-area-inset-bottom))}
+  .main{padding:16px 16px calc(84px + var(--tab-bottom,calc(12px + env(safe-area-inset-bottom))))}
   .top{gap:10px;margin-bottom:16px;align-items:flex-start}
   .top p{font-size:11.5px}
   .top h1{font-size:24px}
@@ -521,7 +521,7 @@ code{font-size:12px;background:var(--surface-3);padding:1px 5px;border-radius:5p
   .stat-row{grid-template-columns:1fr 1fr}
   .hide-sm{display:none}
   .mob-only{display:flex}
-  .tabbar{display:flex;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:30;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:22px;padding:6px;box-shadow:0 10px 30px -10px rgba(0,0,0,.25)}
+  .tabbar{display:flex;position:fixed;left:12px;right:12px;bottom:var(--tab-bottom,calc(12px + env(safe-area-inset-bottom)));z-index:30;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:22px;padding:6px;box-shadow:0 10px 30px -10px rgba(0,0,0,.25)}
   .tabbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0;border-radius:16px;font-size:10.5px;font-weight:600;color:var(--text-3)}
   .tabbar button svg{width:20px;height:20px}
   .tabbar button.active{color:var(--brand-500);background:var(--brand-100)}
@@ -600,3 +600,15 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .adm-page h4 svg{width:16px;height:16px;flex:none;color:var(--text-3)}
 #admAdd{white-space:nowrap}
 .lay-banner>svg{width:18px;height:18px;flex:none;color:var(--brand-500)}
+.vlink{font:inherit;color:var(--text-2);font-weight:600;padding:0}
+.vlink:hover{color:var(--brand-500);text-decoration:underline}
+.imp-opts{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+.bal-row.inact{opacity:.6}.bal-hide{flex:none}
+/* cash plan + activity grids */
+.cp td,.cp th{padding:var(--td-py) 6px;white-space:nowrap}
+.cp td.stick,.cp th.stick{min-width:180px}
+.cp tr.click:hover td{background:var(--surface-2)}
+.inv-t td,.inv-t th{padding:4px 4px;white-space:nowrap}
+.inv-t .cell{width:96px}
+.srt{font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;font-weight:600;padding:0}
+.srt.on{color:var(--brand-500)}
