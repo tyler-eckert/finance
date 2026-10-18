@@ -11,6 +11,7 @@ const PAGES = [
   {k: 'assets', n: 'Assets', i: 'house', g: 'Manage', sub: () => 'Home, vehicles and other assets · values over time', r: renderAssets},
   {k: 'builder', n: 'Budget plan', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
   {k: 'cats', n: 'Categories', i: 'tag', g: 'Manage', sub: () => 'Create, rename, merge and recategorize history', r: renderCats},
+  {k: 'admin', n: IS_OWNER ? 'Admin' : 'Settings', i: 'gear', g: 'Manage', sub: () => IS_OWNER ? 'People and permissions, table density and page layout' : 'Table density and page layout', r: renderAdmin},
 ];
 const TABS = ['overview', 'budget', 'tx', 'invest'];
 let CH = [], cur = 'overview';
@@ -19,7 +20,7 @@ function render() {
   $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + cur));
   $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
   $('#pageTitle').textContent = p.n; $('#pageSub').textContent = p.sub();
-  const y = scrollY; CH = []; p.r($('#p-' + cur)); filterBtnSync();
+  const y = scrollY; CH = []; p.r($('#p-' + cur)); applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
   requestAnimationFrame(() => { CH.forEach(f => f()); });
   if (render.keep) scrollTo({top: y}); render.keep = true;
 }
@@ -37,6 +38,7 @@ function openLayer(id) { $('#scrim').classList.add('on'); $('#' + id).classList.
 function closeAll() { $('#scrim').classList.remove('on'); $('#drawer').classList.remove('on'); const m = $('#modal'); m.classList.remove('on'); setTimeout(() => { if (!m.classList.contains('on')) m.classList.remove('wide', 'sheet'); }, 220); hideTip(); }
 $('#scrim').onclick = closeAll; addEventListener('keydown', e => e.key === 'Escape' && closeAll());
 $('#importBtn').onclick = openImport;
+$('#layoutBtn').onclick = () => { LAYOUT_EDIT = !LAYOUT_EDIT; render(); };
 if (!CTX.CAN_WRITE) $('#importBtn').style.display = 'none';
 (() => { const e = CTX.email || '', nm = e.split('@')[0].split(/[._-]/).filter(Boolean), av = $('.avatar');
   av.textContent = ((nm[0]?.[0] || '') + (nm[1]?.[0] || nm[0]?.[1] || '')).toUpperCase() || '·'; av.title = e; av.style.cursor = 'pointer';
