@@ -81,8 +81,10 @@ async function start() {
     let pick = hhs[0]; try { pick = hhs.find(h => h.household_id === localStorage.getItem('fin.hh')) || hhs[0]; } catch (_) {}
     HH = pick.household_id; ROLE = pick.role;
     const t0 = performance.now();
-    const {data: snap, error: e2} = await FDB.rpc('app_snapshot', {p_household: HH});
+    const [{data: snap, error: e2}, ex] = await Promise.all([FDB.rpc('app_snapshot', {p_household: HH}), FDB.rpc('app_snapshot_extra', {p_household: HH})]);
     if (e2) throw e2;
+    if (ex.error) console.warn('[fin] app_snapshot_extra unavailable — run migration 1200', ex.error.message);
+    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: []}, ex.data || {}); snap.extraOk = !ex.error;
     SNAP = snap; console.info(`[fin] snapshot ${(JSON.stringify(snap).length / 1e6).toFixed(1)} MB in ${Math.round(performance.now() - t0)} ms`);
     buildData(snap);
     await loadApp();
@@ -97,7 +99,7 @@ async function signOut() { await sb.auth.signOut(); location.hash = ''; location
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/shell.js'];
+  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/shell.js'];
   const v = CFG.version || '';
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = f + (v ? '?v=' + v : ''); s.async = false;
@@ -126,6 +128,28 @@ function loanFilled(l, stmts, m) {   // mirrors finance.v_loan_balances_filled
   if (l.term_months) return roll(+l.original_principal || 0, ymPlus(fp, -1), m, l.term_months);
   return 0;
 }
+const vendorKey = descr => {
+  let d = String(descr ?? '').trim().toUpperCase();
+  if (/\bATM CASH\b/.test(d)) return 'ATM WITHDRAWAL';
+  d = d.replace(/\s+(CHK CARD PUR|DEBIT CRD|CARD PUR|POS PURCHASE|POS RETURN|POS DEBIT|POS|ATM CASH|ACH TRAN)(\s.*)?$/, '');
+  if (d.startsWith('PAYPAL PURCHASE - ')) d = d.slice(18); else { const p = d.indexOf(' - '); if (p > 0) d = d.slice(0, p); }
+  d = d.replace(/^(SQ|TST|PY|SP|TIL|ZEFFY|GOOGLE|PP|DD|IN|BT|CKO|SMK|EB|FS|LS|PAR|CLK|WPY|GG|DNH|APL|PAYPAL) ?\* ?/, '');
+  d = d.replace(/^([A-Z0-9][A-Z0-9 .'&-]*?) ?\*.*$/, '$1');
+  d = d.replace(/^SP (?=[A-Z])/, '');
+  d = d.replace(/(?<![A-Z0-9-])#?[0-9]+(?![A-Z0-9-])/g, ' ');
+  d = d.replace(/(?<![A-Z0-9-])[A-Z][0-9]{3,}(?![A-Z0-9-])/g, ' ');
+  d = d.replace(/[*"•#]/g, ' ').replace(/\s+/g, ' ');
+  const trim = s => s.replace(/^[ .,\-/]+|[ .,\-/]+$/g, '');
+  d = trim(d);
+  for (let prev = null; prev !== d;) { prev = d; d = d.replace(/\s+(LLC|INC|CO|CORP|LTD|PAYMENT|PAYMT|PYMT|PMT|AUTOPAY|ONLINE|PURCHASE|STORE)$/, ''); }
+  d = trim(d); return d || null;
+};
+/* display name: longest matching household alias, else Title Case of the key */
+let VALIAS = [];
+const titleCase = s => s.toLowerCase().replace(/(^|[\s/&(-])([a-z])/g, (m, p, c) => p + c.toUpperCase()).replace(/'S\b/g, "'s");
+const vendorName = k => { if (!k) return '(unknown)'; for (const a of VALIAS) if (k.startsWith(a.pattern)) return a.name; return titleCase(k); };
+const setAliases = list => { VALIAS = list.slice().sort((a, b) => b.pattern.length - a.pattern.length); };
+window.vendorKey = vendorKey; window.vendorName = vendorName; window.setAliases = setAliases;
 const ymDiffN = (a, b) => { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); };
 
 function computeBS(S, today) {
@@ -144,7 +168,7 @@ function computeBS(S, today) {
   const bs = {months};
   Object.defineProperties(bs, {_balBy: {value: balBy}, _loanStmts: {value: loanStmts}, _avBy: {value: avBy}});
   const acctKey = a => 'acct:' + a.id;
-  const grpSum = (fn) => months.map((_, i) => S.accounts.filter(fn).reduce((s, a) => s + bs[acctKey(a)][i], 0));
+  const grpSum = (fn) => months.map((_, i) => S.accounts.filter(a => !a.parent_account_id && fn(a)).reduce((s, a) => s + bs[acctKey(a)][i], 0));
   S.accounts.forEach(a => { bs[acctKey(a)] = carry(balBy[a.id], a.closed_on ? ym(a.closed_on) : null); });
   bs.cash = grpSum(a => a.balance_group === 'Cash' && !a.is_liability);
   bs.retirement = grpSum(a => a.balance_group === 'Retirement');
@@ -254,9 +278,19 @@ function buildData(S) {
   for (const k in RULES) RULES[k].sort((a, b) => b[2] - a[2]);
   const userRules = {}; S.rules.forEach(([id, k, t, cid, sid]) => { if (t === 'exact' && catN(cid)) userRules[k] = {cat: catN(cid), sub: subN(sid), id}; });
   const balMonths = ymRange(`${PY}-01`, ym(today) > lastBM ? ym(today) : lastBM);
-  const balAccts = S.accounts.filter(a => a.is_active || balMonths.some(m => balBy[a.id]?.[m] != null)).map(a => ({name: a.name, group: a.is_liability ? 'Debt' : a.balance_group, inst: a.institution || a.balance_group, v: balMonths.map(m => balBy[a.id]?.[m] ?? null), kind: 'account', id: a.id}))
-    .concat(S.loans.filter(l => l.status === 'active').map(l => ({name: l.name, group: 'Debt', inst: l.lender || LOAN_T[l.loan_type], v: balMonths.map(m => loanStmts[l.id]?.[m] ?? null), kind: 'loan', id: l.id})));
-  DATA2 = {tx, rules: RULES, userRules, cats, subs, budgets, subBudgets, balIn: {months: balMonths, accounts: balAccts}, txCountAll: +S.tx_count, catCounts};
+  const hasKids = new Set(S.accounts.filter(a => a.parent_account_id).map(a => a.parent_account_id));
+  const balAccts = S.accounts.filter(a => !a.parent_account_id).map(a => ({name: a.name, group: a.is_liability ? 'Debt' : a.balance_group, inst: a.institution || a.balance_group, v: balMonths.map(m => balBy[a.id]?.[m] ?? null), kind: 'account', id: a.id,
+      active: a.is_active !== false, acctKind: a.kind, rollup: hasKids.has(a.id)}))
+    .concat(S.loans.filter(l => l.status === 'active').map(l => ({name: l.name, group: 'Debt', inst: l.lender || LOAN_T[l.loan_type], v: balMonths.map(m => loanStmts[l.id]?.[m] ?? null), kind: 'loan', id: l.id, active: true})));
+  const subAccts = S.accounts.filter(a => a.parent_account_id).map(a => ({id: a.id, parent: a.parent_account_id, last4: a.last4 || '', nickname: a.nickname || '', name: a.name, active: a.is_active !== false, sort: a.sort_order}));
+  const inv = {}; S.investment_activity.forEach(r => { (inv[r.account_id] ||= {})[r.m] = {start: +r.start, dep: +r.dep, wd: +r.wd, div: +r.div, xfer: +r.xfer, mkt: +r.mkt, fee: +r.fee, end: +r.end}; });
+  setAliases(S.vendor_aliases.map(([id, pattern, name]) => ({id, pattern, name})));
+  const subMonthly = {}; S.cat_monthly.forEach(([m, cid, sid, amt]) => { if (!sid) return; const k = catN(cid) + '|' + subN(sid), mm = ym(m); ((subMonthly[mm] ||= {})[k] = (subMonthly[mm][k] || 0) + +amt); });
+  DATA2 = {tx, rules: RULES, userRules, cats, subs, budgets, subBudgets, balIn: {months: balMonths, accounts: balAccts}, txCountAll: +S.tx_count, catCounts,
+    subAccts, inv, vendorAliases: VALIAS.map(a => ({...a})), vendorMonthly: S.vendor_monthly.map(([m, k, cid, amt, n]) => ({m, k, cat: catN(cid), amt: +amt, n: +n})),
+    cashItems: S.cash_items.map(c => ({id: c.id, name: c.name, kind: c.kind, amount: +c.amount, freq: c.frequency, start: c.start_date, day2: c.day2, end: c.end_date, cat: catN(c.category_id), acct: MAP.acctName[c.account_id] || '', vendor: c.vendor || '', active: c.is_active, notes: c.notes || '', sort: c.sort_order})),
+    extraOk: !!S.extraOk};
+  DATA.monthly = monthly; DATA.subMonthly = subMonthly;
 
   // ----- DATA3: loans & assets
   const loanFor = {}; S.loans.forEach(l => { if (l.asset_id) loanFor[l.asset_id] = l.id; });
@@ -357,7 +391,11 @@ const SYNC = {
     for (const y in ST.budget) for (const c in ST.budget[y]) S.budget.set(`${y}|${c}|`, JSON.stringify(ST.budget[y][c].map(v => +(+v || 0).toFixed(2))));
     for (const y in ST.subBudget) for (const k in ST.subBudget[y]) S.budget.set(`${y}|${k}`, JSON.stringify(ST.subBudget[y][k].map(v => +(+v || 0).toFixed(2))));
     S.bal = new Map(); ST.bal.accounts.forEach(a => ST.bal.months.forEach((m, j) => { if (a.v[j] != null) S.bal.set(`${a.kind}|${a.id || '?' + a.name}|${m}`, String(+(+a.v[j]).toFixed(2))); }));
-    S.acct = new Map(ST.bal.accounts.filter(a => a.kind === 'account').map(a => [a.id || '?' + a.name, JSON.stringify([a.name, a.group, a.inst, a.cadence || null, a.in || null])]));
+    S.acct = new Map(ST.bal.accounts.filter(a => a.kind === 'account').map(a => [a.id || '?' + a.name, JSON.stringify([a.name, a.group, a.inst, a.cadence || null, a.in || null, a.active !== false])]));
+    S.sub = new Map((ST.subAccts || []).map(a => [a.id || a.tmp, JSON.stringify([a.last4, a.nickname, a.active !== false, a.parent])]));
+    S.inv = new Map(); for (const id in ST.inv || {}) for (const m in ST.inv[id]) S.inv.set(`${id}|${m}`, JSON.stringify(ST.inv[id][m]));
+    S.valias = new Map((ST.valias || []).map(a => [a.pattern, a.name]));
+    S.cash = new Map((ST.cash || []).map(c => [c.id, JSON.stringify([c.name, c.kind, c.amount, c.freq, c.start, c.day2 || null, c.end || null, c.cat || '', c.acct || '', c.vendor || '', c.active !== false, c.notes || '', c.sort || 100])]));
     S.loans = new Map(ST.loans.map(l => [l.id, JSON.stringify([l.name, l.lender, l.type, l.principal, l.rate, l.n, l.start, l.pmt, l.escrow, l.asset, l.status, l.paid || null])]));
     S.assets = new Map(ST.assets.map(a => [a.id, JSON.stringify([a.name, a.type, a.purchase, a.cost, a.method, a.ratePct, a.loan, a.status, a.sold || null, a.smart ? smartSave(a.smart) : null])]));
     S.avals = new Map(); ST.assets.forEach(a => { for (const k in a.vals) S.avals.set(`${a.id}|${k}`, JSON.stringify([+a.vals[k], a.src?.[k] || null])); });
@@ -397,8 +435,9 @@ const SYNC = {
         D[k].forEach(c => done(k, c.id));
         if (['bal', 'loans', 'assets', 'avals'].includes(k)) wroteBS = true;
       }
-      // keys that changed identity (temp ids → uuids) are re-signed wholesale
-      this.sig = this.state();
+      // kinds whose temp ids became uuids are re-signed wholesale; the rest were marked one by one
+      const after = this.state();
+      for (const k of ['cats', 'acct', 'sub', 'loans', 'assets', 'scn', 'ledger', 'plan', 'cash']) if (D[k].length) this.sig[k] = after[k];
     } catch (e) {
       console.error('[fin] sync', e); this.err = (e.message || String(e)).slice(0, 140);
       if (typeof toast === 'function') toast('Couldn’t save: ' + this.err);
@@ -414,7 +453,7 @@ const RENDER_SILENT = () => { const r = window.render; r.keep = true; const s = 
 const prefsNow = () => ({excl: [...ST.excl].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
 const smartSave = s => ({enabled: !!s.enabled, cadence: s.cadence, autoAccept: s.autoAccept, basis: s.basis, condition: s.condition, vin: s.vin, miles: s.miles, annualMiles: s.annualMiles, address: s.address, zip: s.zip, off: [...(s.off || [])].sort()});
 
-const ORDER = ['cats', 'acct', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'plan', 'prefs'];
+const ORDER = ['cats', 'acct', 'sub', 'inv', 'valias', 'cash', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'plan', 'prefs'];
 const hh = () => CTX.HH;
 const must = r => { if (r.error) throw new Error(r.error.message + (r.error.details ? ' · ' + r.error.details : '')); return r.data; };
 const catId = n => { if (!n) return null; const id = ST.cats.find(c => c.name === n)?.id || MAP.cat[n]; if (!id) throw new Error('Unknown category ' + n); return id; };
@@ -450,7 +489,52 @@ const WRITERS = {
       const grp = a.group === 'Debt' ? 'Debt' : a.group, kind = {Cash: 'savings', Investing: 'brokerage', Retirement: 'retirement', College: 'college', Debt: 'credit_card'}[grp] || 'other';
       const rec = {name: a.name, institution: a.inst, balance_group: grp, is_liability: grp === 'Debt', in_investable: a.in === 'inv', in_net_worth: a.in !== 'track', update_cadence: (a.cadence || 'monthly').toLowerCase()};
       if (!a.id) { const row = must(await FDB.from('accounts').insert({household_id: hh(), kind, sort_order: 900, ...rec}).select('id').single()); a.id = row.id; MAP.acct[a.name] = row.id; MAP.acctName[row.id] = a.name; }
-      else must(await FDB.from('accounts').update({name: a.name, institution: a.inst}).eq('id', a.id));
+      else must(await FDB.from('accounts').update({name: a.name, institution: a.inst, is_active: a.active !== false}).eq('id', a.id));
+    }
+  },
+  async sub(ch) {
+    for (const c of ch) {
+      if (c.op === 'del') continue;
+      const a = ST.subAccts.find(x => (x.id || x.tmp) === c.id); if (!a) continue;
+      const rec = {last4: a.last4 || null, nickname: a.nickname || null, is_active: a.active !== false, name: a.name || `${MAP.acctName[a.parent] || 'Account'} ••${a.last4}`};
+      if (!a.id) {
+        const par = ST.bal.accounts.find(x => x.id === a.parent);
+        const row = must(await FDB.from('accounts').insert({household_id: hh(), parent_account_id: a.parent, kind: 'brokerage', balance_group: par?.group || 'Investing',
+          institution: par?.inst || null, in_net_worth: false, in_investable: false, sort_order: 950, ...rec}).select('id').single());
+        a.id = row.id; a.name = rec.name; MAP.acct[rec.name] = row.id; MAP.acctName[row.id] = rec.name;
+        if (a.tmp && ST.inv[a.tmp]) { ST.inv[row.id] = ST.inv[a.tmp]; delete ST.inv[a.tmp]; }
+        if (par) par.rollup = true;
+      } else must(await FDB.from('accounts').update(rec).eq('id', a.id));
+    }
+  },
+  async inv(ch) {
+    const ups = [];
+    for (const c of ch) {
+      const [id0, m] = c.id.split('|'), id = isUuid(id0) ? id0 : ST.subAccts.find(x => x.tmp === id0)?.id; if (!isUuid(id)) continue;
+      if (c.op === 'del') { if (isUuid(id0)) must(await FDB.from('investment_activity').delete().eq('account_id', id).eq('month', mStart(m))); continue; }
+      const r = JSON.parse(c.v);
+      ups.push({household_id: hh(), account_id: id, month: mStart(m), starting_balance: r.start || 0, deposits: r.dep || 0, withdrawals: r.wd || 0, dividends_interest: r.div || 0,
+        transfers: r.xfer || 0, market_change: r.mkt || 0, fees: r.fee || 0, ending_balance: r.end || 0});
+    }
+    if (ups.length) must(await FDB.from('investment_activity').upsert(ups, {onConflict: 'account_id,month'}));
+    // detail accounts also carry their month-end balance
+    const bals = ups.map(u => ({household_id: hh(), account_id: u.account_id, month: u.month, balance: u.ending_balance, source: 'statement'}));
+    if (bals.length) must(await FDB.from('account_balances').upsert(bals, {onConflict: 'account_id,month'}));
+  },
+  async valias(ch) {
+    for (const c of ch) {
+      if (c.op === 'del') { must(await FDB.from('vendor_aliases').delete().eq('household_id', hh()).eq('pattern', c.id)); continue; }
+      must(await FDB.from('vendor_aliases').upsert({household_id: hh(), pattern: c.id, name: c.v}, {onConflict: 'household_id,pattern'}));
+    }
+  },
+  async cash(ch) {
+    for (const c of ch) {
+      if (c.op === 'del') { if (isUuid(c.id)) must(await FDB.from('cash_items').delete().eq('id', c.id)); continue; }
+      const it = ST.cash.find(x => x.id === c.id); if (!it) continue;
+      const rec = {name: it.name, kind: it.kind, amount: it.amount, frequency: it.freq, start_date: it.start, day2: it.day2 || null, end_date: it.end || null,
+        category_id: it.cat ? catId(it.cat) : null, account_id: it.acct ? MAP.acct[it.acct] || null : null, vendor: it.vendor || null, is_active: it.active !== false, notes: it.notes || null, sort_order: it.sort || 100};
+      if (!isUuid(it.id)) { const row = must(await FDB.from('cash_items').insert({household_id: hh(), ...rec}).select('id').single()); it.id = row.id; }
+      else must(await FDB.from('cash_items').update(rec).eq('id', it.id));
     }
   },
   async loans(ch) {
@@ -622,8 +706,11 @@ const DB = {
       if (newName && toCat === cat) { MAP.sub[catId(cat) + '|' + newName] = sid; }
     });
   },
-  async importTx(rows, acctName, fileName) {
+  async importTx(rows, acctName, fileName, fixes = [], delIds = []) {
     const acct = MAP.acct[acctName]; if (!acct) throw new Error('Unknown account ' + acctName);
+    for (const r of fixes) must(await FDB.from('transactions').update({amount: r.amt, description: r.desc, category_id: r.cat ? catId(r.cat) : null, subcategory_id: await subId(r.cat, r.sub), match_source: r.edited ? 'user' : 'history'}).eq('id', r.hit.id));
+    for (const part of chunks(delIds, 200)) must(await FDB.from('transactions').delete().in('id', part));
+    if (!rows.length) return [];
     const batch = must(await FDB.from('import_batches').insert({household_id: hh(), account_id: acct, file_name: fileName, row_count: rows.length, imported_count: rows.length,
       auto_matched: rows.filter(r => r.m && r.m.how !== 'new' && !r.edited).length, created_by: SESSION.user.id}).select('id').single());
     const recs = [];
