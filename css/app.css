@@ -558,3 +558,13 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;bac
   .seg::-webkit-scrollbar{display:none}
   .seg button{flex:0 0 auto}
 }
+/* Budget vs. actual: compact rows so the full category list fits on one screen */
+.table.bva th{padding:5px 8px}
+.table.bva td{padding:4px 8px;font-size:13px;line-height:1.3;vertical-align:middle}
+.table.bva .tw{vertical-align:middle}
+.table.bva .bar-cell>div{line-height:1}
+.table.bva th:first-child,.table.bva td:first-child{padding-left:0}
+.table.bva tr.grp td{padding-top:10px;padding-bottom:3px}
+.table.bva tr.tot td{padding-top:6px;padding-bottom:6px}
+.table.bva .chev,.table.bva .chev-sp{width:18px;height:18px}
+.table.bva .pbar{height:5px}
