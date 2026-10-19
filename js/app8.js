@@ -261,7 +261,13 @@ function openActivity(parent, i) {
     $$('#actMode button', modal).forEach(b => b.onclick = () => { mode = UI.subMode[parent.id] = b.dataset.m; draw(); });
     $$('tr[data-key]', modal).forEach(tr => { const r = draft[tr.dataset.key];
       $$('[data-f]', tr).forEach(inp => { inp.onfocus = () => inp.select(); inp.onchange = () => { const raw = inp.value.replace(/[$,\s]/g, ''); if (inp.dataset.f === 'end') { r.end = raw === '' ? undefined : +raw || 0; r._set = raw !== ''; } else r[inp.dataset.f] = +raw || 0;
-        const at = inp.dataset.f, key = tr.dataset.key; draw(); const nx = $$(`[data-f="${at}"]`, modal); const k = nx.findIndex(x => x.closest('tr').dataset.key === key); (nx[k + 1] || nx[k])?.focus(); }; }); });
+        const at = inp.dataset.f, key = tr.dataset.key, mv = inp._mv; inp._mv = null; draw();
+        const all = $$('tr[data-key] [data-f]', modal), cur = all.findIndex(x => x.dataset.f === at && x.closest('tr').dataset.key === key);
+        if (mv === 'down') { const col = $$(`[data-f="${at}"]`, modal), k = col.findIndex(x => x.closest('tr').dataset.key === key); (col[k + 1] || col[k])?.focus(); }
+        else if (mv === 'back') (all[cur - 1] || all[cur])?.focus();
+        else if (mv === 'next') (all[cur + 1] || all[cur])?.focus(); };
+        inp.onkeydown = e => { inp._mv = e.key === 'Tab' ? (e.shiftKey ? 'back' : 'next') : e.key === 'Enter' ? 'down' : null;
+          if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } }; }); });
     $$('[data-nick]', modal).forEach(inp => inp.onchange = () => { const a = ST.subAccts.find(x => (x.id || x.tmp) === inp.dataset.nick); a.nickname = inp.value.trim(); });
     $('#nkAdd').onclick = () => { const l4 = $('#nkL4').value.replace(/\D/g, '').slice(-4), nn = $('#nkNm').value.trim(); if (!l4 && !nn) return $('#nkNm').focus();
       if (kids().some(a => (l4 && a.last4 === l4) || (nn && (a.nickname || '').toLowerCase() === nn.toLowerCase()))) return toast('Already added');
