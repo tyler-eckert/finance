@@ -102,7 +102,7 @@ async function signOut() { await sb.auth.signOut(); location.hash = ''; location
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/shell.js'];
+  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/shell.js'];
   const v = CFG.version || '';
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = f + (v ? '?v=' + v : ''); s.async = false;
