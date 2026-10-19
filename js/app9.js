@@ -71,6 +71,10 @@ function renderSummary(pg) {
   if (over.length) say.push(`Biggest overage: <b>${esc(over[0].c)}</b>, ${money(over[0].a - over[0].b)} over its ${money(over[0].b)} budget${over.length > 1 ? ` (${over.length - 1} other ${over.length - 1 === 1 ? 'category' : 'categories'} also went over)` : ''}.`);
   if (LY) { const d = YT.out - LY.out; say.push(`So far this year we’ve spent <b>${short(YT.out)}</b>, ${Math.abs(d) < 0.01 * LY.out ? 'about the same as' : `<b class="${d <= 0 ? 'pos' : 'neg'}">${short(Math.abs(d))} ${d > 0 ? 'more' : 'less'}</b> than`} the same months last year.`); }
   say.push(`Net worth is <b>${short(nw)}</b>, ${nw - nwPrev >= 0 ? 'up' : 'down'} ${short(Math.abs(nw - nwPrev))} from the month before${jDec >= 0 ? ` and ${nw - BS.netWorth[jDec] >= 0 ? 'up' : 'down'} ${short(Math.abs(nw - BS.netWorth[jDec]))} since January` : ''}.`);
+  const flag = dataChecks().list.filter(c => c.sev === 'bad' && (c.swing || c.id.startsWith('rollup') || c.id.startsWith('bank')) && c.m <= M && c.m >= ymPlus(M, -1));
+  if (flag.length) say.push(`<span class="neg">Heads up:</span> some ${mLabel(flag[0].m)} balances look incomplete or don’t match the bank, so net worth may be off until they’re fixed.`);
+  const rh = typeof retireHeadline === 'function' ? retireHeadline() : null;
+  if (rh) say.push(`Retirement plan: <b class="${rh.ok ? 'pos' : 'neg'}">${Math.round(rh.prob * 100)}% chance</b> we can retire at ${rh.age} spending ${short(rh.spend)} a year (today’s dollars).`);
   if (ideas.total > 0) say.push(`There’s about <b>${short(ideas.total)} a year</b> in easy savings ideas below.`);
 
   const pctBar = (a, b) => { const w = a / barMax * 100, bw = b / barMax * 100, overB = b > 0 && a > b;
@@ -183,4 +187,130 @@ function summIdeas(MM, M, y, mo, years, same) {
   if (small.length) groups.push({t: 'Small, frequent purchases', d: 'Little charges that add up. Cutting these in half is the estimate.',
     items: small.map(v => ({n: v.n, s: ` · ${Math.round(v.per)}×/mo, ~${money(v.avg)} each`, v: money(v.mo) + '/mo'})), save: sum(small.map(v => v.mo)) * 12 * .5});
   return {groups, total: sum(groups.map(g => g.save))};
+}
+
+/* =====================================================================
+   Data checks — catch bad numbers before they skew every chart
+     bank      the bank's month-end balance (CSV) vs. what's entered
+     rec       last month-end + that month's transactions ≠ this month-end
+     rollup    only some of an account's underlying accounts entered
+     swing     net worth moved more than 10% in a month (with the biggest mover)
+     stale     an active account not updated for 3+ months
+   ===================================================================== */
+const signed = (v, d = 0) => (v >= 0 ? '+' : '−') + money(Math.abs(v), d);
+function dataChecks() {
+  const out = [], B = ST.bal, nowM = ym(CTX.TODAY), since = CTX.SINCE.slice(0, 7), last = B.months.length - 1;
+  const done = m => m < nowM;   // only judge finished months
+  // bank vs entered
+  (CTX.stmt || []).forEach(sb => {
+    if (!sb.complete || !done(sb.m)) return; const a = B.accounts.find(x => x.id === sb.acct), j = B.months.indexOf(sb.m); if (!a || j < 0) return;
+    const v = a.v[j];
+    if (v == null) out.push({id: `bank|${a.id}|${sb.m}`, sev: 'warn', m: sb.m, acct: a, t: `${a.name} · ${mLabel(sb.m)} isn’t entered`, d: `The bank file shows ${money(sb.v, 2)} at month end.`, fix: {l: 'Use the bank’s balance', fn: () => { a.v[j] = sb.v; }}});
+    else if (Math.abs(v - sb.v) > Math.max(1, Math.abs(sb.v) * .0005)) out.push({id: `bank|${a.id}|${sb.m}`, sev: 'bad', m: sb.m, acct: a, t: `${a.name} · ${mLabel(sb.m)} doesn’t match the bank`,
+      d: `Entered ${money(v, 2)}; the bank’s file shows ${money(sb.v, 2)} — off by ${signed(v - sb.v, 2)}.`, fix: {l: 'Use the bank’s balance', fn: () => { a.v[j] = sb.v; }}});
+  });
+  // transactions don't add up (accounts with transactions imported)
+  const byAM = {}; ST.tx.forEach(t => { const m = t.d.slice(0, 7); if (m < since) return; const k = t.acct + '|' + m, r = (byAM[k] ||= {s: 0, n: 0}); r.s += t.amt; r.n++; });
+  B.accounts.filter(a => a.kind === 'account' && a.active !== false && !a.rollup).forEach(a => {
+    for (let j = 1; j <= last; j++) { const m = B.months[j], r = byAM[a.name + '|' + m]; if (!done(m) || m <= since || !r || r.n < 5) continue;
+      const v0 = a.v[j - 1], v1 = a.v[j]; if (v0 == null || v1 == null) continue;
+      const exp = v0 + r.s, gap = v1 - exp;
+      if (Math.abs(gap) > Math.max(25, Math.abs(v1) * .002)) out.push({id: `rec|${a.id}|${m}`, sev: 'warn', m, acct: a, t: `${a.name} · ${mLabel(m)} transactions don’t add up`,
+        d: `Started at ${money(v0, 2)}, transactions ${signed(r.s, 2)}, so it should end at ${money(exp, 2)} — the entered balance is ${money(v1, 2)} (${signed(gap, 2)}). Usually a missing, duplicate or wrong-sign transaction.`, tx: {acct: a.name, m}});
+    }
+  });
+  // partial roll-ups (e.g. only some Schwab accounts entered)
+  B.accounts.filter(a => a.rollup && a.active !== false).forEach(a => {
+    const kids = (ST.subAccts || []).filter(s => s.parent === a.id && s.active !== false), key = s => s.id || s.tmp;
+    for (let j = Math.max(1, last - 6); j <= last; j++) { const m = B.months[j], pm = B.months[j - 1]; if (!done(m)) continue;
+      const now = kids.filter(s => ST.inv[key(s)]?.[m]).length, before = kids.filter(s => ST.inv[key(s)]?.[pm]).length;
+      if (now && now < before) out.push({id: `rollup|${a.id}|${m}`, sev: 'bad', m, acct: a, t: `${a.name} · ${mLabel(m)}: only ${now} of ${before} accounts entered`,
+        d: `The ${mLabel(m)} total (${short(a.v[j] || 0)}) leaves out ${kids.filter(s => ST.inv[key(s)]?.[pm] && !ST.inv[key(s)]?.[m]).map(s => s.nickname || '••' + s.last4).join(', ')}, so it understates the balance.`, act: a}); }
+    // a roll-up total that jumps when its underlying accounts take over (e.g. only part of Schwab entered by account)
+    for (let j = Math.max(1, last - 12); j <= last; j++) { const m = B.months[j], v0 = a.v[j - 1], v1 = a.v[j]; if (!done(m) || v0 == null || v1 == null || !v0) continue;
+      const fromKids = kids.some(s => ST.inv[key(s)]?.[m]), ch = (v1 - v0) / Math.abs(v0);
+      if (fromKids && Math.abs(ch) > .25 && !out.some(c => c.id === `rollup|${a.id}|${m}`)) out.push({id: `rollupjump|${a.id}|${m}`, sev: 'bad', m, acct: a, t: `${a.name} · ${mLabel(m)} total ${ch < 0 ? 'dropped' : 'jumped'} ${Math.abs(Math.round(ch * 100))}%`,
+        d: `${mLabel(m)} is the sum of ${kids.filter(s => ST.inv[key(s)]?.[m]).length} underlying account${kids.length === 1 ? '' : 's'} (${short(v1)}) vs. ${short(v0)} the month before. If an account is missing or only partly entered, finish it under Activity by account.`}); }
+  });
+  // net worth swings over 10%
+  const movers = i => { const list = [];
+    B.accounts.forEach(a => { const s = BS[(a.kind === 'loan' ? 'loan:' : 'acct:') + a.id]; if (!s) return; list.push({n: a.name, d: (s[i] - s[i - 1]) * (a.kind === 'loan' || a.group === 'Debt' ? -1 : 1)}); });
+    if (BS.assetValue) list.push({n: 'Home & vehicles', d: BS.assetValue[i] - BS.assetValue[i - 1]});
+    return list.filter(x => Math.abs(x.d) >= 1).sort((p, q) => Math.abs(q.d) - Math.abs(p.d)); };
+  for (let i = Math.max(1, L - 23); i <= L; i++) { const m = BS.months[i], a0 = BS.netWorth[i - 1], a1 = BS.netWorth[i]; if (!done(m) || !a0) continue;
+    const ch = (a1 - a0) / Math.abs(a0); if (Math.abs(ch) <= .10) continue; const mv = movers(i);
+    out.push({id: `swing|${m}`, sev: 'bad', m, t: `Net worth ${ch < 0 ? 'fell' : 'rose'} ${Math.abs(Math.round(ch * 100))}% in ${mLabel(m)} (${signed(a1 - a0)})`,
+      d: `${mv[0] ? `Biggest change: <b>${esc(mv[0].n)}</b> ${signed(mv[0].d)}${mv[1] ? `, then ${esc(mv[1].n)} ${signed(mv[1].d)}` : ''}. ` : ''}If that’s real — a sale, a big purchase, a market move — mark it as right; otherwise check that balance.`, html: true, swing: true}); }
+  // stale balances
+  const lastDone = B.months.filter(done).pop(), jD = B.months.indexOf(lastDone);
+  B.accounts.filter(a => a.active !== false && a.kind === 'account').forEach(a => { let k = jD; while (k >= 0 && a.v[k] == null) k--;
+    if (k >= 0 && jD - k >= 3) out.push({id: `stale|${a.id}|${B.months[k]}`, sev: 'info', m: lastDone, acct: a, t: `${a.name} hasn’t been updated since ${mLabel(B.months[k])}`, d: `Charts carry ${money(a.v[k])} forward. Enter recent balances, or mark the account inactive if it’s closed.`}); });
+  const ok = new Set(CTX.settings.checks_ok || []);
+  const rank = {bad: 0, warn: 1, info: 2};
+  return {list: out.filter(c => !ok.has(c.id)).sort((p, q) => rank[p.sev] - rank[q.sev] || q.m.localeCompare(p.m)), hidden: out.filter(c => ok.has(c.id)).length};
+}
+let CHK_OPEN = null;
+function checksCard() {
+  const C = dataChecks(); if (!C.list.length && !C.hidden) return '';
+  const nBad = C.list.filter(c => c.sev !== 'info').length, open = CHK_OPEN ?? nBad > 0;
+  const chipC = {bad: 'neg', warn: '', info: ''}, chipT = {bad: 'Check', warn: 'Review', info: 'Reminder'};
+  return `<div class="card c-12 chk-card" id="chkCard"><div class="card-h"><div><h3>${C.list.length ? `${icon('warn')} Data checks · ${C.list.length} to look at` : `${icon('check')} Data checks · all clear`}</h3>
+      <div class="sub">Bank balances, transaction totals, partial entries and big swings${C.hidden ? ` · ${C.hidden} marked as right` : ''}</div></div>
+      ${C.list.length ? `<div class="right"><button class="btn" id="chkTog" style="height:32px">${open ? 'Hide' : 'Show'}</button></div>` : ''}</div>
+    ${open ? `<div class="chk-list">${C.list.slice(0, 12).map((c, i) => `<div class="chk ${c.sev}"><span class="chip ${chipC[c.sev]}">${chipT[c.sev]}</span><div class="chk-m"><div class="nm">${esc(c.t)}</div><div class="ds">${c.html ? c.d : esc(c.d)}</div></div>
+      <div class="chk-a">${c.fix && CTX.CAN_WRITE ? `<button class="btn" data-cfix="${i}">${esc(c.fix.l)}</button>` : ''}${c.tx ? `<button class="btn" data-ctx="${i}">See transactions</button>` : c.m ? `<button class="btn" data-cgo="${i}">Show month</button>` : ''}${CTX.CAN_WRITE ? `<button class="link" data-cok="${i}">Looks right</button>` : ''}</div></div>`).join('')}
+      ${C.list.length > 12 ? `<p class="muted" style="font-size:12px">+${C.list.length - 12} more</p>` : ''}</div>` : ''}</div>`;
+}
+function wireChecks(pg) {
+  if (!$('#chkCard', pg)) return;
+  const C = dataChecks().list;
+  if ($('#chkTog')) $('#chkTog').onclick = () => { CHK_OPEN = !(CHK_OPEN ?? C.some(c => c.sev !== 'info')); render(); };
+  $$('[data-cfix]', pg).forEach(b => b.onclick = () => { const c = C[+b.dataset.cfix]; c.fix.fn(); if (typeof rebuildBS === 'function') rebuildBS(); render(); toast(`${c.acct?.name || 'Balance'} updated to the bank’s balance`); });
+  $$('[data-cgo]', pg).forEach(b => b.onclick = () => { const c = C[+b.dataset.cgo], j = ST.bal.months.indexOf(c.m); if (j >= 0) { balM = j; balView = 'month'; } go('balances'); });
+  $$('[data-ctx]', pg).forEach(b => b.onclick = () => { const c = C[+b.dataset.ctx]; Object.assign(TXF, {q: '', acct: c.tx.acct, cat: '*', sub: '*', month: c.tx.m, unc: false, vendor: '', dir: ''}); go('tx'); });
+  $$('[data-cok]', pg).forEach(b => b.onclick = async () => { const c = C[+b.dataset.cok], list = (CTX.settings.checks_ok || []).concat(c.id).slice(-300); CTX.settings.checks_ok = list; render();
+    const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'checks_ok', p_value: list});
+    if (error) toast('Couldn’t save that: ' + error.message + (/checks_ok/.test(error.message) ? ' — run migration 1500' : '')); else toast('Marked as right', async () => { CTX.settings.checks_ok = list.filter(x => x !== c.id); render(); await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'checks_ok', p_value: CTX.settings.checks_ok}); }); });
+}
+
+/* =====================================================================
+   Loans · pay down, refinance or invest?
+   Compares each loan's rate with today's 30-yr average (FRED, via the market-data job)
+   and with what the portfolio is expected to earn (the base Plan scenario).
+   ===================================================================== */
+const LD = {extra: 500};
+const mktLast = code => (CTX.market || []).filter(r => r[0] === code).sort((a, b) => a[1].localeCompare(b[1])).map(r => ({m: r[1], v: +r[2]})).pop();
+{ const mr = mktLast('MORTGAGE30US'); if (mr && typeof LS !== 'undefined') LS.refiRate = Math.round(mr.v * 8) / 8; }   // the refinance slider starts at today's average
+function loanDecisionCard(act) {
+  const loans = act.filter(l => l.rate != null && loanBal(l) > 0); if (!loans.length) return '';
+  const mr = mktLast('MORTGAGE30US'), t10 = mktLast('DGS10') || mktLast('TB3MS'), mkt = mr ? mr.v / 100 : null, safe = t10 ? t10.v / 100 : .04;
+  const ret = (typeof SCN !== 'undefined' && SCN[0]?.p?.ret) || .07, ra = ret * (1 - .15), hurdle = ra - .01;   // after a 15% tax haircut, less 1 point for risk
+  const E = LD.extra;
+  const rows = loans.map(l => {
+    const b = loanBal(l), base = remaining(l), n = base.length, I0 = sum(base.map(r => r.int)), withX = E ? remaining(l, E) : base, n1 = withX.length, I1 = sum(withX.map(r => r.int));
+    const i = hurdle / 12, fv = (p, k) => k <= 0 ? 0 : i ? p * (Math.pow(1 + i, k) - 1) / i : p * k;
+    const edge = fv(E, n) - fv((l.pmt || 0) + E, n - n1);   // >0: investing the extra beats paying down (on average)
+    let v, why, cls;
+    if (l.rate === 0) { v = 'Keep it'; cls = 'pos'; why = 'It’s interest-free — paying early gains nothing.'; }
+    else if (l.rate >= hurdle) { v = 'Pay it down'; cls = 'neg'; why = `A guaranteed ${pctRate(l.rate)} beats the ~${pctRate(hurdle)} the portfolio is expected to earn after tax and a margin for risk.`; }
+    else if (l.rate <= safe) { v = 'Invest — keep the loan'; cls = 'pos'; why = `Even ${t10 ? (mktLast('DGS10') ? '10-yr Treasuries' : 'T-bills') : 'safe bonds'} pay ${pctRate(safe)}, more than this loan costs.`; }
+    else { v = 'Lean invest'; cls = ''; why = `Investing is expected to earn ~${pctRate(ra)} after tax vs. ${pctRate(l.rate)} here, but paying down is a sure thing. Pay extra only if certainty matters more to you.`; }
+    let refi = null;
+    if (l.type === 'Mortgage' && mkt != null && n > 60 && b > 50000) {
+      const np = pmtCalc(b, mkt, n), save = (l.pmt || 0) - np, cost = b * (LS.refiCost || 2) / 100;
+      refi = l.rate - mkt >= .0075 && save > 0 ? {ok: true, save, cost, be: Math.ceil(cost / save), np} : {ok: false, gap: l.rate - mkt};
+      if (refi.ok) { v = 'Price a refinance'; cls = 'neg'; why = `Today’s 30-yr average is ${pctRate(mkt)}, ${((l.rate - mkt) * 100).toFixed(2)} points below your ${pctRate(l.rate)}. ` + why; }
+    }
+    return {l, b, n, n1, I0, I1, edge, v, why, cls, refi};
+  });
+  return `<div class="card c-12" id="ldCard"><div class="card-h"><div><h3>Pay down, refinance or invest?</h3>
+      <div class="sub">Each loan’s rate vs. ${mr ? `today’s 30-yr mortgage average (<b>${pctRate(mkt)}</b>, ${mLabel(mr.m)})` : 'today’s mortgage rates (run Automation to pull the 30-yr average)'} and your plan’s expected return (<b>${pctRate(ret)}</b>, ~${pctRate(ra)} after tax)</div></div>
+      <div class="right"><label class="tgl">Extra per loan <select class="in sm sel" onchange="LD.extra=+this.value;render()">${[0, 100, 250, 500, 1000, 2000].map(x => `<option value="${x}" ${x === E ? 'selected' : ''}>${money(x)}/mo</option>`).join('')}</select></label></div></div>
+    <div class="ld-list">${rows.map(r => `<div class="ld">
+      <div class="ld-n"><b>${esc(r.l.name)}</b><div class="muted">${short(r.b)} at ${pctRate(r.l.rate)} · ${r.n} payments left</div></div>
+      <div class="ld-v"><span class="chip ${r.cls}">${r.v}</span><div class="ds">${r.why}</div></div>
+      <div class="ld-x">${E && r.l.rate > 0 ? `<div><span class="muted">+${money(E)}/mo:</span> saves <b>${short(r.I0 - r.I1)}</b> interest, done <b>${r.n - r.n1} mo</b> sooner</div>
+        <div class="muted">Investing it instead (risk-adjusted) ends up ${r.edge >= 0 ? `<b class="pos">${short(r.edge)} ahead</b>` : `<b class="neg">${short(-r.edge)} behind</b>`} on average by the original payoff</div>` : ''}
+        ${r.refi ? r.refi.ok ? `<div style="margin-top:4px">Refi at ${pctRate(mkt)}: <b>${money(r.refi.save)}/mo</b> less · ~${short(r.refi.cost)} costs · breaks even in <b>${r.refi.be} months</b></div>` : `<div class="muted" style="margin-top:4px">Refinancing: your rate is only ${(r.refi.gap * 100).toFixed(2)} pts ${r.refi.gap >= 0 ? 'above' : 'below'} today’s average — not worth the closing costs yet (look at ~0.75+).</div>` : ''}</div></div>`).join('')}</div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Rules of thumb, not advice: a loan costing more than the portfolio’s expected after-tax return (less a point for risk) is worth paying down; one cheaper than safe Treasuries is worth keeping; refinancing usually pays when today’s rate is ~0.75 points lower and you’ll stay past the break-even. Expected return comes from the base scenario on the Plan page.</p></div>`;
 }

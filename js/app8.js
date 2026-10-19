@@ -528,10 +528,11 @@ function automationCard() {
     ${AUTO.results ? `<div class="hint" style="margin-top:10px">Done. <button class="link" onclick="location.reload()">Reload</button> to see the new numbers across the app.</div>` : ''}
     <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin:14px 0">${tiles.map(([l, v, m]) => `<div class="mini"><div class="l">${l}</div><div class="v num">${v}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${m ? mLabel(m) + ' · FRED' : 'after the first run'}</div></div>`).join('')}</div>
     <h4 style="margin:6px 0 8px;font-size:13px">Stock positions <span class="muted" style="font-weight:500">· balance = shares × month-end close, written for each finished month you haven’t entered yourself</span></h4>
-    <div class="scroll-x"><table class="table"><tr><th>Account</th><th>Ticker</th><th>Shares</th><th></th></tr>
+    <div class="scroll-x"><table class="table"><tr><th>Account</th><th>Ticker</th><th>Shares</th><th>Cost basis</th><th></th></tr>
       ${accts.map(a => `<tr><td>${esc(a.name)}</td><td><input class="in sm" data-tk="${a.id}" ${ro} value="${esc(a.ticker || '')}" placeholder="e.g. PPG" style="width:110px;text-transform:uppercase"></td>
         <td><input class="in sm num" data-sh="${a.id}" ${ro} value="${a.shares != null ? (+a.shares).toLocaleString('en-US', {maximumFractionDigits: 6}) : ''}" placeholder="0" style="width:130px"></td>
-        <td>${a.ticker ? `<button class="link" data-tkclr="${a.id}" ${ro}>Stop pricing</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No stock accounts yet.</td></tr>'}
+        <td><div class="amt-in"><span>$</span><input class="in sm num" data-cb="${a.id}" ${ro} value="${a.cost_basis != null ? Math.round(+a.cost_basis).toLocaleString() : ''}" placeholder="total paid" style="width:130px"></div></td>
+        <td>${a.ticker ? `<button class="link" data-tkclr="${a.id}" ${ro}>Stop pricing</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No stock accounts yet.</td></tr>'}
     </table></div>
     ${CTX.CAN_WRITE ? `<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><span class="muted" style="font-size:12px">Price another account:</span><select class="in sm" id="tkAdd" style="width:220px"><option value="">Choose…</option>${(SNAP.accounts || []).filter(a => a.is_active !== false && !a.parent_account_id && !accts.includes(a) && ['Investing', 'Retirement'].includes(a.balance_group)).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>` : ''}
   </div>`;
@@ -553,6 +554,7 @@ function wireAutomation() {
   $$('[data-tk]').forEach(i => i.onchange = () => { const t = i.value.trim().toUpperCase(); if (t && !/^[A-Z0-9.^=-]{1,15}$/.test(t)) return toast('That doesn’t look like a ticker'); save(i.dataset.tk, {ticker: t || null}); });
   $$('[data-sh]').forEach(i => i.onchange = () => { const v = i.value.replace(/[,\s]/g, ''); if (v !== '' && !(+v >= 0)) return toast('Shares must be a number'); save(i.dataset.sh, {shares: v === '' ? null : +v}); });
   $$('[data-tkclr]').forEach(b => b.onclick = () => save(b.dataset.tkclr, {ticker: null}));
+  $$('[data-cb]').forEach(i => i.onchange = () => { const v = i.value.replace(/[$,\s]/g, ''); if (v !== '' && !(+v >= 0)) return toast('Cost basis must be a number'); save(i.dataset.cb, {cost_basis: v === '' ? null : +v}); });
   if ($('#tkAdd')) $('#tkAdd').onchange = e => { AUTO.addId = e.target.value; render(); setTimeout(() => $(`[data-tk="${AUTO.addId}"]`)?.focus(), 30); };
 }
 

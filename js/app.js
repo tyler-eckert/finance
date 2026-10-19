@@ -295,7 +295,8 @@ function renderOverview(pg) {
   const nw12 = BS.netWorth[i12], nwYtd = BS.netWorth[iDecPY];
   const inv = investable(L) + BS.college[L];
   const CF = cashflowByMonth(CY), ytdInc = sum(CF.inc), ytdExp = -sum(CF.exp);
-  pg.innerHTML = `
+  const chkN = typeof dataChecks === 'function' ? dataChecks().list.filter(c => c.sev === 'bad').length : 0;
+  pg.innerHTML = `${chkN ? `<div class="banner" style="margin-bottom:14px">${icon('warn')}<span><b>${chkN} data check${chkN > 1 ? 's' : ''}</b> need${chkN > 1 ? '' : 's'} a look — some balances may be off, which would skew net worth.</span><button class="btn" style="height:30px;margin-left:auto" onclick="go('balances')">Review</button></div>` : ''}
   <div class="grid g-12">
     <div class="card hero c-6">
       <div class="kpi"><div class="label">Net worth · ${mLabel(BS.months[L])}</div>
