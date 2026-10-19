@@ -250,11 +250,17 @@ function openInvoiceForm(inv0) {
     tx: inv0?.transaction_id || null, cand: null, busy: false};
   const num = v => { const x = +String(v).replace(/[$,\s]/g, ''); return isFinite(x) ? x : NaN; };
   const subs = () => catOf(F.cat)?.subs || [];
+  // existing sub-categories: the ones this vendor's invoices use first, then the rest of the category, then any typed here
+  const subList = cur => { const v = F.vendor.trim().toLowerCase(), used = {};
+    INV().filter(i => i.vendor.toLowerCase() === v).forEach(i => (i.lines || []).forEach(l => { const n = MAP.subName[l.subcategory_id]; if (n && n.cat === F.cat) used[n.name] = (used[n.name] || 0) + 1; }));
+    const all = [...new Set([...Object.keys(used).sort((a, b) => used[b] - used[a]), ...subs().slice().sort(), ...F.lines.map(l => l.sub).filter(Boolean), ...(cur ? [cur] : [])])];
+    return all; };
   const lineSum = () => +sum(F.lines.map(l => num(l.amt) || 0)).toFixed(2);
   const totalOk = () => { const t = num(F.total); return F.total !== '' && isFinite(t) && t > 0 && Math.abs(lineSum() - t) < .005 && F.lines.every(l => l.desc.trim() && isFinite(num(l.amt)) && l.amt !== ''); };
   const near = (a, b) => Math.round(Math.abs(new Date(a) - new Date(b)) / 864e5);
   let tm = null;
-  const lookup = () => { clearTimeout(tm); tm = setTimeout(async () => { const t = num(F.total); if (!(t > 0) || !F.paid) { F.cand = null; draw(); return; }
+  const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && +d.slice(0, 4) >= 2000 && +d.slice(0, 4) <= 2100;
+  const lookup = () => { clearTimeout(tm); tm = setTimeout(async () => { const t = num(F.total); if (!(t > 0) || !okDate(F.paid)) { F.cand = null; refresh(); return; }
     const lo = dAdd(F.paid, -12), hi = dAdd(F.paid, 12), v = F.vendor.trim().split(' ')[0] || '';
     try { const sel = 'id, posted_on, description, amount, is_split, category_id';
       const [a, b] = await Promise.all([FDB.from('transactions').select(sel).eq('household_id', CTX.HH).gte('posted_on', lo).lte('posted_on', hi).eq('amount', (-t).toFixed(2)),
@@ -265,7 +271,7 @@ function openInvoiceForm(inv0) {
         .sort((p, q) => (q.exact - p.exact) || (q.description.toLowerCase().includes(v.toLowerCase()) - p.description.toLowerCase().includes(v.toLowerCase())) || p.days - q.days).slice(0, 6);
       if (!F.tx) { const best = F.cand.find(c => c.exact && (!c.others.length || c.shared)); if (best) F.tx = best.id; }
     } catch (e) { F.cand = []; toast('Couldn’t look up payments: ' + e.message); }
-    draw(); }, 350); };
+    refresh(); }, 450); };
   const status = () => { const t = num(F.total), ls = lineSum();
     if (F.total === '' || !isFinite(t)) return `<span class="muted">Enter the invoice total</span>`;
     const d = +(t - ls).toFixed(2);
@@ -287,31 +293,41 @@ function openInvoiceForm(inv0) {
         <div><label>Category</label><select class="in" data-k="cat">${catOptions(F.cat)}</select></div></div>
       <div class="scroll-x" style="margin-top:12px"><table class="table inv-f"><tr><th>Service date</th><th>Description</th><th>Sub-category</th><th>Amount</th><th></th></tr>
         ${F.lines.map((l, i) => `<tr><td><input class="in" type="date" data-k="d" data-i="${i}" value="${l.d}"></td><td><input class="in" data-k="desc" data-i="${i}" value="${esc(l.desc)}" placeholder="Bermuda Program: Round 3 - Fertilization"></td>
-          <td><input class="in" list="ivSubs" data-k="sub" data-i="${i}" value="${esc(l.sub)}" placeholder="pick or type"></td><td><input class="in num" data-k="amt" data-i="${i}" value="${esc(l.amt)}" placeholder="0.00" inputmode="decimal"></td>
+          <td>${l.newSub ? `<div class="iv-new"><input class="in" data-k="subNew" data-i="${i}" value="${esc(l.sub)}" placeholder="New sub-category name"><button class="mini-btn" data-subok="${i}" title="Use this name">${icon('check')}</button><button class="mini-btn" data-subx="${i}" title="Back to the list">${icon('close')}</button></div>`
+            : `<select class="in" data-k="sub" data-i="${i}"><option value="">— none —</option>${subList(l.sub).map(x => `<option ${x === l.sub ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__new">+ New sub-category…</option></select>`}</td><td><input class="in num" data-k="amt" data-i="${i}" value="${esc(l.amt)}" placeholder="0.00" inputmode="decimal"></td>
           <td>${F.lines.length > 1 ? `<button class="mini-btn" data-del="${i}" title="Remove line">${icon('close')}</button>` : ''}</td></tr>`).join('')}</table></div>
-      <datalist id="ivSubs">${subs().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap"><button class="btn" id="ivAdd" style="height:30px">${icon('plus')}<span>Add line</span></button>
-        ${F.lines.length > 1 && num(F.total) > 0 ? `<button class="btn" id="ivFill" style="height:30px" title="Put the remaining amount on the last line">Fill last line</button>` : ''}<span style="margin-left:auto;font-size:13px">${status()}</span></div>
-      <h4 style="margin:16px 0 6px;font-size:13px">Bank payment</h4><div class="inv-cands">${candHtml()}</div>
+        ${F.lines.length > 1 ? `<button class="btn" id="ivFill" style="height:30px" title="Put the remaining amount on the last line">Fill last line</button>` : ''}<span style="margin-left:auto;font-size:13px">${status()}</span></div>
+      <h4 style="margin:16px 0 6px;font-size:13px">Bank payment</h4><div class="inv-cands" id="ivCands">${candHtml()}</div>
       <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="ivDel" style="color:var(--neg)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button>
         <button class="btn primary" id="ivGo" ${totalOk() && F.no.trim() && !F.busy ? '' : 'disabled'}>${F.busy ? 'Saving…' : F.tx ? 'Save, tie & split' : 'Save invoice'}</button></div>`;
-    $$('[data-k]', m).forEach(el => { el.oninput = el.onchange = () => { const k = el.dataset.k, i = el.dataset.i;
-        if (i != null) F.lines[+i][k] = el.value; else F[k] = el.value;
-        if (k === 'total' || k === 'paid' || k === 'vendor') { if (k !== 'vendor') F.tx = null; lookup(); }
-        if (el.tagName === 'SELECT' || el.type === 'date') draw(); else softDraw(); }; });
+    $$('[data-k]', m).forEach(el => {
+      const k = el.dataset.k, i = el.dataset.i, set = () => { if (k === 'subNew') F.lines[+i].sub = el.value; else if (i != null) F.lines[+i][k] = el.value; else F[k] = el.value; };
+      if (el.tagName === 'SELECT') { el.onchange = () => { if (k === 'sub' && el.value === '__new') { F.lines[+i].newSub = true; F.lines[+i].sub = ''; draw(); m.querySelector(`[data-k="subNew"][data-i="${i}"]`)?.focus(); return; }
+        set(); if (k === 'cat') F.lines.forEach(l => { if (!subList().includes(l.sub)) l.sub = ''; }); if (k === 'cat') draw(); else softDraw(); }; return; }
+      el.oninput = () => { set(); softDraw(); if (k === 'total') { F.tx = null; lookup(); } };
+      // dates: wait until the date is complete (typing a year fires partial values)
+      if (el.type === 'date' || k === 'vendor') el.onchange = el.onblur = () => { set(); softDraw(); if (k === 'paid' || k === 'vendor') { if (k === 'paid') F.tx = null; lookup(); } };
+      if (k === 'subNew') el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); m.querySelector(`[data-subok="${i}"]`).click(); } };
+    });
+    $$('[data-subok]', m).forEach(b => b.onclick = () => { const l = F.lines[+b.dataset.subok]; l.sub = l.sub.trim(); l.newSub = false; draw(); });
+    $$('[data-subx]', m).forEach(b => b.onclick = () => { const l = F.lines[+b.dataset.subx]; l.newSub = false; l.sub = ''; draw(); });
     $$('[data-del]', m).forEach(b => b.onclick = () => { F.lines.splice(+b.dataset.del, 1); draw(); });
-    $$('input[name=ivTx]', m).forEach(r => r.onchange = () => { F.tx = r.value || null; draw(); });
-    $('#ivAdd').onclick = () => { const last = F.lines[F.lines.length - 1]; F.lines.push({d: last?.d || '', desc: '', sub: last?.sub || '', amt: ''}); draw(); $$('[data-k=desc]', m).pop()?.focus(); };
+    wireCands();
+    $('#ivAdd').onclick = () => { const last = F.lines[F.lines.length - 1]; F.lines.push({d: last?.d || '', desc: '', sub: last?.newSub ? '' : (last?.sub || ''), amt: ''}); draw(); $$('[data-k=desc]', m).pop()?.focus(); };
     if ($('#ivFill')) $('#ivFill').onclick = () => { const l = F.lines[F.lines.length - 1], rest = num(F.total) - sum(F.lines.slice(0, -1).map(x => num(x.amt) || 0)); l.amt = rest.toFixed(2); draw(); };
     $('#ivGo').onclick = save;
     if ($('#ivDel')) $('#ivDel').onclick = async () => { if (!confirm(`Delete invoice #${inv0.invoice_no}? The bank payment keeps its current split.`)) return;
       const {error} = await FDB.from('invoices').delete().eq('id', inv0.id); if (error) return toast(error.message); CTX.invoices = INV().filter(x => x.id !== inv0.id); closeAll(); render(); };
     if (fk) { const el = fi != null ? m.querySelector(`[data-k="${fk}"][data-i="${fi}"]`) : m.querySelector(`[data-k="${fk}"]:not([data-i])`); if (el) { el.focus(); try { if (pos != null) el.setSelectionRange(pos, pos); } catch (_) {} } }
   };
+  const wireCands = () => $$('input[name=ivTx]', m).forEach(r => r.onchange = () => { F.tx = r.value || null; softDraw(); });
+  const refresh = () => { const c = $('#ivCands'); if (!c) return; c.innerHTML = candHtml(); wireCands(); softDraw(); };
   // typing shouldn't rebuild the form — just refresh the check and the button
-  const softDraw = () => { const st = m.querySelector('#ivAdd')?.parentElement?.lastElementChild; if (st) st.innerHTML = status(); const go = $('#ivGo'); if (go) go.disabled = !(totalOk() && F.no.trim() && !F.busy); };
+  const softDraw = () => { const st = m.querySelector('#ivAdd')?.parentElement?.lastElementChild; if (st) st.innerHTML = status(); const go = $('#ivGo'); if (go) { go.disabled = !(totalOk() && F.no.trim() && !F.busy); go.textContent = F.busy ? 'Saving…' : F.tx ? 'Save, tie & split' : 'Save invoice'; } };
   async function save() {
     if (!totalOk()) return toast('The lines need to add up to the total');
+    F.lines.forEach(l => { if (l.newSub) { l.sub = l.sub.trim(); l.newSub = false; } });
     const vendor = F.vendor.trim() || 'Vendor', no = F.no.trim(), total = +num(F.total).toFixed(2);
     if (INV().some(i => i.vendor === vendor && i.invoice_no === no && i.id !== inv0?.id)) return toast(`Invoice #${no} from ${vendor} already exists — edit that one instead`);
     F.busy = true; draw(); LW.vendor = vendor;
