@@ -95,6 +95,8 @@ function renderSummary(pg) {
         <div class="mini"><div class="l">Kept (saved)</div><div class="v num ${saved >= 0 ? 'pos' : 'neg'}">${ab(saved)}</div><div class="ds">${T.inc > 0 ? Math.round(rate * 100) + '% of income' : '&nbsp;'}</div></div>
         <div class="mini"><div class="l">Net worth</div><div class="v num">${short(nw)}</div><div class="ds">${chip(nwPrev ? (nw - nwPrev) / Math.abs(nwPrev) : 0)} vs ${MON[(mo + 10) % 12]}</div></div></div></div>
 
+    <div class="card c-12"><div class="card-h"><div><h3>Notes for ${mLabel(M)}</h3><div class="sub">What happened this month — big purchases, changes, decisions · rolls into the Year in review deck</div></div></div>
+      ${typeof noteBox === 'function' ? noteBox('month', M, null, 'e.g. Paid the pool deposit · Schwab dip was the market, not a missing account · started Milo at the new daycare', 3) : ''}</div>
     <div class="card c-7"><div class="card-h"><div><h3>${monName} spending vs. budget</h3><div class="sub">The bar is what we spent; the tick is the budget</div></div></div>
       <div class="sb-list">${topRows.map(r => bRow(r.c, r.a, r.b)).join('')}${rest.length ? bRow(`Everything else (${rest.length})`, restA, restB) : ''}</div>
       <div class="sb-row sb-tot"><div class="sb-n">Total</div><div></div><div class="sb-v num">${money(T.out)}<span class="muted"> of ${money(budOut)}</span></div><div class="sb-s">${budOut - T.out >= 0 ? `<span class="pos">${money(budOut - T.out)} left</span>` : `<span class="neg">${money(T.out - budOut)} over</span>`}</div></div></div>
@@ -150,6 +152,7 @@ function renderSummary(pg) {
   $('#smPrev').onclick = () => { SUMM.m = ymPlus(M, -1); render(); };
   $('#smNext').onclick = () => { SUMM.m = ymPlus(M, 1); render(); };
   $('#smPrint').onclick = () => window.print();
+  if (typeof wireNotes === 'function') wireNotes(pg);
   CH.push(() => barChart($('#smYears'), {labels: years.map(String), series: [{name: `Jan – ${monName}`, values: same.map(s => s.out), color: 'var(--s1)'},
       {name: 'Full year', values: full, color: 'var(--s2)', hatchFn: i => years[i] === y && mo < 12}], height: 230, xGap: 40, tipTitle: l => l,
       tipExtra: i => years[i] === y && mo < 12 ? tipRow(null, 'Full year', 'projected') : ''}),

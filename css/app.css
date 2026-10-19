@@ -697,3 +697,19 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .bva .bh2 th{font-size:10.5px}
 .bva td.by,.bva th.by{border-left:2px solid var(--border-strong)}
 .bva .bh1 th.bgrp:nth-child(3){border-left:2px solid var(--border-strong)}
+/* notes & year in review */
+.note-in{width:100%;font:inherit;font-size:13px;resize:vertical;line-height:1.45}
+textarea.note-in{min-height:64px;padding:10px 12px}
+.rv-cols{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
+.rv-list h4{margin:0 0 8px;font-size:13px}.rv-li{display:flex;gap:6px;align-items:center;margin-bottom:6px}.rv-li .in{flex:1}.rv-li.done .in{text-decoration:line-through;color:var(--text-3)}
+.rv-dot{width:6px;height:6px;border-radius:50%;background:var(--text-3);flex:none;margin:0 5px}
+.rv-flow{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:10px 0}
+.rv-flow .mini .v{font-size:15px}
+.rv-kp{margin-top:12px}.rv-kp label{display:block;font-size:12px;font-weight:600;margin-bottom:4px}
+.rv-t td{vertical-align:middle}.rv-t .in.sm{width:100%}
+.rv-buckets{display:grid;gap:6px}.rv-b{border-top:1px solid var(--border);padding:6px 0}.rv-b summary{display:flex;justify-content:space-between;cursor:pointer;padding:6px 0;font-size:13.5px}
+.rv-bs td.ind{padding-left:20px}.rv-bs td.rv-sub{font-weight:700;padding-left:10px;font-size:12px}.rv-bs tr.sub-tot td{font-weight:600}
+.rv-trends{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.rv-trends h4{margin:0 0 6px;font-size:13px}
+@media (max-width:860px){.rv-cols,.rv-trends{grid-template-columns:1fr}}
+@media (max-width:860px){.rv-t .in.sm{min-width:120px}.rv-b summary{flex-wrap:wrap}}
+.rv-buckets{grid-template-columns:minmax(0,1fr)}.rv-b{min-width:0;max-width:100%}
