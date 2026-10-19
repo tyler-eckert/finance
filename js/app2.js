@@ -150,7 +150,7 @@ function renderBudget(pg) {
     ${kpi('Income', inc, true)}${kpi('Spending', exp, false)}${kpi('Net', net, true)}
     <div class="card c-7"><div class="card-h"><div><h3>Biggest variances</h3><div class="sub">Green = under budget · red = over · click to drill in</div></div></div><div class="chart" id="varChart"></div></div>
     <div class="card c-5"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${bMode === 'month' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">Expand a category for its sub-categories · tap a line for its transactions</div></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
@@ -158,25 +158,35 @@ function renderBudget(pg) {
   $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted">—</td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, used * 100)}%"></i></div><span class="muted num" style="font-size:11.5px;width:38px">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
-  let h = '<tr><th>Category</th><th>Budget</th><th>Actual</th><th>Variance</th><th class="bar-cell">Used</th></tr>'; const HAS = new Set();
+  // table: the month and year-to-date side by side for the selected month
+  const AM = actuals(y, m1, m1), AY = actuals(y, 1, m1), mLbl = MON[m1 - 1];
+  const R = c => ({bm: budgetFor(y, c, m1, m1), am: AM.A[c] || 0, by: budgetFor(y, c, 1, m1), ay: AY.A[c] || 0});
+  const cells = (r, income, muteB) => `<td class="muted bm">${money(r.bm)}</td><td>${money(r.am)}</td>${vcell(r.am - r.bm)}<td class="muted by">${money(r.by)}</td><td>${money(r.ay)}</td>${vcell(r.ay - r.by)}${bar(r.ay, r.by, income)}`;
+  const NC = 8;
+  let h = `<tr class="bh1"><th rowspan="2">Category</th><th colspan="3" class="bgrp">${mLbl} ${y}</th><th colspan="3" class="bgrp">Year to date · Jan – ${mLbl}</th><th rowspan="2" class="bar-cell">% used (YTD)</th></tr>
+    <tr class="bh2"><th class="bm">Budget</th><th>Actual</th><th>Variance</th><th class="by">Budget</th><th>Actual</th><th>Variance</th></tr>`; const HAS = new Set();
+  const gsum = (g, k) => sum(ST.cats.filter(c => c.group === g && !ST.excl.has(c.name)).map(c => R(c.name)[k]));
+  const gR = g => ({bm: gsum(g, 'bm'), am: gsum(g, 'am'), by: gsum(g, 'by'), ay: gsum(g, 'ay')});
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
-    h += `<tr class="grp"><td colspan="5">${g.l}</td></tr>`;
-    rows.filter(r => r.c.group === g.k && (r.a || r.b || ST.catCounts[r.c.name + '|'] || r.c.subs.length)).forEach(r => {
-      const subKeys = Object.keys(S).filter(k => k.startsWith(r.c.name + '|')).map(k => k.split('|')[1]);
-      const subs = [...new Set([...r.c.subs.filter(s => subKeys.includes(s) || subBudgetFor(y, r.c.name, s, m0, m1) != null), ...subKeys])].filter(s => Math.abs(S[r.c.name + '|' + s] || 0) >= .5 || subBudgetFor(y, r.c.name, s, m0, m1) != null);
-      if (subs.some(Boolean)) HAS.add(r.c.name);
-      const has = subs.some(Boolean), open = has && bOpen.has(r.c.name);
-      if (!r.a && !r.b) return;
-      h += `<tr class="click cat ${open ? 'open' : ''}" data-cat="${esc(r.c.name)}"><td><span class="tw">${has ? `<button class="chev" data-tg="${esc(r.c.name)}" aria-label="Expand">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span>${esc(r.c.name)}</span>${has ? `<span class="cnt">${subs.filter(Boolean).length}</span>` : ''}</span></td><td class="muted">${money(r.b)}</td><td>${money(r.a)}</td>${vcell(r.a - r.b)}${bar(r.a, r.b, g.k === 'Income')}</tr>`;
-      if (open) subs.sort((p, q) => (S[r.c.name + '|' + p] || 0) - (S[r.c.name + '|' + q] || 0)).forEach(s => {
-        const a = S[r.c.name + '|' + s] || 0, sb = subBudgetFor(y, r.c.name, s, m0, m1);
-        h += `<tr class="click sub" data-cat="${esc(r.c.name)}" data-sub="${esc(s)}"><td><span class="tw sub-name">${s ? esc(s) : '<i class="muted">No sub-category</i>'}</span></td><td class="muted">${sb == null ? '' : money(sb)}</td><td>${money(a)}</td>${sb == null ? '<td></td>' : vcell(a - sb)}${sb == null ? `<td class="bar-cell"><div class="share"><i style="width:${r.a ? Math.min(100, a / r.a * 100) : 0}%"></i></div></td>` : bar(a, sb)}</tr>`;
+    h += `<tr class="grp"><td colspan="${NC}">${g.l}</td></tr>`;
+    const income = g.k === 'Income';
+    rows.filter(r => r.c.group === g.k).forEach(r => {
+      const c = r.c.name, rr = R(c); if (!rr.am && !rr.bm && !rr.ay && !rr.by) return;
+      const subKeys = [...new Set(Object.keys(AY.S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1]))];
+      const subs = [...new Set([...r.c.subs.filter(sb => subKeys.includes(sb) || subBudgetFor(y, c, sb, 1, m1) != null), ...subKeys])].filter(sb => Math.abs(AY.S[c + '|' + sb] || 0) >= .5 || subBudgetFor(y, c, sb, 1, m1) != null);
+      const has = subs.some(Boolean); if (has) HAS.add(c); const open = has && bOpen.has(c);
+      h += `<tr class="click cat ${open ? 'open' : ''}" data-cat="${esc(c)}"><td><span class="tw">${has ? `<button class="chev" data-tg="${esc(c)}" aria-label="Expand">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span>${esc(c)}</span>${has ? `<span class="cnt">${subs.filter(Boolean).length}</span>` : ''}</span></td>${cells(rr, income)}</tr>`;
+      if (open) subs.sort((p, q) => (AY.S[c + '|' + p] || 0) - (AY.S[c + '|' + q] || 0)).forEach(sb => {
+        const bm = subBudgetFor(y, c, sb, m1, m1), by = subBudgetFor(y, c, sb, 1, m1), am = AM.S[c + '|' + sb] || 0, ay = AY.S[c + '|' + sb] || 0;
+        h += `<tr class="click sub" data-cat="${esc(c)}" data-sub="${esc(sb)}"><td><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>
+          <td class="muted bm">${bm == null ? '' : money(bm)}</td><td>${money(am)}</td>${bm == null ? '<td></td>' : vcell(am - bm)}<td class="muted by">${by == null ? '' : money(by)}</td><td>${money(ay)}</td>${by == null ? '<td></td>' : vcell(ay - by)}${by == null ? '<td class="bar-cell"></td>' : bar(ay, by, income)}</tr>`;
       });
     });
-    const t = tot(g.k); h += `<tr class="tot"><td>Total ${g.l.toLowerCase()}</td><td class="muted">${money(t.b)}</td><td>${money(t.a)}</td>${vcell(t.a - t.b)}<td class="bar-cell"></td></tr>`;
+    h += `<tr class="tot"><td>Total ${g.l.toLowerCase()}</td>${cells(gR(g.k), income)}</tr>`;
   });
-  if (exRows.length) h += `<tr class="grp"><td colspan="5">Excluded from analysis</td></tr>` + exRows.map(r => `<tr class="excl"><td>${esc(r.n)}</td><td class="muted">${money(r.b)}</td><td class="muted">${money(r.a)}</td><td></td><td class="bar-cell"></td></tr>`).join('');
-  h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted">${money(net.b)}</td><td>${money(net.a)}</td>${vcell(net.a - net.b)}<td class="bar-cell"></td></tr>`;
+  if (exRows.length) h += `<tr class="grp"><td colspan="${NC}">Excluded from analysis</td></tr>` + [...ST.excl].map(n => ({n, r: R(n)})).filter(x => x.r.am || x.r.bm || x.r.ay || x.r.by).map(x => `<tr class="excl"><td>${esc(x.n)}</td><td class="muted bm">${money(x.r.bm)}</td><td class="muted">${money(x.r.am)}</td><td></td><td class="muted by">${money(x.r.by)}</td><td class="muted">${money(x.r.ay)}</td><td></td><td class="bar-cell"></td></tr>`).join('');
+  const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay}));
+  h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td></tr>`;
   $('#bvaTable').innerHTML = h;
   $$('#bvaTable .chev').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.tg; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('#bvaTable tr.click').forEach(tr => tr.onclick = () => openCatTx(tr.dataset.cat, tr.dataset.sub, m0, m1));
@@ -490,7 +500,7 @@ function drawImport() {
    BALANCES — flexible month-end inputs
    ===================================================================== */
 const BGROUPS = ['Cash', 'Investing', 'Retirement', 'College', 'Debt', 'Other'];
-let balM = null, balView = 'month', balInactive = false;
+let balM = null, balView = 'grid', balInactive = false;   // history grid by default: balances go in once a month
 const acctLive = (a, i) => a.active !== false && (a.v[i] != null || a.v.slice(Math.max(0, i - 5), i + 1).some(v => v != null && Math.abs(v) >= .5) || (a.v.slice(0, i + 1).filter(v => v != null).pop() || 0) !== 0);
 function renderBalances(pg) {
   const B = ST.bal, months = B.months;
@@ -524,7 +534,7 @@ function renderBalances(pg) {
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
         <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
-        return `<tr class="grp"><td class="stick">${g}</td><td colspan="${W.length}"></td>${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick">${esc(a.name)}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
+        return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : short(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
           return `<td class="${j === A ? 'anc' : ''}"><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
           ${vc(val(a, A), val(a, A - 1), sg)}${vc(val(a, A), prevYA(a, ya), sg)}</tr>`).join(''); }).join('')}
       <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${short(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;

@@ -16,8 +16,11 @@ const contrib401 = DATA.assume.k401max + DATA.assume.employer;
 const MORT = ST.loans.find(l => l.status === 'active' && l.type === 'Mortgage');
 const MORT_PI = MORT ? (MORT.pmt || 0) * 12 : 0, MORT_END = MORT ? +loanPayoff(MORT.id).slice(0, 4) : 0;
 const mineralsAt = cal => minNet[cal] ?? minBase * Math.pow(1 + minDecl, cal - minLastY);
+// planned expenses & milestones (Plan → Milestones) come out of the portfolio in their year; 529-funded or already-in-budget ones don't
+const plannedFlows = () => { const o = {}; (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && !['college_529', 'budget'].includes(p.fund) && p.due >= CTX.ASOF_YM)
+  .forEach(p => { const y = +p.due.slice(0, 4); o[y] = (o[y] || 0) + Math.abs(+p.amount || 0); }); return o; };
 function simP(p, sims = 400, keepPaths = true) {
-  const years = 95 - ageNow, paths = keepPaths ? [] : null; let ok = 0;
+  const years = 95 - ageNow, paths = keepPaths ? [] : null, PE = plannedFlows(); let ok = 0;
   for (let s = 0; s < sims; s++) {
     const R = rng(9000 + s); let b = scnStart(); const path = keepPaths ? [b] : null;
     for (let t = 1; t <= years; t++) {
@@ -32,6 +35,7 @@ function simP(p, sims = 400, keepPaths = true) {
         const income = mins + (age >= p.ssAge ? p.ss * inf : 0), gap = need - income;
         flow = gap > 0 ? -gap / (1 - p.tax) : -gap;
       }
+      if (PE[cal]) flow -= age < p.retire ? PE[cal] : PE[cal] / (1 - p.tax);
       b = b > 0 ? b * (1 + r) + flow : 0;
       if (keepPaths) path.push(Math.max(0, b));
     }
@@ -40,7 +44,7 @@ function simP(p, sims = 400, keepPaths = true) {
   return {paths, prob: ok / sims, years};
 }
 const RUNC = new Map();
-const pkey = p => JSON.stringify(p);
+const pkey = p => JSON.stringify(p) + JSON.stringify(plannedFlows());   // re-run when milestones change
 function scnRun(sc) { const k = 'r' + pkey(sc.p); if (!RUNC.has(k)) RUNC.set(k, simP(sc.p)); return RUNC.get(k); }
 function scnSweep(sc) {
   const k = 'w' + pkey({...sc.p, retire: 0}); if (RUNC.has(k)) return RUNC.get(k);
@@ -135,7 +139,7 @@ function renderRetirement(pg) {
     () => { const ages = Array.from({length: 95 - ageNow + 1}, (_, t) => ageNow + t);
       const series = vis.map(s => { const r = scnRun(s); return {name: s.name, values: pctl(r.paths, .5).map((v, t) => deflate(v, t, s.p)), color: SC_COLORS[SCN.indexOf(s) % 5], width: s.id === sel.id ? 3 : 2}; });
       const lo = pctl(selRun.paths, .25).map((v, t) => deflate(v, t, sel.p)), hi = pctl(selRun.paths, .75).map((v, t) => deflate(v, t, sel.p));
-      lineChart($('#scChart'), {labels: ages, series, band: {lo, hi, color: SC_COLORS[SCN.indexOf(sel) % 5], name: sel.name + ' middle half'}, height: 280, zero: true, vlines: [{i: sel.p.retire - ageNow, label: 'Retire ' + sel.p.retire}], xFmt: (lb, i) => i % 5 === 0 ? lb : null, tipTitle: (a, i) => `Age ${a} · ${YNOW + i}`}); },
+      lineChart($('#scChart'), {labels: ages, series, band: {lo, hi, color: SC_COLORS[SCN.indexOf(sel) % 5], name: sel.name + ' middle half'}, height: 280, zero: true, vlines: [{i: sel.p.retire - ageNow, label: 'Retire ' + sel.p.retire}], markers: Object.entries(plannedFlows()).map(([y, amt], k) => { const i = +y - YNOW; return i > 0 && i < ages.length ? {i, s: Math.max(0, series.findIndex(x => x.name === sel.name)), color: 'var(--s5)', label: `${(ST.planned || []).filter(p => +p.due.slice(0, 4) === +y && !['college_529', 'budget'].includes(p.fund)).map(p => p.name).join(', ')} −${short(amt)}`, dy: (k % 2) * 13} : null; }).filter(Boolean), xFmt: (lb, i) => i % 5 === 0 ? lb : null, tipTitle: (a, i) => `Age ${a} · ${YNOW + i}`}); },
     () => drawSensitivity(sel)
   );
 }
