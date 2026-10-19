@@ -498,23 +498,26 @@ function renderBalances(pg) {
   const kOf = a => B.accounts.indexOf(a);
   // History grid: locked to the last 12 months, with month-over-month and year-over-year variance columns
   const gridHTML = () => {
-    const jN = months.length - 1, j0 = Math.max(0, jN - 11), W = months.slice(j0, jN + 1);
-    let A = jN; while (A > j0 && !VA.some(a => a.v[A] != null)) A--;           // latest month with entries
+    // window = the 12 complete months ending last month
+    const nowM = ym(CTX.TODAY);
+    let A = months.length - 1; if (months[A] >= nowM && A > 0) A--;   // the current month isn't over yet — end on the last complete month
+    const jN = A, j0 = Math.max(0, A - 11), W = months.slice(j0, jN + 1);
     const val = (a, j) => j < 0 ? null : (a.v[j] ?? a.v[j - 1] ?? null);       // same carry-forward rule as net worth
     const ya = A - 12, yaM = ya >= 0 ? months[ya] : (() => { const [y, m] = months[A].split('-'); return `${+y - 1}-${m}`; })();
     const prevYA = (a, j) => { if (j >= 0) return val(a, j); const s = BS && BS[(a.kind === 'loan' ? 'loan:' : 'acct:') + a.id], k = BS?.months?.indexOf(yaM); return s && k >= 0 ? (s[k] ?? null) : null; };
-    let nv = 0; const slot = () => nv++ % 2 ? 'var-y' : 'var-m';   // MoM column, then YoY column
+    let nv = 0; const slot = () => ['vm', 'vy'][nv++ % 2];   // MoM pair, then YoY pair
     const vc = (cur, prv, sg) => {
-      if (cur == null || prv == null) return `<td class="num muted var-c ${slot()}">${cur != null && prv == null ? 'new' : '—'}</td>`;
+      const c = slot();
+      if (cur == null || prv == null) return `<td class="num muted var-c ${c}1">${cur != null && prv == null ? 'new' : '—'}</td><td class="num muted var-c ${c}2"></td>`;
       const d = cur - prv, cls = d === 0 ? 'muted' : d * sg > 0 ? 'pos' : 'neg';
-      return `<td class="num var-c ${slot()} ${cls}"><b>${d === 0 ? '$0' : (d > 0 ? '+' : '') + short(d)}</b><i>${prv ? pct(d / Math.abs(prv), 1) : ''}</i></td>`;
+      return `<td class="num var-c ${c}1 ${cls}">${d === 0 ? '$0' : (d > 0 ? '+' : '') + short(d)}</td><td class="num var-c ${c}2 ${cls}">${prv ? pct(d / Math.abs(prv), 1) : ''}</td>`;
     };
     const sumG = (list, f) => { const xs = list.map(f); return xs.every(x => x == null) ? null : sum(xs.map(x => x ?? 0)); };
     const vars = (list, sg, signed) => { const g = f => sumG(list, a => { const x = f(a); return x == null ? null : x * (signed ? signOf(a) : 1); });
       return vc(g(a => val(a, A)), g(a => val(a, A - 1)), sg) + vc(g(a => val(a, A)), g(a => prevYA(a, ya)), sg); };
-    return `<div class="card"><div class="card-h"><div><h3>Last 12 months</h3><div class="sub">${mLabel(W[0])} – ${mLabel(W[W.length - 1])} · variances for ${mLabel(months[A])}${A < jN ? ` (latest entered)` : ''}</div></div></div>
+    return `<div class="card"><div class="card-h"><div><h3>Last 12 months</h3><div class="sub">${mLabel(W[0])} – ${mLabel(W[W.length - 1])} · variances for ${mLabel(months[A])}${A < months.length - 1 ? ` · ${mLabel(months[months.length - 1])} not complete yet, enter it under Month entry` : ''}</div></div></div>
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
-        <th class="var-h var-m" title="Month over month">MoM<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h var-y" title="Same month a year ago">YoY<span>vs ${mShort(yaM)}</span></th></tr>
+        <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
         return `<tr class="grp"><td class="stick">${g}</td><td colspan="${W.length}"></td>${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick">${esc(a.name)}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
           return `<td class="${j === A ? 'anc' : ''}"><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
