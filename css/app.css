@@ -31,7 +31,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased}
-body{background-image:var(--bg-grad);background-attachment:fixed;min-height:100vh;font-size:14px;line-height:1.45}
+body{background:transparent;min-height:100vh;font-size:14px;line-height:1.45}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .num{font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 /* ---------- shell ---------- */
@@ -758,3 +758,20 @@ body.nav-mini .side-col svg{transform:rotate(180deg)}
 .lc-dot.diy{border-radius:2px;transform:rotate(45deg) scale(.85)}
 .lc-dot.planned{background:transparent;border:2px solid var(--c)}.lc-dot.expected{background:transparent;border:2px dashed var(--c);opacity:.75}.lc-dot.skipped{opacity:.3}
 .lw-t td{white-space:nowrap}.lw-t td:nth-child(2){white-space:normal}.lw-lines>td{background:var(--bg-2,rgba(0,0,0,.03));padding:4px 10px 10px}.lw-lines .table td{font-size:12.5px;padding:4px 8px}
+
+/* crisp top edge: the page glow sits on its own fixed layer (iOS smears background-attachment:fixed),
+   and a solid strip covers the status-bar area so scrolled content never shows through it blurred */
+body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--bg);background-image:var(--bg-grad)}
+.top-shim{position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:60;pointer-events:none}
+.cut-i{align-items:center}.cut-x{border:0;background:none;color:var(--text-3);font-size:16px;line-height:1;padding:0 2px;cursor:pointer;opacity:.45}.cut-i:hover .cut-x{opacity:1}.cut-x:hover{color:var(--neg)}
+.cut-i>span{flex:1;min-width:0}
+
+/* add-invoice form */
+.inv-f td{padding:4px 4px}.inv-f .in{height:34px;width:100%;min-width:0}.inv-f td:nth-child(1){width:150px}.inv-f td:nth-child(2){min-width:240px}.inv-f td:nth-child(3){width:200px}.inv-f td:nth-child(4){width:110px}.inv-f td:nth-child(5){width:34px}
+.inv-c{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;font-size:13px;cursor:pointer}.inv-c.dis{opacity:.6;cursor:default}.inv-c input{margin:0}
+@media (max-width:640px){
+  .inv-f,.inv-f tbody{display:block}.inv-f tr:first-child{display:none}
+  .inv-f tr{display:grid;grid-template-columns:1fr 1fr 34px;grid-template-areas:"desc desc x" "date amt x" "sub sub x";gap:6px;padding:10px 0;border-bottom:1px dashed var(--border)}
+  .inv-f td{padding:0!important;width:auto!important;min-width:0!important;border:0}
+  .inv-f td:nth-child(1){grid-area:date}.inv-f td:nth-child(2){grid-area:desc}.inv-f td:nth-child(3){grid-area:sub}.inv-f td:nth-child(4){grid-area:amt}.inv-f td:nth-child(5){grid-area:x;align-self:center}
+}

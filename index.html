@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Eckert Finance</title>
 <meta name="robots" content="noindex,nofollow">
-<meta name="theme-color" content="#0e3b27">
+<meta name="theme-color" content="#eef1ef" id="themeColor">
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=3">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=3">
@@ -18,9 +18,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
-<script>(function(){try{var t=JSON.parse(localStorage.getItem('fin.theme')||'null');}catch(e){}document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');})();</script>
+<script>(function(){try{var t=JSON.parse(localStorage.getItem('fin.theme')||'null');}catch(e){}document.documentElement.dataset.theme=t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');var m=document.getElementById('themeColor');if(m)m.content=document.documentElement.dataset.theme==='dark'?'#070a09':'#eef1ef';})();</script>
 </head>
 <body>
+<div class="top-shim" aria-hidden="true"></div>
 <div class="app">
   <aside class="side">
     <div class="logo">
@@ -43,7 +44,7 @@
         <button class="btn mob-only" id="themeMob" aria-label="Toggle theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
         <button class="btn fbtn" id="filterBtn"></button>
         <button class="btn" id="layoutBtn" title="Hide or rearrange cards on this page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M10 9v12"/></svg><span>Layout</span></button>
-        <button class="btn primary" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Import</span></button>
+        <button class="btn primary" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 20V9M7 14l5-5 5 5M5 4h14"/></svg><span>Import</span></button>
         <div class="avatar">·</div>
       </div>
     </header>

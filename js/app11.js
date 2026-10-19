@@ -122,7 +122,7 @@ function renderLawn(pg) {
     const m = M[i.id]; if (m?.off) return `<span class="chip neg" title="${esc(m.t.description)}">Closest payment ${fmtD2(m.t.posted_on)} · ${money(-m.t.amount, 2)} (${m.off > 0 ? '+' : '−'}${money(Math.abs(m.off), 2)})</span>`; if (m) return `<span class="chip">Payment found · ${fmtD2(m.t.posted_on)}${m.group.length > 1 ? ` · with ${m.group.length - 1} other` : ''}</span>`;
     return LW.cand ? `<span class="chip neg">No matching payment</span>` : '<span class="muted">—</span>'; };
   pg.innerHTML = `<div class="toolbar wrap"><span class="muted" style="font-size:12.5px">Services from invoices, plus what you do yourself · ${invs.length} invoice${invs.length === 1 ? '' : 's'}</span>
-    <div style="margin-left:auto;display:flex;gap:8px">${CTX.CAN_WRITE ? `<button class="btn" id="lwImp">${icon('file')}<span>Import invoice lines</span></button><button class="btn primary" id="lwAdd">${icon('plus')}<span>Plan / log activity</span></button>` : ''}</div></div>
+    <div style="margin-left:auto;display:flex;gap:8px">${CTX.CAN_WRITE ? `<button class="btn" id="lwImp">${icon('file')}<span>Import lines</span></button><button class="btn" id="lwInv">${icon('plus')}<span>Add invoice</span></button><button class="btn primary" id="lwAdd">${icon('plus')}<span>Plan / log activity</span></button>` : ''}</div></div>
   <div class="grid g-12">
     <div class="card c-3 kpi"><div class="label">${CY} so far</div><div class="val num">${money(yr(CY))}</div><div class="delta">${short(yr(CY - 1))} in ${CY - 1}</div></div>
     <div class="card c-3 kpi"><div class="label">Invoices tied to the bank</div><div class="val num">${tied.length} <span class="muted" style="font-size:16px">of ${invs.length}</span></div><div class="delta">${ready.length ? `${ready.length} ready to tie` : LW.cand ? (offs.length ? `${offs.length} don’t match` : 'all checked') : 'run “Find payments”'}</div></div>
@@ -148,7 +148,7 @@ function renderLawn(pg) {
       <div class="scroll-x"><table class="table lw-t"><tr><th>Invoice</th><th>Services</th><th>Paid</th><th>Total</th><th>Lines</th><th>Bank payment</th><th></th></tr>
         ${invs.slice(0, LW.showAll ? 999 : 25).map(i => { const ls = i.lines || [], lt = sum(ls.map(l => +l.amount)), off = Math.abs(lt - +i.total) > .005, op = LW.open.has(i.id);
           return `<tr class="click" data-inv="${i.id}"><td class="nowrap"><b>#${esc(i.invoice_no)}</b> <span class="muted">${esc(i.vendor)}</span></td><td class="nowrap">${i.invoice_date ? fmtD2(i.invoice_date) + ' ' + i.invoice_date.slice(0, 4) : ''}</td><td class="nowrap">${i.paid_on ? fmtD2(i.paid_on) + ' ' + i.paid_on.slice(0, 4) : '—'}</td><td class="num">${money(+i.total, 2)}</td><td>${ls.length}${off ? ' <span class="chip neg">lines ≠ total</span>' : ''}</td><td>${matchCell(i)}</td><td>${CTX.CAN_WRITE && !i.transaction_id && M[i.id] && !M[i.id].off ? `<button class="btn" style="height:28px" data-tie="${i.id}">Tie & split</button>` : ''}</td></tr>`
-            + (op ? `<tr class="lw-lines"><td colspan="7"><table class="table">${ls.map(l => { const c = classifyLine(l.description); return `<tr><td class="nowrap">${l.service_date ? fmtD2(l.service_date) : ''}</td><td>${esc(l.description)}</td><td class="muted">${esc(MAP.subName[l.subcategory_id]?.name || '')}</td><td><span class="chip">${l.activity || c.act}</span></td><td class="num">${money(+l.amount, 2)}</td></tr>`; }).join('')}</table></td></tr>` : ''); }).join('') || '<tr><td colspan="7" class="muted">No invoices yet — use “Import invoice lines” and paste them from your spreadsheet.</td></tr>'}</table></div>
+            + (op ? `<tr class="lw-lines"><td colspan="7"><table class="table">${ls.map(l => { const c = classifyLine(l.description); return `<tr><td class="nowrap">${l.service_date ? fmtD2(l.service_date) : ''}</td><td>${esc(l.description)}</td><td class="muted">${esc(MAP.subName[l.subcategory_id]?.name || '')}</td><td><span class="chip">${l.activity || c.act}</span></td><td class="num">${money(+l.amount, 2)}</td></tr>`; }).join('')}</table>${CTX.CAN_WRITE ? `<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px"><button class="btn" style="height:28px" data-invedit="${i.id}">${icon('edit')}<span>Edit invoice</span></button></div>` : ''}</td></tr>` : ''); }).join('') || '<tr><td colspan="7" class="muted">No invoices yet — use “Add invoice”, or “Import lines” to paste many from a spreadsheet.</td></tr>'}</table></div>
       ${invs.length > 25 && !LW.showAll ? `<div style="text-align:center;padding:10px"><button class="btn" id="lwMore">Show all ${invs.length}</button></div>` : ''}</div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Spending by service</h3><div class="sub">From invoice lines and logged costs</div></div></div>
@@ -157,6 +157,8 @@ function renderLawn(pg) {
         <tr class="tot"><td>Total</td>${years.map(y => `<td class="num">${money(yr(+y))}</td>`).join('')}</tr></table></div></div>
   </div>`;
   if ($('#lwImp')) $('#lwImp').onclick = openLawnImport;
+  if ($('#lwInv')) $('#lwInv').onclick = () => openInvoiceForm();
+  $$('[data-invedit]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); openInvoiceForm(INV().find(x => x.id === b.dataset.invedit)); });
   if ($('#lwAdd')) $('#lwAdd').onclick = () => openLawnAct();
   if ($('#lwScan')) $('#lwScan').onclick = lawnFindPayments;
   if ($('#lwAllPlan')) $('#lwAllPlan').onclick = () => { LW.allPlan = true; render(); };
@@ -235,4 +237,107 @@ function openLawnImport() {
       }
       await lawnReloadInvoices(); closeAll(); toast(`Imported ${Object.keys(g).length} invoices`); LW.cand = null; render(); lawnFindPayments();
     } catch (e) { b.disabled = false; b.textContent = 'Import'; toast('Import failed: ' + e.message + (/invoice/.test(e.message) ? ' — run migration 1700' : '')); } };
+}
+
+/* ---------------- add / edit one invoice ----------------
+   enter the total and its lines; the lines must add up to the total, then pick the bank payment it ties to
+   (exact amount near the paid date) and the payment is split by sub-category */
+function openInvoiceForm(inv0) {
+  const isNew = !inv0, m = $('#modal'); m.classList.add('wide');
+  const F = {vendor: inv0?.vendor || LW.vendor, no: inv0?.invoice_no || '', total: inv0 ? (+inv0.total).toFixed(2) : '', paid: inv0?.paid_on || CTX.TODAY,
+    cat: (inv0?.lines?.[0] && MAP.catName[inv0.lines[0].category_id]) || LAWN_CAT,
+    lines: inv0 ? inv0.lines.map(l => ({d: l.service_date || '', desc: l.description, sub: MAP.subName[l.subcategory_id]?.name || '', amt: (+l.amount).toFixed(2)})) : [{d: '', desc: '', sub: '', amt: ''}],
+    tx: inv0?.transaction_id || null, cand: null, busy: false};
+  const num = v => { const x = +String(v).replace(/[$,\s]/g, ''); return isFinite(x) ? x : NaN; };
+  const subs = () => catOf(F.cat)?.subs || [];
+  const lineSum = () => +sum(F.lines.map(l => num(l.amt) || 0)).toFixed(2);
+  const totalOk = () => { const t = num(F.total); return F.total !== '' && isFinite(t) && t > 0 && Math.abs(lineSum() - t) < .005 && F.lines.every(l => l.desc.trim() && isFinite(num(l.amt)) && l.amt !== ''); };
+  const near = (a, b) => Math.round(Math.abs(new Date(a) - new Date(b)) / 864e5);
+  let tm = null;
+  const lookup = () => { clearTimeout(tm); tm = setTimeout(async () => { const t = num(F.total); if (!(t > 0) || !F.paid) { F.cand = null; draw(); return; }
+    const lo = dAdd(F.paid, -12), hi = dAdd(F.paid, 12), v = F.vendor.trim().split(' ')[0] || '';
+    try { const sel = 'id, posted_on, description, amount, is_split, category_id';
+      const [a, b] = await Promise.all([FDB.from('transactions').select(sel).eq('household_id', CTX.HH).gte('posted_on', lo).lte('posted_on', hi).eq('amount', (-t).toFixed(2)),
+        v ? FDB.from('transactions').select(sel).eq('household_id', CTX.HH).gte('posted_on', lo).lte('posted_on', hi).lt('amount', 0).ilike('description', `%${v}%`) : {data: []}]);
+      if (a.error) throw a.error; const all = [...a.data]; (b.data || []).forEach(x => { if (!all.some(y => y.id === x.id)) all.push(x); });
+      const tiedTo = id => INV().filter(i => i.transaction_id === id && i.id !== inv0?.id);
+      F.cand = all.map(x => { const others = tiedTo(x.id); return {...x, others, shared: others.length > 0 && x.id === inv0?.transaction_id, exact: Math.abs(-x.amount - t - sum(others.map(o => +o.total))) < .005, days: near(x.posted_on, F.paid)}; })
+        .sort((p, q) => (q.exact - p.exact) || (q.description.toLowerCase().includes(v.toLowerCase()) - p.description.toLowerCase().includes(v.toLowerCase())) || p.days - q.days).slice(0, 6);
+      if (!F.tx) { const best = F.cand.find(c => c.exact && (!c.others.length || c.shared)); if (best) F.tx = best.id; }
+    } catch (e) { F.cand = []; toast('Couldn’t look up payments: ' + e.message); }
+    draw(); }, 350); };
+  const status = () => { const t = num(F.total), ls = lineSum();
+    if (F.total === '' || !isFinite(t)) return `<span class="muted">Enter the invoice total</span>`;
+    const d = +(t - ls).toFixed(2);
+    return Math.abs(d) < .005 ? `<span class="pos"><b>✓ Lines add up to the total</b> · ${money(ls, 2)}</span>` : `<span class="neg"><b>Lines ${money(ls, 2)} vs. total ${money(t, 2)}</b> · ${d > 0 ? money(d, 2) + ' still to assign' : money(-d, 2) + ' over'}</span>`; };
+  const candHtml = () => { if (F.cand == null) return `<p class="muted" style="margin:6px 0">Enter the total and paid date to look for the payment.</p>`;
+    if (!F.cand.length) return `<p class="muted" style="margin:6px 0">No payment of ${money(num(F.total), 2)} within 12 days of ${fmtD2(F.paid)}. Save now and tie it later with “Find payments”.</p>`;
+    return F.cand.map(c => { const dis = !c.exact || (c.others.length && !c.shared); const diff = -c.amount - num(F.total);
+      return `<label class="inv-c ${dis ? 'dis' : ''}"><input type="radio" name="ivTx" value="${c.id}" ${F.tx === c.id ? 'checked' : ''} ${dis ? 'disabled' : ''}><span><b>${fmtD2(c.posted_on)} ${c.posted_on.slice(0, 4)}</b> · ${money(-c.amount, 2)} <span class="muted">· ${esc(c.description.slice(0, 48))}</span></span>
+        <span class="${!dis ? 'pos' : 'neg'}" style="margin-left:auto;white-space:nowrap">${c.shared ? (c.exact ? `✓ paid together with #${c.others.map(o => esc(o.invoice_no)).join(', #')}` : `doesn’t match with #${c.others.map(o => esc(o.invoice_no)).join(', #')}`) : c.others.length ? `already tied to #${c.others.map(o => esc(o.invoice_no)).join(', #')}` : c.exact ? `✓ amount matches${c.days ? ` · ${c.days}d from paid date` : ''}` : `${diff > 0 ? '+' : '−'}${money(Math.abs(diff), 2)} off`}</span></label>`; }).join('')
+      + `<label class="inv-c"><input type="radio" name="ivTx" value="" ${!F.tx ? 'checked' : ''}><span class="muted">Don’t tie it yet</span></label>`; };
+  const draw = () => {
+    const foc = document.activeElement, fk = foc?.dataset?.k, fi = foc?.dataset?.i, pos = foc?.selectionStart;
+    m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${isNew ? 'Add an invoice' : 'Edit invoice #' + esc(inv0.invoice_no)}</h2><p class="muted" style="font-size:12.5px">Enter the total and each line. Once the lines add up, pick the bank payment and it’s split by sub-category.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+      <div class="form" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+        <div><label>Vendor</label><input class="in" data-k="vendor" value="${esc(F.vendor)}"></div>
+        <div><label>Invoice #</label><input class="in" data-k="no" value="${esc(F.no)}" placeholder="5952"></div>
+        <div><label>Invoice total</label><input class="in num" data-k="total" value="${esc(F.total)}" placeholder="$0.00" inputmode="decimal"></div>
+        <div><label>Paid on</label><input class="in" type="date" data-k="paid" value="${F.paid}"></div>
+        <div><label>Category</label><select class="in" data-k="cat">${catOptions(F.cat)}</select></div></div>
+      <div class="scroll-x" style="margin-top:12px"><table class="table inv-f"><tr><th>Service date</th><th>Description</th><th>Sub-category</th><th>Amount</th><th></th></tr>
+        ${F.lines.map((l, i) => `<tr><td><input class="in" type="date" data-k="d" data-i="${i}" value="${l.d}"></td><td><input class="in" data-k="desc" data-i="${i}" value="${esc(l.desc)}" placeholder="Bermuda Program: Round 3 - Fertilization"></td>
+          <td><input class="in" list="ivSubs" data-k="sub" data-i="${i}" value="${esc(l.sub)}" placeholder="pick or type"></td><td><input class="in num" data-k="amt" data-i="${i}" value="${esc(l.amt)}" placeholder="0.00" inputmode="decimal"></td>
+          <td>${F.lines.length > 1 ? `<button class="mini-btn" data-del="${i}" title="Remove line">${icon('close')}</button>` : ''}</td></tr>`).join('')}</table></div>
+      <datalist id="ivSubs">${subs().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap"><button class="btn" id="ivAdd" style="height:30px">${icon('plus')}<span>Add line</span></button>
+        ${F.lines.length > 1 && num(F.total) > 0 ? `<button class="btn" id="ivFill" style="height:30px" title="Put the remaining amount on the last line">Fill last line</button>` : ''}<span style="margin-left:auto;font-size:13px">${status()}</span></div>
+      <h4 style="margin:16px 0 6px;font-size:13px">Bank payment</h4><div class="inv-cands">${candHtml()}</div>
+      <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="ivDel" style="color:var(--neg)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button>
+        <button class="btn primary" id="ivGo" ${totalOk() && F.no.trim() && !F.busy ? '' : 'disabled'}>${F.busy ? 'Saving…' : F.tx ? 'Save, tie & split' : 'Save invoice'}</button></div>`;
+    $$('[data-k]', m).forEach(el => { el.oninput = el.onchange = () => { const k = el.dataset.k, i = el.dataset.i;
+        if (i != null) F.lines[+i][k] = el.value; else F[k] = el.value;
+        if (k === 'total' || k === 'paid' || k === 'vendor') { if (k !== 'vendor') F.tx = null; lookup(); }
+        if (el.tagName === 'SELECT' || el.type === 'date') draw(); else softDraw(); }; });
+    $$('[data-del]', m).forEach(b => b.onclick = () => { F.lines.splice(+b.dataset.del, 1); draw(); });
+    $$('input[name=ivTx]', m).forEach(r => r.onchange = () => { F.tx = r.value || null; draw(); });
+    $('#ivAdd').onclick = () => { const last = F.lines[F.lines.length - 1]; F.lines.push({d: last?.d || '', desc: '', sub: last?.sub || '', amt: ''}); draw(); $$('[data-k=desc]', m).pop()?.focus(); };
+    if ($('#ivFill')) $('#ivFill').onclick = () => { const l = F.lines[F.lines.length - 1], rest = num(F.total) - sum(F.lines.slice(0, -1).map(x => num(x.amt) || 0)); l.amt = rest.toFixed(2); draw(); };
+    $('#ivGo').onclick = save;
+    if ($('#ivDel')) $('#ivDel').onclick = async () => { if (!confirm(`Delete invoice #${inv0.invoice_no}? The bank payment keeps its current split.`)) return;
+      const {error} = await FDB.from('invoices').delete().eq('id', inv0.id); if (error) return toast(error.message); CTX.invoices = INV().filter(x => x.id !== inv0.id); closeAll(); render(); };
+    if (fk) { const el = fi != null ? m.querySelector(`[data-k="${fk}"][data-i="${fi}"]`) : m.querySelector(`[data-k="${fk}"]:not([data-i])`); if (el) { el.focus(); try { if (pos != null) el.setSelectionRange(pos, pos); } catch (_) {} } }
+  };
+  // typing shouldn't rebuild the form — just refresh the check and the button
+  const softDraw = () => { const st = m.querySelector('#ivAdd')?.parentElement?.lastElementChild; if (st) st.innerHTML = status(); const go = $('#ivGo'); if (go) go.disabled = !(totalOk() && F.no.trim() && !F.busy); };
+  async function save() {
+    if (!totalOk()) return toast('The lines need to add up to the total');
+    const vendor = F.vendor.trim() || 'Vendor', no = F.no.trim(), total = +num(F.total).toFixed(2);
+    if (INV().some(i => i.vendor === vendor && i.invoice_no === no && i.id !== inv0?.id)) return toast(`Invoice #${no} from ${vendor} already exists — edit that one instead`);
+    F.busy = true; draw(); LW.vendor = vendor;
+    try {
+      const ds = F.lines.map(l => l.d).filter(Boolean).sort(), rec = {household_id: CTX.HH, vendor, invoice_no: no, invoice_date: ds[0] || F.paid || null, paid_on: F.paid || null, total};
+      let id = inv0?.id;
+      if (id) { const {error} = await FDB.from('invoices').update(rec).eq('id', id); if (error) throw error; }
+      else { const {data, error} = await FDB.from('invoices').insert(rec).select('id').single(); if (error) throw error; id = data.id; }
+      { const {error} = await FDB.from('invoice_lines').delete().eq('invoice_id', id); if (error) throw error; }
+      const cid = catId(F.cat), recs = [];
+      for (const [k, l] of F.lines.entries()) { const sub = l.sub.trim(), sid = sub ? await subId(F.cat, sub) : null, c = classifyLine(l.desc);
+        if (sub && catOf(F.cat) && !catOf(F.cat).subs.includes(sub)) catOf(F.cat).subs.push(sub);
+        recs.push({household_id: CTX.HH, invoice_id: id, service_date: l.d || null, description: l.desc.trim(), amount: +num(l.amt).toFixed(2), category_id: cid, subcategory_id: sid, activity: c.act, turf: c.turf, sort_order: k}); }
+      { const {error} = await FDB.from('invoice_lines').insert(recs); if (error) throw error; }
+      // a changed payment link: untie the old one first
+      if (inv0?.transaction_id && inv0.transaction_id !== F.tx) { const {error} = await FDB.from('invoices').update({transaction_id: null}).eq('id', id); if (error) throw error; }
+      await lawnReloadInvoices();
+      const inv = INV().find(x => x.id === id), t = F.tx && F.cand?.find(c => c.id === F.tx);
+      closeAll();
+      if (t) await lawnTieAndSplit([inv, ...(t.shared ? INV().filter(i => i.transaction_id === t.id && i.id !== inv.id) : [])].map(i => ({inv: i, t})));
+      else if (F.tx && inv0?.transaction_id === F.tx) {   // still tied to the same payment: re-split with the new lines
+        const {data, error} = await FDB.from('transactions').select('id, posted_on, description, amount').eq('id', F.tx).single();
+        if (!error && Math.abs(-data.amount - total) < .005) await lawnTieAndSplit([{inv, t: data}]);
+        else { await FDB.from('invoices').update({transaction_id: null}).eq('id', id); inv.transaction_id = null; toast('Saved · the new total no longer matches its payment, so it was untied'); render(); }
+      } else { toast(`Saved invoice #${no}`); render(); }
+    } catch (e) { F.busy = false; draw(); toast('Couldn’t save: ' + e.message + (/invoice/.test(e.message) ? ' — run migration 1700' : '')); }
+  }
+  openLayer('modal'); draw(); if (F.total) lookup();
 }
