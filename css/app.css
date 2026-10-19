@@ -612,3 +612,15 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .inv-t .cell{width:96px}
 .srt{font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;font-weight:600;padding:0}
 .srt.on{color:var(--brand-500)}
+/* history grid: sticky account column, anchor month, variance columns pinned right */
+.grid-t .stick{position:sticky;left:0;z-index:2;background:var(--surface)}
+.grid-t .cell{min-width:84px;font-size:12px;padding:0 6px}
+.grid-t th.anc,.grid-t td.anc{background:color-mix(in srgb,var(--brand-500) 7%,var(--surface))}
+.grid-t .var-m,.grid-t .var-y{position:sticky;z-index:2;background:var(--surface);width:88px;min-width:88px;text-align:right}
+.grid-t .var-y{right:0}.grid-t .var-m{right:88px;border-left:2px solid var(--border-strong)}
+.grid-t th.var-h span{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--text-3)}
+.grid-t td.var-c b{display:block;font-size:12.5px;font-weight:600}.grid-t td.var-c i{display:block;font-style:normal;font-size:11px;opacity:.85}
+.table.grid-t tr.grp td.var-c{text-align:right;text-transform:none;letter-spacing:0}
+.grid-t td.pos{color:var(--pos)}.grid-t td.neg{color:var(--neg)}
+@media (max-width:860px){.grid-t .var-m,.grid-t .var-y{position:static}}
+.table.grid-t tr.grp td.pos{color:var(--pos)}.table.grid-t tr.grp td.neg{color:var(--neg)}
