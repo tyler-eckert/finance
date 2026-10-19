@@ -14,7 +14,7 @@ function valueAtM(a, m) { const lv = lastVal(a), yrs = Math.max(0, ymDiff(lastCh
 const equityAt = m => sum(ST.assets.filter(a => a.status === 'active').map(a => valueAtM(a, m) - (a.loan && loanById(a.loan) ? loanBal(loanById(a.loan), m) : 0)));
 const otherLoansAt = m => sum(ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id)).map(l => m <= NOW && !Object.keys(l.actual).length && m < l.start ? 0 : loanBal(l, m)));
 function collegeAt(m) {
-  return sum(DATA.kids.map(k => { const b0 = BS[k.key]?.[L] || 0, born = new Date(k.dob), y18 = born.getFullYear() + 18 + (born.getMonth() >= 8 ? 1 : 0), start = `${y18}-08`, r = .045 / 12;
+  return sum(DATA.kids.map(k => { const b0 = BS[k.key]?.[L] || 0, y18 = collegeYear(k), start = `${y18}-08`, r = .045 / 12;
     const grow = n => b0 * Math.pow(1 + r, n) + DATA.assume.college529Monthly * ((Math.pow(1 + r, n) - 1) / r);
     if (m < start) return grow(Math.max(0, ymDiff(LASTM, m)));
     return grow(Math.max(0, ymDiff(LASTM, start))) * Math.max(0, 1 - ymDiff(start, m) / 48); }));

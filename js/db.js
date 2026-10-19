@@ -13,6 +13,9 @@ const isUuid = v => typeof v === 'string' && UUID.test(v);
 
 /* ---------- date helpers (no hard-coded years anywhere) ---------- */
 const ym = d => String(d).slice(0, 7);
+// college starts the August after a child turns 18 (Sept+ birthdays start a year later), unless the plan overrides it
+const autoCollegeYear = dob => +String(dob).slice(0, 4) + 18 + (+String(dob).slice(5, 7) >= 9 ? 1 : 0);
+const collegeYear = k => +(CTX.settings?.college_plan?.kids?.[k.name]?.startYear) || autoCollegeYear(k.dob);
 const ymPlus = (s, k) => { let [y, m] = s.split('-').map(Number); m += k; y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1; return `${y}-${String(m).padStart(2, '0')}`; };
 const ymRange = (a, b) => { const o = []; for (let m = a; m <= b; m = ymPlus(m, 1)) o.push(m); return o; };
 const mStart = s => s + '-01';
