@@ -21,6 +21,7 @@ const TABS = ['overview', 'budget', 'tx', 'invest'];
 let CH = [], cur = 'overview';
 function render() {
   const p = PAGES.find(x => x.k === cur);
+  if (!$('#p-' + cur)) { const sec = document.createElement('section'); sec.className = 'page'; sec.id = 'p-' + cur; ($('.page')?.parentNode || document.querySelector('main') || document.body).appendChild(sec); }   // an older cached index.html may not have the newest page
   $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + cur));
   $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
   $('#pageTitle').textContent = p.n; $('#pageSub').textContent = p.sub();

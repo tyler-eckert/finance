@@ -105,6 +105,7 @@ sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) locat
 function loadApp() {
   const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/shell.js'];
   const v = CFG.version || '';
+  const css = document.querySelector('link[href^="css/app.css"]'); if (css && v && !css.href.includes('?v=' + v)) css.href = 'css/app.css?v=' + v;   // the stylesheet follows the app version too
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = f + (v ? '?v=' + v : ''); s.async = false;
     s.onload = res; s.onerror = () => rej(new Error('Could not load ' + f)); document.body.appendChild(s);
