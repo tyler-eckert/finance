@@ -127,6 +127,7 @@ function renderAdmin(pg) {
       ${IS_OWNER ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn" id="hhDef">Save my display & layout as household default</button></div>` : ''}
       ${CTX.household.settings?.ui ? `<button class="link" id="useDef" style="margin-top:10px">Use the household default</button>` : ''}</div>
 
+    ${automationCard()}
     <div class="card c-12"><div class="card-h"><div><h3>Phone bottom bar</h3><div class="sub">How far the tab bar sits above the bottom edge of the screen · Auto follows the phone's safe area (home indicator)</div></div>
       <div class="right"><button class="btn ${UI.mobile?.tabBottom == null ? 'active-f' : ''}" id="tbAuto">Auto</button></div></div>
       <div class="ctrl"><div><label>Distance from the bottom<b id="tbV">${UI.mobile?.tabBottom == null ? 'Auto' : UI.mobile.tabBottom + 'px'}</b></label><input type="range" id="tbR" min="0" max="60" step="1" value="${UI.mobile?.tabBottom ?? 24}"></div></div>
@@ -157,6 +158,7 @@ function renderAdmin(pg) {
   if ($('#hhDef')) $('#hhDef').onclick = async () => { const settings = {...(CTX.household.settings || {}), ui: {density: UI.density, layout: UI.layout}};
     const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
     if (error) return toast('Couldn’t save: ' + error.message); CTX.household.settings = settings; render(); toast('Saved as the household default for everyone without their own layout'); };
+  wireAutomation();
   if ($('#useDef')) $('#useDef').onclick = () => { const d = clone(CTX.household.settings.ui); UI.density = {...UI_DEFAULT.density, ...d.density}; UI.layout = d.layout || {}; applyDensity(); render(); toast('Using the household default'); };
   // phone bar
   $('#tbR').oninput = e => { (UI.mobile ||= {}).tabBottom = +e.target.value; $('#tbV').textContent = e.target.value + 'px'; applyDensity(); SYNC.schedule(); };

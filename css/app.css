@@ -627,3 +627,17 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .grid-t td.pos{color:var(--pos)}.grid-t td.neg{color:var(--neg)}
 @media (max-width:860px){.grid-t .vm1,.grid-t .vm2,.grid-t .vy1,.grid-t .vy2{position:static}}
 .table.grid-t tr.grp td.pos{color:var(--pos)}.table.grid-t tr.grp td.neg{color:var(--neg)}
+/* college: child filter chips, draws grid */
+.kchips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px}
+.kchip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.kchip.off{opacity:.45;text-decoration:line-through;background:transparent}
+.legend .sw.dash{background:transparent;border-top:2px dashed var(--text-2);height:0;border-radius:0;width:16px}
+.draw-t td,.draw-t th{white-space:nowrap;vertical-align:top}
+.draw-t .cell{min-width:78px}
+.draw-t tr.dim td:not(:first-child),.draw-t.dim td:not(:first-child){opacity:.45}
+.dsem{font-size:10.5px;color:var(--text-3);padding:0 8px 2px;text-align:right}
+.dbal{font-size:11px;color:var(--text-3);text-align:right;padding:2px 8px 0}.dbal.neg{color:var(--neg);font-weight:600}
+.draw-t .cell::placeholder{color:var(--text-3);opacity:1}
+.auto-t td{vertical-align:top}.auto-d{font-size:11.5px;line-height:1.45;max-width:520px;white-space:normal}.auto-d .neg{color:var(--neg)}
+#autoCard .chip{white-space:nowrap}#autoCard .chip svg{width:12px;height:12px;vertical-align:-1px}
+.auto-t td,.auto-t th{text-align:left}.auto-t td:nth-child(3){white-space:nowrap}
