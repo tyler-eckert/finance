@@ -777,3 +777,8 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 }
 
 .iv-new{display:flex;gap:4px;align-items:center}.iv-new .in{flex:1}
+
+.dt-w{position:relative;display:flex;align-items:center}.dt-w .dt{width:100%;padding-right:34px}.dt.bad{border-color:var(--neg);box-shadow:0 0 0 3px color-mix(in srgb,var(--neg) 15%,transparent)}
+.dt-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--text-3);padding:4px;cursor:pointer;display:flex}.dt-btn svg{width:16px;height:16px}.dt-btn:hover{color:var(--text)}
+.dt-pick{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+.btn:disabled{opacity:.45}

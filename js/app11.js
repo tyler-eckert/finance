@@ -289,10 +289,10 @@ function openInvoiceForm(inv0) {
         <div><label>Vendor</label><input class="in" data-k="vendor" value="${esc(F.vendor)}"></div>
         <div><label>Invoice #</label><input class="in" data-k="no" value="${esc(F.no)}" placeholder="5952"></div>
         <div><label>Invoice total</label><input class="in num" data-k="total" value="${esc(F.total)}" placeholder="$0.00" inputmode="decimal"></div>
-        <div><label>Paid on</label><input class="in" type="date" data-k="paid" value="${F.paid}"></div>
+        <div><label>Paid on</label>${dtField('paid', null, F.paid)}</div>
         <div><label>Category</label><select class="in" data-k="cat">${catOptions(F.cat)}</select></div></div>
       <div class="scroll-x" style="margin-top:12px"><table class="table inv-f"><tr><th>Service date</th><th>Description</th><th>Sub-category</th><th>Amount</th><th></th></tr>
-        ${F.lines.map((l, i) => `<tr><td><input class="in" type="date" data-k="d" data-i="${i}" value="${l.d}"></td><td><input class="in" data-k="desc" data-i="${i}" value="${esc(l.desc)}" placeholder="Bermuda Program: Round 3 - Fertilization"></td>
+        ${F.lines.map((l, i) => `<tr><td>${dtField('d', i, l.d)}</td><td><input class="in" data-k="desc" data-i="${i}" value="${esc(l.desc)}" placeholder="Bermuda Program: Round 3 - Fertilization"></td>
           <td>${l.newSub ? `<div class="iv-new"><input class="in" data-k="subNew" data-i="${i}" value="${esc(l.sub)}" placeholder="New sub-category name"><button class="mini-btn" data-subok="${i}" title="Use this name">${icon('check')}</button><button class="mini-btn" data-subx="${i}" title="Back to the list">${icon('close')}</button></div>`
             : `<select class="in" data-k="sub" data-i="${i}"><option value="">— none —</option>${subList(l.sub).map(x => `<option ${x === l.sub ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__new">+ New sub-category…</option></select>`}</td><td><input class="in num" data-k="amt" data-i="${i}" value="${esc(l.amt)}" placeholder="0.00" inputmode="decimal"></td>
           <td>${F.lines.length > 1 ? `<button class="mini-btn" data-del="${i}" title="Remove line">${icon('close')}</button>` : ''}</td></tr>`).join('')}</table></div>
@@ -305,9 +305,20 @@ function openInvoiceForm(inv0) {
       const k = el.dataset.k, i = el.dataset.i, set = () => { if (k === 'subNew') F.lines[+i].sub = el.value; else if (i != null) F.lines[+i][k] = el.value; else F[k] = el.value; };
       if (el.tagName === 'SELECT') { el.onchange = () => { if (k === 'sub' && el.value === '__new') { F.lines[+i].newSub = true; F.lines[+i].sub = ''; draw(); m.querySelector(`[data-k="subNew"][data-i="${i}"]`)?.focus(); return; }
         set(); if (k === 'cat') F.lines.forEach(l => { if (!subList().includes(l.sub)) l.sub = ''; }); if (k === 'cat') draw(); else softDraw(); }; return; }
-      el.oninput = () => { set(); softDraw(); if (k === 'total') { F.tx = null; lookup(); } };
+      if (!el.classList.contains('dt')) el.oninput = () => { set(); softDraw(); if (k === 'total') { F.tx = null; lookup(); } };
       // dates: wait until the date is complete (typing a year fires partial values)
-      if (el.type === 'date' || k === 'vendor') el.onchange = el.onblur = () => { set(); softDraw(); if (k === 'paid' || k === 'vendor') { if (k === 'paid') F.tx = null; lookup(); } };
+      if (k === 'vendor') el.onchange = () => { set(); softDraw(); lookup(); };
+      // dates are typed as text (10/5/2026, 10/5, 100526 …) and read only when you leave the box
+      if (el.classList.contains('dt')) { el.oninput = () => el.classList.remove('bad');
+        const commit = () => { const ref = (k === 'd' ? F.paid : F.lines.find(l => l.d)?.d) || CTX.TODAY, iso = parseDT(el.value, ref);
+          if (el.value.trim() && !iso) { el.classList.add('bad'); return; }
+          el.value = iso ? fmtDT(iso) : ''; el.classList.remove('bad');
+          if (k === 'paid') { if (iso !== F.paid) { F.paid = iso || ''; F.tx = null; lookup(); } } else F.lines[+i].d = iso || '';
+          softDraw(); };
+        el.onblur = commit; el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } };
+        const pk = el.parentElement.querySelector('.dt-pick'), btn = el.parentElement.querySelector('.dt-btn');
+        if (pk && btn) { btn.onclick = () => { pk.value = parseDT(el.value, CTX.TODAY) || ''; try { pk.showPicker(); } catch (_) { pk.focus(); pk.click(); } };
+          pk.onchange = () => { if (pk.value) { el.value = fmtDT(pk.value); commit(); } }; } }
       if (k === 'subNew') el.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); m.querySelector(`[data-subok="${i}"]`).click(); } };
     });
     $$('[data-subok]', m).forEach(b => b.onclick = () => { const l = F.lines[+b.dataset.subok]; l.sub = l.sub.trim(); l.newSub = false; draw(); });
@@ -357,3 +368,19 @@ function openInvoiceForm(inv0) {
   }
   openLayer('modal'); draw(); if (F.total) lookup();
 }
+
+/* typed dates: forgiving text entry instead of the browser's segmented date box */
+const fmtDT = iso => iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : '';
+function parseDT(txt, ref) {
+  const t = String(txt || '').trim(); if (!t) return null;
+  let y, mo, d, m;
+  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) [, y, mo, d] = m;
+  else if ((m = t.match(/^(\d{1,2})[\/.\-\s](\d{1,2})(?:[\/.\-\s](\d{2}|\d{4}))?$/))) [, mo, d, y] = m;
+  else if ((m = t.match(/^(\d{2})(\d{2})(\d{2}|\d{4})?$/))) [, mo, d, y] = m;
+  else return null;
+  const ry = +(ref || CTX.TODAY).slice(0, 4);
+  y = y == null ? ry : +y < 100 ? 2000 + +y : +y; mo = +mo; d = +d;
+  const dt = new Date(y, mo - 1, d); if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d || y < 2000 || y > 2100) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+const dtField = (k, i, iso) => `<div class="dt-w"><input class="in dt" data-k="${k}"${i != null ? ` data-i="${i}"` : ''} value="${fmtDT(iso)}" placeholder="mm/dd/yyyy" inputmode="numeric" autocomplete="off"><button type="button" class="dt-btn" tabindex="-1" title="Pick a date">${icon('cal')}</button><input type="date" class="dt-pick" tabindex="-1" aria-hidden="true"></div>`;
