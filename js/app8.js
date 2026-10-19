@@ -247,11 +247,11 @@ function openActivity(parent, i) {
     modal.classList.add('wide');
     const head = mode === 'activity' ? `<tr><th>Account</th>${INV_F.map(([, l]) => `<th>${l}</th>`).join('')}<th>Ending</th></tr>` : `<tr><th>Account</th><th>Last month</th><th>${MON[+m.slice(5) - 1]} ending balance</th><th>Change</th></tr>`;
     const row = a => { const key = dk(a), r = draft[key], prev = prevEnd(key, m), e = endOf(r);
-      const nm = `<td><input class="in sm" data-nick="${key}" value="${esc(a.nickname || '')}" placeholder="Nickname" style="min-width:130px"><div class="muted" style="font-size:11px;margin-top:2px">${a.last4 ? '••' + esc(a.last4) : '&nbsp;'}</div></td>`;
-      return mode === 'activity' ? `<tr data-key="${key}">${nm}${INV_F.map(([k]) => `<td><input class="cell num" data-f="${k}" value="${nf(r[k])}" placeholder="0"></td>`).join('')}<td class="num"><b>${money(e, 2)}</b></td></tr>`
-        : `<tr data-key="${key}">${nm}<td class="num muted">${prev ? money(prev, 2) : '—'}</td><td><input class="cell num" data-f="end" value="${nf(r.end ?? (draft[key]._set ? e : ''))}" placeholder="${prev ? Math.round(prev).toLocaleString() : '0'}" style="width:140px"></td><td class="num ${e - prev >= 0 ? 'pos' : 'neg'}">${(draft[key]._set || ST.inv[key]?.[m]) && prev ? (e - prev >= 0 ? '+' : '−') + money(Math.abs(e - prev), 2).replace('−', '') : ''}</td></tr>`; };
-    const foot = mode === 'activity' ? `<tr class="tot"><td>Total</td>${INV_F.map(([k]) => `<td class="num">${money(tot[k])}</td>`).join('')}<td class="num">${money(totEnd, 2)}</td></tr>`
-      : `<tr class="tot"><td>Total</td><td class="num muted">${money(sum(ks.map(a => prevEnd(dk(a), m))), 2)}</td><td class="num">${money(totEnd, 2)}</td><td></td></tr>`;
+      const nm = `<td><input class="in sm" tabindex="-1" data-nick="${key}" value="${esc(a.nickname || '')}" placeholder="Nickname" style="min-width:130px"><div class="muted" style="font-size:11px;margin-top:2px">${a.last4 ? '••' + esc(a.last4) : '&nbsp;'}</div></td>`;
+      return mode === 'activity' ? `<tr data-key="${key}">${nm}${INV_F.map(([k]) => `<td><input class="cell num" data-f="${k}" value="${nf(r[k])}" placeholder="0"></td>`).join('')}<td class="num" data-end><b>${money(e, 2)}</b></td></tr>`
+        : `<tr data-key="${key}">${nm}<td class="num muted">${prev ? money(prev, 2) : '—'}</td><td><input class="cell num" data-f="end" value="${nf(r.end ?? (draft[key]._set ? e : ''))}" placeholder="${prev ? Math.round(prev).toLocaleString() : '0'}" style="width:140px"></td><td data-chg class="num ${e - prev >= 0 ? 'pos' : 'neg'}">${(draft[key]._set || ST.inv[key]?.[m]) && prev ? (e - prev >= 0 ? '+' : '−') + money(Math.abs(e - prev), 2).replace('−', '') : ''}</td></tr>`; };
+    const foot = mode === 'activity' ? `<tr class="tot"><td>Total</td>${INV_F.map(([k]) => `<td class="num" data-tot="${k}">${money(tot[k])}</td>`).join('')}<td class="num" data-tot="end">${money(totEnd, 2)}</td></tr>`
+      : `<tr class="tot"><td>Total</td><td class="num muted">${money(sum(ks.map(a => prevEnd(dk(a), m))), 2)}</td><td class="num" data-tot="end">${money(totEnd, 2)}</td><td></td></tr>`;
     modal.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${esc(parent.name)} · ${mLabel(m)}</h2><p class="muted" style="font-size:12.5px">${mode === 'activity' ? 'Enter each account’s activity with its sign (withdrawals, fees and losses negative). Ending = the sum of the row.' : 'Enter each account’s month-end balance.'} ${esc(parent.name)} becomes the total of the accounts below.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
     <div class="seg" id="actMode" style="margin-bottom:12px"><button data-m="balance" class="${mode === 'balance' ? 'on' : ''}">Balances only</button><button data-m="activity" class="${mode === 'activity' ? 'on' : ''}">Full activity</button></div>
     ${ks.length ? `<div class="scroll-x"><table class="table inv-t">${head}${ks.map(row).join('')}${foot}</table></div>` : `<p class="muted" style="padding:10px 0">No underlying accounts yet. Add each account that makes up ${esc(parent.name)} below; from then on its balance is their total.</p>`}
@@ -259,15 +259,18 @@ function openActivity(parent, i) {
       ${mode === 'activity' && ks.length ? `<button class="btn" id="nkCarry" style="height:30px;margin-left:auto">Starting = last month's ending</button>` : ''}</div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="actGo" ${ks.length ? '' : 'disabled style="opacity:.45"'}>Save ${mLabel(m)}</button></div>`;
     $$('#actMode button', modal).forEach(b => b.onclick = () => { mode = UI.subMode[parent.id] = b.dataset.m; draw(); });
+    // recalc endings and totals without re-rendering, so the cursor and Tab order stay where the browser put them
+    const refresh = () => { const ks2 = kids(), ends = ks2.map(a => endOf(draft[dk(a)]));
+      ks2.forEach((a, k) => { const tr = $(`tr[data-key="${dk(a)}"]`, modal); if (!tr) return; const prev = prevEnd(dk(a), m), e = ends[k];
+        const ec = $('[data-end]', tr); if (ec) ec.innerHTML = `<b>${money(e, 2)}</b>`;
+        const cc = $('[data-chg]', tr); if (cc) { cc.className = 'num ' + (e - prev >= 0 ? 'pos' : 'neg'); cc.textContent = (draft[dk(a)]._set || ST.inv[dk(a)]?.[m]) && prev ? (e - prev >= 0 ? '+' : '−') + money(Math.abs(e - prev), 2).replace('−', '') : ''; } });
+      INV_F.forEach(([k]) => { const c = $(`[data-tot="${k}"]`, modal); if (c) c.textContent = money(sum(ks2.map(a => +draft[dk(a)]?.[k] || 0))); });
+      const te = $('[data-tot="end"]', modal); if (te) te.textContent = money(sum(ends), 2); };
     $$('tr[data-key]', modal).forEach(tr => { const r = draft[tr.dataset.key];
       $$('[data-f]', tr).forEach(inp => { inp.onfocus = () => inp.select(); inp.onchange = () => { const raw = inp.value.replace(/[$,\s]/g, ''); if (inp.dataset.f === 'end') { r.end = raw === '' ? undefined : +raw || 0; r._set = raw !== ''; } else r[inp.dataset.f] = +raw || 0;
-        const at = inp.dataset.f, key = tr.dataset.key, mv = inp._mv; inp._mv = null; draw();
-        const all = $$('tr[data-key] [data-f]', modal), cur = all.findIndex(x => x.dataset.f === at && x.closest('tr').dataset.key === key);
-        if (mv === 'down') { const col = $$(`[data-f="${at}"]`, modal), k = col.findIndex(x => x.closest('tr').dataset.key === key); (col[k + 1] || col[k])?.focus(); }
-        else if (mv === 'back') (all[cur - 1] || all[cur])?.focus();
-        else if (mv === 'next') (all[cur + 1] || all[cur])?.focus(); };
-        inp.onkeydown = e => { inp._mv = e.key === 'Tab' ? (e.shiftKey ? 'back' : 'next') : e.key === 'Enter' ? 'down' : null;
-          if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } }; }); });
+        refresh(); };
+        inp.onkeydown = e => { if (e.key !== 'Enter') return; e.preventDefault(); inp.onchange();       // Enter = same column, next account
+          const col = $$(`[data-f="${inp.dataset.f}"]`, modal), k = col.indexOf(inp); (col[k + 1] || inp).focus(); }; }); });
     $$('[data-nick]', modal).forEach(inp => inp.onchange = () => { const a = ST.subAccts.find(x => (x.id || x.tmp) === inp.dataset.nick); a.nickname = inp.value.trim(); });
     $('#nkAdd').onclick = () => { const l4 = $('#nkL4').value.replace(/\D/g, '').slice(-4), nn = $('#nkNm').value.trim(); if (!l4 && !nn) return $('#nkNm').focus();
       if (kids().some(a => (l4 && a.last4 === l4) || (nn && (a.nickname || '').toLowerCase() === nn.toLowerCase()))) return toast('Already added');
@@ -287,4 +290,73 @@ function openActivity(parent, i) {
     };
   };
   draw(); openLayer('modal');
+}
+
+/* =====================================================================
+   Investments · deposits vs. market gain
+   Splits each month's balance change into money you put in (deposits, withdrawals,
+   transfers) and true gain (market change + dividends − fees).
+   Source per account-month: entered activity ("Full activity") when it has any flows,
+   otherwise the plan's contribution estimate (401(k) + match, 529 monthly), otherwise none.
+   ===================================================================== */
+let FLOW_R = '12m';
+function flowSplit(range = FLOW_R) {
+  const months = BS.months, j1 = L;
+  const j0 = range === 'ytd' ? Math.max(0, months.indexOf(`${months[j1].slice(0, 4)}-01`) - 1) : range === 'all' ? 0 : Math.max(0, j1 - (range === '3y' ? 36 : 12));
+  const A = DATA.assume, contribMo = ((A.k401max || 0) + (A.employer || 0)) / 12, mo529 = A.college529Monthly || 0;
+  const list = CTX.invAccts.filter(a => a.group !== 'College').map(a => ({id: a.id, k: a.k, n: a.n, group: a.group}))
+    .concat(DATA.kids.map(k => ({id: k.key.split(':')[1], k: k.key, n: k.name + ' 529', group: 'College'})));
+  const raw = id => { const b = ST.bal.accounts.find(x => x.id === id); return b ? m => { const j = ST.bal.months.indexOf(m); return j < 0 ? undefined : b.v[j]; } : () => undefined; };
+  const isFlow = r => r && ['dep', 'wd', 'xfer', 'div', 'fee'].some(f => +r[f]);
+  const monthly = months.slice(j0 + 1, j1 + 1).map(m => ({m, dep: 0, gain: 0}));
+  const accts = list.map(a => {
+    const s = BS[a.k] || [], rv = raw(a.id), est = a.k === CTX.contribKey ? contribMo : a.group === 'College' ? mo529 : 0;
+    const o = {...a, start: s[j0] || 0, end: s[j1] || 0, dep: 0, gain: 0, nAct: 0, nEst: 0, nNone: 0, nInf: 0, est, g: 1};
+    for (let j = j0 + 1; j <= j1; j++) {
+      if (!s[j - 1]) { if (s[j]) o.start += s[j]; continue; }   // first tracked balance is a starting point, not a gain
+      const m = months[j], chg = (s[j] || 0) - (s[j - 1] || 0), r = ST.inv[a.id]?.[m];
+      let dep;
+      if (isFlow(r)) { dep = (+r.dep || 0) + (+r.wd || 0) + (+r.xfer || 0); o.nAct++; }
+      else if (est && rv(m) != null && (s[j - 1] || s[j])) { dep = est; o.nEst++; }
+      else { dep = 0; if (chg) o.nNone++; }
+      // no statement: a jump of more than 15% in a month (and over $2k) is a deposit / rollover / withdrawal, not the market
+      if (!isFlow(r) && Math.abs(chg - dep) > Math.max(2000, .15 * s[j - 1])) { dep = chg; o.nInf++; }
+      o.dep += dep; o.gain += chg - dep; const mm = monthly[j - j0 - 1]; mm.dep += dep; mm.gain += chg - dep; mm.base = (mm.base || 0) + (s[j - 1] || 0) + dep / 2;
+      const base = (s[j - 1] || 0) + dep / 2; if (base > 0) o.g *= 1 + (chg - dep) / base;
+    }
+    o.ret = o.g - 1;   // time-weighted: each month's gain ÷ (prior balance + half that month's deposits), chained
+    return o;
+  }).filter(o => o.start || o.end);
+  const T = {start: sum(accts.map(a => a.start)), end: sum(accts.map(a => a.end)), dep: sum(accts.map(a => a.dep)), gain: sum(accts.map(a => a.gain))};
+  T.ret = monthly.reduce((g, r) => r.base > 0 ? g * (1 + r.gain / r.base) : g, 1) - 1;
+  return {j0, j1, accts, T, monthly, contribMo, mo529};
+}
+function flowCard() {
+  if (!CTX.invAccts.length) return '';
+  const F = flowSplit(), sg = v => (v >= 0 ? '+' : '−') + short(Math.abs(v));
+  const src = a => a.nAct && !a.nEst && !a.nNone ? '<span class="chip pos">Statements</span>'
+    : a.nAct ? `<span class="chip">Statements ${a.nAct} mo · ${a.nEst ? 'est.' : 'balance-only'} ${a.nEst + a.nNone} mo</span>`
+    : a.nEst ? `<span class="chip">Estimated · ${short(a.est)}/mo</span>` : '<span class="chip neg" title="No activity entered, so any deposits are counted as gain">Balances only</span>';
+  const per = `${mLabel(BS.months[F.j0])} → ${mLabel(BS.months[F.j1])}`;
+  return `<div class="card c-12" id="flowCard"><div class="card-h"><div><h3>Deposits vs. market gain</h3><div class="sub">Where the change in your invested balances came from · ${per}</div></div>
+    <div class="right"><div class="seg" id="flowR">${[['12m', '12 mo'], ['ytd', 'YTD'], ['3y', '3 yr'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${FLOW_R === k ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
+    <div class="stat-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px">
+      <div class="mini"><div class="l">Starting${F.accts.some(a => !BS[a.k][F.j0]) ? ' · or first tracked' : ''}</div><div class="v num">${short(F.T.start)}</div></div>
+      <div class="mini"><div class="l">Net deposits</div><div class="v num">${sg(F.T.dep)}</div></div>
+      <div class="mini"><div class="l">Market gain</div><div class="v num ${F.T.gain >= 0 ? 'pos' : 'neg'}">${sg(F.T.gain)}</div></div>
+      <div class="mini"><div class="l">Ending</div><div class="v num">${short(F.T.end)}</div></div>
+      <div class="mini"><div class="l">Return · time-weighted</div><div class="v num ${F.T.ret >= 0 ? 'pos' : 'neg'}">${pct(F.T.ret)}</div></div></div>
+    <div class="chart" id="flowChart"></div><div class="legend"><span><i class="sw" style="background:var(--s2)"></i>Net deposits</span><span><i class="sw" style="background:var(--s1)"></i>Market gain</span></div>
+    <div class="scroll-x" style="margin-top:10px"><table class="table cmp"><tr><th>Account</th><th>Starting</th><th>Net deposits</th><th>Market gain</th><th>Ending</th><th>Return</th><th>Split from</th></tr>
+    ${F.accts.map(a => `<tr><td class="nowrap">${esc(a.n)}</td><td>${short(a.start)}</td><td>${sg(a.dep)}</td><td class="${a.gain >= 0 ? 'pos' : 'neg'}">${sg(a.gain)}</td><td>${short(a.end)}</td><td class="${a.ret >= 0 ? 'pos' : 'neg'}">${pct(a.ret)}</td><td>${src(a)}${a.nInf ? ` <span class="chip" title="Months where the balance jumped more than 15% with no activity entered — counted as money moved in or out">${a.nInf} jump${a.nInf > 1 ? 's' : ''} as deposits</span>` : ''}</td></tr>`).join('')}
+    <tr class="tot"><td>Total</td><td>${short(F.T.start)}</td><td>${sg(F.T.dep)}</td><td>${sg(F.T.gain)}</td><td>${short(F.T.end)}</td><td>${pct(F.T.ret)}</td><td></td></tr></table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Statements = months entered with Full activity on Balances. Estimated uses your plan settings (${short(F.contribMo)}/mo 401(k) incl. match, ${short(F.mo529)}/mo per 529). Balances only = no deposit data, so the change counts as gain — except a jump of more than 15% in one month, which is treated as money moved in or out. Enter Full activity on Balances for an exact split. Return is time-weighted, so deposits and withdrawals don’t distort it.</p></div>`;
+}
+function drawFlows() {
+  const el = $('#flowChart'); if (!el) return;
+  $$('#flowR button').forEach(b => b.onclick = () => { FLOW_R = b.dataset.k; render(); });
+  const F = flowSplit();
+  barChart(el, {labels: F.monthly.map(r => r.m), series: [{name: 'Net deposits', values: F.monthly.map(r => r.dep), color: 'var(--s2)'}, {name: 'Market gain', values: F.monthly.map(r => r.gain), colorFn: v => v >= 0 ? 'var(--s1)' : 'var(--neg)'}],
+    height: 240, xGap: 56, xFmt: mShort, tipTitle: mLabel, tipFmt: v => (v >= 0 ? '+' : '−') + money(Math.abs(v)),
+    tipExtra: i => tipRow(null, 'Total change', (F.monthly[i].dep + F.monthly[i].gain >= 0 ? '+' : '−') + money(Math.abs(F.monthly[i].dep + F.monthly[i].gain)))});
 }

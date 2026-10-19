@@ -412,6 +412,7 @@ function renderInvest(pg) {
     <div class="card c-4"><div class="card-h"><div><h3>Accounts</h3><div class="sub">Last 24 months</div></div></div>
       <div class="list">${accts.map(a => { const v = BS[a.k].slice(-24); const ch = v.length > 12 && v[v.length - 13] ? (v[v.length - 1] - v[v.length - 13]) / v[v.length - 13] : 0; return `<div class="li"><div style="min-width:0"><div class="nm">${esc(a.n)}</div><div class="ds">${a.d}</div></div><div style="margin-left:auto">${spark(v, a.c, 64, 26, false)}</div><div class="amt num" style="margin-left:12px;min-width:72px">${short(BS[a.k][L])}<div style="font-size:11px;font-weight:600" class="${ch >= 0 ? 'pos' : 'neg'}">${pct(ch, 0)} 1y</div></div></div>`; }).join('')}</div></div>
 
+    ${flowCard()}
     ${accountProjection()}
     ${SCH.length ? benchCard() : ''}
     ${SCH.length ? `<div class="card c-12"><div class="card-h"><div><h3>Monthly gain / loss</h3><div class="sub">Market change + dividends − fees, excluding deposits & withdrawals</div></div></div><div class="chart" id="retChart"></div></div>` : ''}
@@ -422,6 +423,7 @@ function renderInvest(pg) {
   $$('#pmSeg button').forEach(b => b.onclick = () => { PV.pm = b.dataset.k; render(); }); wirePlanControls('pf');
   if (!SCH.length) PV.pm = 'total';
   CH.push(() => drawCollege(kids));
+  CH.push(drawFlows);
   const i0 = Math.max(0, L - 60);
   CH.push(() => PV.pm === 'total' ? histPlanChart($('#schChart'), {hLabels: BS.months.slice(i0), hVals: BS.months.slice(i0).map((m, k) => investable(i0 + k)), kind: 'inv', name: 'Investable', height: 300, events: []}) : lineChart($('#schChart'), {labels, series: [{name: 'Balance', values: vals, color: 'var(--s1)', area: true}], markers: mk, height: 250, xFmt: (lb, i, e) => i % e === 0 ? mShort(lb) : null, tipTitle: mLabel,
       tipExtra: i => { const r = SCH[i]; return (r.dep ? tipRow('var(--s2)', 'Deposit', short(r.dep)) : '') + (r.wd ? tipRow('var(--s5)', 'Withdrawal', short(r.wd)) : '') + tipRow(null, 'Gain', short(r.div + r.mkt + r.fee)); }}),
