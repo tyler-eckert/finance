@@ -145,7 +145,7 @@ function renderBudget(pg) {
   <div class="toolbar">${seg}
     <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}</option>`).join('')}</select>
     <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button><button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
-  ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
+  ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
   <div class="grid g-12">
     ${kpi('Income', inc, true)}${kpi('Spending', exp, false)}${kpi('Net', net, true)}
     <div class="card c-7"><div class="card-h"><div><h3>Biggest variances</h3><div class="sub">Green = under budget · red = over · click to drill in</div></div></div><div class="chart" id="varChart"></div></div>
@@ -213,7 +213,7 @@ function openCatTx(cat, sub, m0, m1) {
     <h4 class="h4" style="margin-top:18px">Transactions · ${m0 === m1 ? MON[m0 - 1] : 'Jan – ' + MON[m1 - 1]} ${y}</h4><div class="list" id="catList">${list.slice(0, 80).map(t => txLi(t, amtOf(t))).join('') || '<p class="muted">None in this period.</p>'}</div>`;
   openLayer('drawer');
   $$('#catList .li').forEach(li => li.onclick = () => openTxEdit(li.dataset.id));
-  $$('[data-vend]', d).forEach(li => li.onclick = () => { TXF.vendor = li.dataset.vend; TXF.cat = cat; TXF.month = 'm12'; go('tx'); });
+  $$('[data-vend]', d).forEach(li => li.onclick = () => { TXF.vendor = li.dataset.vend; TXF.cat = cat; TXF.sub = '*'; TXF.month = 'm12'; go('tx'); });
   requestAnimationFrame(() => {
     barChart($('#catChart'), {labels: m12.map(mShort), series: [{name: sub ?? cat, values: v12, color: 'var(--s2)'}], height: 170, padL: 44, xGap: 40, tipTitle: (l, i) => mLabel(m12[i] || m12[0])});
     barChart($('#catYrChart'), {labels: yrs.map(v => v === CY ? v + ' YTD' : String(v)), series: [{name: sub ?? cat, values: yv, color: 'var(--s1)', hatchFn: i => yrs[i] === CY}], height: 170, padL: 44, xGap: 50,
@@ -225,7 +225,7 @@ const txLi = (t, amt = t.amt) => `<div class="li click" data-id="${t.id}"><div s
 /* =====================================================================
    TRANSACTIONS
    ===================================================================== */
-const TXF = {q: '', acct: '', cat: '*', month: '', unc: false, lim: 150, vendor: '', dir: ''};
+const TXF = {q: '', acct: '', cat: '*', sub: '*', month: '', unc: false, lim: 150, vendor: '', dir: ''};
 const todayYM = () => CTX.TODAY.slice(0, 7);
 function txRange(p) {   // period → [from, to] inclusive 'YYYY-MM-DD'
   const t = CTX.TODAY, ymT = todayYM(), y = +t.slice(0, 4);
@@ -241,7 +241,7 @@ function txFiltered() {
   const rg = txRange(TXF.month);
   return ST.tx.filter(t => (!TXF.acct || t.acct === TXF.acct) && (!rg || (t.d >= rg[0] && t.d <= rg[1])) && (!TXF.unc || (!t.cat && !t.splits)) &&
     (!TXF.dir || (TXF.dir === 'out' ? t.amt < 0 : t.amt > 0)) && (!TXF.vendor || vendorName(vendorKey(t.desc)) === TXF.vendor) &&
-    (TXF.cat === '*' || pieces(t).some(p => (p.cat || '') === TXF.cat)) && (!q || t.desc.toUpperCase().includes(q) || (t.note || '').toUpperCase().includes(q) || vendorName(vendorKey(t.desc)).toUpperCase().includes(q)));
+    (TXF.cat === '*' || pieces(t).some(p => (p.cat || '') === TXF.cat && (TXF.sub === '*' || (TXF.sub === '__none' ? !p.sub : p.sub === TXF.sub)))) && (!q || t.desc.toUpperCase().includes(q) || (t.note || '').toUpperCase().includes(q) || vendorName(vendorKey(t.desc)).toUpperCase().includes(q)));
 }
 function renderTx(pg) {
   const months = [...new Set(ST.tx.map(t => t.d.slice(0, 7)))].sort().reverse();
@@ -254,6 +254,9 @@ function renderTx(pg) {
     <select class="in sel" id="txDir"><option value="">In & out</option><option value="out" ${TXF.dir === 'out' ? 'selected' : ''}>Money out</option><option value="in" ${TXF.dir === 'in' ? 'selected' : ''}>Money in</option></select>
     ${TXF.vendor ? `<button class="chip pos" id="txVend" title="Clear vendor filter">${esc(TXF.vendor)} ✕</button>` : ''}
     <select class="in sel" id="txCat">${catOptions(TXF.cat, {any: true})}</select>
+    ${TXF.cat && TXF.cat !== '*' ? (() => { const used = new Set(); ST.tx.forEach(t => pieces(t).forEach(p => { if ((p.cat || '') === TXF.cat && p.sub) used.add(p.sub); }));
+      const subs = (catOf(TXF.cat)?.subs || []).concat([...used].filter(x => !(catOf(TXF.cat)?.subs || []).includes(x)).sort());
+      return `<select class="in sel" id="txSub"><option value="*">Any sub-category</option>${subs.map(x => `<option ${TXF.sub === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__none" ${TXF.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>`; })() : ''}
     <label class="tgl"><input type="checkbox" id="txUnc" ${TXF.unc ? 'checked' : ''}> Uncategorized</label>
   </div>
   <div class="card" style="padding-top:8px">
@@ -276,7 +279,8 @@ function renderTx(pg) {
   $('#txMonth').onchange = e => { TXF.month = e.target.value; re(); };
   $('#txDir').onchange = e => { TXF.dir = e.target.value; re(); };
   if ($('#txVend')) $('#txVend').onclick = () => { TXF.vendor = ''; re(); };
-  $('#txCat').onchange = e => { TXF.cat = e.target.value; re(); };
+  $('#txCat').onchange = e => { TXF.cat = e.target.value; TXF.sub = '*'; re(); };
+  if ($('#txSub')) $('#txSub').onchange = e => { TXF.sub = e.target.value; re(); };
   $('#txUnc').onchange = e => { TXF.unc = e.target.checked; re(); };
   if ($('#txMore')) $('#txMore').onclick = () => { TXF.lim += 150; render(); };
   $$('.vlink', pg).forEach(b => b.onclick = e => { e.stopPropagation(); TXF.vendor = b.dataset.v; re(); });
