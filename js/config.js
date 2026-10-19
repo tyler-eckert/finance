@@ -4,5 +4,5 @@
 window.FIN_CONFIG = {
   supabaseUrl: 'https://sbloucgjyndaqnruxhxv.supabase.co',
   supabaseKey: 'sb_publishable_pyWZmZNwvqWpNapWOqaDAg_RmLfguVW',
-  version: '18',   // bump to bust browser caches after a deploy
+  version: '20',   // bump to bust browser caches after a deploy
 };

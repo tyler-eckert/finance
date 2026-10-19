@@ -40,6 +40,7 @@ const boot = document.getElementById('boot');
 const bootMsg = (html, busy) => { boot.querySelector('.boot-body').innerHTML = html; boot.classList.toggle('busy', !!busy); };
 function showLogin(err) {
   bootMsg(`<form id="loginF" class="login" autocomplete="on">
+    <img src="trust-logo.png" alt="" style="width:92px;display:block;margin:0 auto 10px">
     <h2>Sign in</h2><p class="muted">Your finances, private to your household.</p>
     ${err ? `<div class="login-err">${escH(err)}</div>` : ''}
     <label>Email<input class="in" type="email" id="lgE" autocomplete="username" required></label>
@@ -87,7 +88,7 @@ async function start() {
     const [{data: snap, error: e2}, ex] = await Promise.all([FDB.rpc('app_snapshot', {p_household: HH}), FDB.rpc('app_snapshot_extra', {p_household: HH})]);
     if (e2) throw e2;
     if (ex.error) console.warn('[fin] app_snapshot_extra unavailable — run migration 1200', ex.error.message);
-    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: [], statement_balances: [], notes: []}, ex.data || {}); snap.extraOk = !ex.error;
+    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: [], statement_balances: [], notes: [], invoices: [], lawn_activities: []}, ex.data || {}); snap.extraOk = !ex.error;
     SNAP = snap; console.info(`[fin] snapshot ${(JSON.stringify(snap).length / 1e6).toFixed(1)} MB in ${Math.round(performance.now() - t0)} ms`);
     buildData(snap);
     await loadApp();
@@ -102,7 +103,7 @@ async function signOut() { await sb.auth.signOut(); location.hash = ''; location
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/shell.js'];
+  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/shell.js'];
   const v = CFG.version || '';
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = f + (v ? '?v=' + v : ''); s.async = false;
@@ -341,6 +342,8 @@ function buildData(S) {
     importAccts: S.accounts.filter(a => a.imports_transactions && a.is_active).map(a => a.name)};
   CTX.market = S.market_series || []; CTX.auto = S.automation || [];
   CTX.notes = (S.notes || []).map(n => ({...n}));
+  CTX.invoices = (S.invoices || []).map(i => ({...i, total: +i.total, lines: (i.lines || []).map(l => ({...l, amount: +l.amount})).sort((a, b) => String(a.service_date).localeCompare(String(b.service_date)) || a.sort_order - b.sort_order)}));
+  CTX.lawnActs = (S.lawn_activities || []).map(a => ({...a, cost: a.cost == null ? null : +a.cost}));
   CTX.stmt = (S.statement_balances || []).map(([acct, m, v, asOf, complete]) => ({acct, m, v: +v, asOf, complete}));
   window.CTX = CTX; window.DATA = DATA; window.DATA2 = DATA2; window.DATA3 = DATA3; window.DATA4 = DATA4;
 }
@@ -457,7 +460,7 @@ const SYNC = {
   queue(fn) { this.hooks.push(fn); this.schedule(0); },
 };
 const RENDER_SILENT = () => { const r = window.render; r.keep = true; const s = SYNC.schedule; SYNC.schedule = () => {}; try { r(); } finally { SYNC.schedule = s; } };
-const prefsNow = () => ({excl: [...ST.excl].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
+const prefsNow = () => ({excl: [...ST.excl].sort(), exclSub: [...(ST.exclSub || [])].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
 const smartSave = s => ({enabled: !!s.enabled, cadence: s.cadence, autoAccept: s.autoAccept, basis: s.basis, condition: s.condition, vin: s.vin, miles: s.miles, annualMiles: s.annualMiles, address: s.address, zip: s.zip, off: [...(s.off || [])].sort()});
 
 const ORDER = ['cats', 'acct', 'sub', 'inv', 'valias', 'cash', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'taxw', 'plan', 'prefs'];

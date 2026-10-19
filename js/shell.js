@@ -1,7 +1,6 @@
 /* ================= shell / routing ================= */
 const PAGES = [
   {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
-  {k: 'summary', n: 'Summary', i: 'file', g: 'Analyze', sub: () => `The big picture for ${mLabel(lastFullMonth())} · in plain English`, r: renderSummary},
   {k: 'review', n: 'Year in review', i: 'cal', g: 'Analyze', sub: () => 'Recap, goals, notes and the annual deck', r: renderReview},
   {k: 'budget', n: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
   {k: 'invest', n: 'Investments', i: 'invest', g: 'Analyze', sub: () => 'Brokerage, retirement, HSA and 529s', r: renderInvest},
@@ -13,6 +12,7 @@ const PAGES = [
   {k: 'loans', n: 'Loans', i: 'bank', g: 'Manage', sub: () => 'Balances, payoff dates, amortization and what-ifs', r: renderLoans},
   {k: 'taxes', n: 'Taxes', i: 'file', g: 'Manage', sub: () => 'Estimated payments, refunds and projections · Federal, Oklahoma, New Mexico', r: renderTaxes},
   {k: 'assets', n: 'Assets', i: 'house', g: 'Manage', sub: () => 'Home, vehicles and other assets · values over time', r: renderAssets},
+  {k: 'lawn', n: 'Lawn care', i: 'leaf', g: 'Manage', sub: () => 'Invoices tied to the bank, service history and the year ahead', r: renderLawn},
   {k: 'builder', n: 'Budget plan', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
   {k: 'cats', n: 'Categories', i: 'tag', g: 'Manage', sub: () => 'Create, rename, merge and recategorize history', r: renderCats},
   {k: 'admin', n: IS_OWNER ? 'Admin' : 'Settings', i: 'gear', g: 'Manage', sub: () => IS_OWNER ? 'People and permissions, table density and page layout' : 'Table density and page layout', r: renderAdmin},
@@ -57,3 +57,10 @@ setTheme(CTX.prefs.theme || (matchMedia('(prefers-color-scheme: dark)').matches 
 let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => CH.forEach(f => f()), 120); });
 cur = (location.hash || '#overview').slice(1); if (!PAGES.find(p => p.k === cur)) cur = 'overview';
 render.keep = false; render();
+
+/* collapsible side menu (remembered on this device) */
+(() => { const KEY = 'fin.navMini', b = document.getElementById('sideCol'); if (!b) return;
+  const set = on => { document.body.classList.toggle('nav-mini', on); b.title = on ? 'Expand the menu' : 'Collapse the menu'; try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {} };
+  let on = false; try { on = localStorage.getItem(KEY) === '1'; } catch (_) {}
+  set(on); b.onclick = () => { set(!document.body.classList.contains('nav-mini')); if (typeof render === 'function') render(); };
+  $$('.nav-btn').forEach(x => x.title = x.textContent.trim()); })();
