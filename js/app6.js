@@ -53,7 +53,10 @@ function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [
   const series = [{name: name + ' · actual', values: actual, color: 'var(--s1)', area: !yrs}];
   if (yrs) series.push({name: 'Plan median · ' + sc.name, values: med, color: 'var(--s1)', dash: '6 5', width: 2});
   const vl = events.slice(); if (yrs) { vl.push({i: nH - 1, label: 'Today'}); const ri = labels.indexOf(`${YNOW + sc.p.retire - ageNow}-${LASTM.slice(5)}`); if (ri > 0) vl.push({i: ri, label: 'Retire ' + sc.p.retire}); }
-  lineChart(el, {labels, series, band: yrs ? {lo, hi, color: 'var(--s1)', name: 'Middle half of outcomes'} : null, height, vlines: vl, zero: kind !== 'nw' || true, xGap: 74,
+  const pe = yrs ? (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due > LASTM) : [];
+  const markers = pe.map((p, k) => { const i = labels.indexOf(p.due); return i < nH ? null : {i, s: 1, color: ['college_529', 'budget'].includes(p.fund) ? 'var(--text-3)' : 'var(--s5)', label: `${p.name} −${short(Math.abs(p.amount))}`, dy: (k % 2) * 13, r: 4.5}; }).filter(Boolean);
+  lineChart(el, {labels, series, band: yrs ? {lo, hi, color: 'var(--s1)', name: 'Middle half of outcomes'} : null, height, vlines: vl, markers,
+    tipExtra: i => pe.filter(p => p.due === labels[i]).map(p => tipRow('var(--s5)', p.name, '−' + money(Math.abs(p.amount)))).join(''), zero: kind !== 'nw' || true, xGap: 74,
     xFmt: (lb, i, e) => i % e === 0 ? (labels.length > 200 ? "'" + lb.slice(2, 4) : mShort(lb)) : null, tipTitle: (lb, i) => mLabel(lb) + (i >= nH ? ' · age ' + (ageNow + Math.round(ymDiff(CTX.TODAY.slice(0, 7), lb) / 12)) : '')});
 }
 function planLegend(name) {

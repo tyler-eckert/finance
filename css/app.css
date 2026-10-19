@@ -691,3 +691,9 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .ld-n .muted{font-size:12px;margin-top:2px}.ld-v .ds{font-size:12px;color:var(--text-2);margin-top:6px;line-height:1.45}.ld-x{font-size:12.5px;line-height:1.55}
 @media (max-width:860px){.ld{grid-template-columns:1fr;gap:6px}}
 .sh-t td{vertical-align:top}.sh-t .amt-in{min-width:0}
+.grid-t td.ind{padding-left:22px}
+.table.grid-t tr.grp td.gtot{text-align:right;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text);font-weight:700;padding-right:12px}
+.bva th.bgrp{text-align:center;border-bottom:1px solid var(--border-strong)}
+.bva .bh2 th{font-size:10.5px}
+.bva td.by,.bva th.by{border-left:2px solid var(--border-strong)}
+.bva .bh1 th.bgrp:nth-child(3){border-left:2px solid var(--border-strong)}

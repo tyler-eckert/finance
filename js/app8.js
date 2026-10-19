@@ -11,18 +11,21 @@ const vName = desc => vendorName(vendorKey(desc));
 /* =====================================================================
    VENDORS
    ===================================================================== */
-const VS = {q: '', dir: 'out', xfer: false, lim: 80, sort: 'l12'};
+const VS = {q: '', dir: 'out', xfer: false, lim: 80, sort: 'l12', cat: '*', sub: '*'};
 function vendorStats() {   // name → {months: {ym: amt}, n12, last, cats, keys}
   const since = CTX.SINCE.slice(0, 7), out = {};
-  const put = (name, k, m, amt, n, cat, d) => {
+  const put = (name, k, m, amt, n, cat, d, sub) => {
     if (!VS.xfer && cat === 'TTS') return;
+    if (VS.cat !== '*' && (cat || '') !== VS.cat) return;
+    if (VS.cat !== '*' && VS.sub !== '*' && (sub === undefined || (VS.sub === '__none' ? !!sub : sub !== VS.sub))) return;
     if (VS.dir === 'out' ? amt >= 0 : amt <= 0) return;
     const v = out[name] ||= {name, months: {}, cats: {}, keys: new Set(), n: {}, last: ''};
     v.months[m] = (v.months[m] || 0) + Math.abs(amt); v.n[m] = (v.n[m] || 0) + n; v.cats[cat || 'Uncategorized'] = (v.cats[cat || 'Uncategorized'] || 0) + Math.abs(amt);
     if (k) v.keys.add(k); if (d && d > v.last) v.last = d; else if (!d && m + '-28' > v.last) v.last = v.last || m + '-15';
   };
   (D2.vendorMonthly || []).forEach(r => { if (r.m < since) put(vendorName(r.k), r.k, r.m, r.amt, r.n, r.cat, null); });
-  ST.tx.forEach(t => { if (t.d.slice(0, 7) < since) return; const k = vendorKey(t.desc); put(vendorName(k), k, t.d.slice(0, 7), t.amt, 1, t.splits ? t.splits[0].cat : t.cat, t.d); });
+  ST.tx.forEach(t => { if (t.d.slice(0, 7) < since) return; const k = vendorKey(t.desc), nm = vendorName(k), m = t.d.slice(0, 7);
+    pieces(t).forEach((p, i) => put(nm, k, m, p.amt, i ? 0 : 1, p.cat, t.d, p.sub || '')); });   // splits count toward each of their categories
   return out;
 }
 function renderVendors(pg) {
@@ -36,13 +39,15 @@ function renderVendors(pg) {
   const th = (k, l) => `<th class="${k === 'name' ? '' : ''}"><button class="link srt ${VS.sort === k ? 'on' : ''}" data-s="${k}">${l}</button></th>`;
   pg.innerHTML = `<div class="toolbar wrap">
     <div class="search">${icon('search')}<input class="in" id="vQ" placeholder="Search vendors or categories" value="${esc(VS.q)}"></div>
+    <select class="in sel" id="vCat">${catOptions(VS.cat, {any: true})}</select>
+    ${VS.cat !== '*' && VS.cat ? `<select class="in sel" id="vSub"><option value="*">Any sub-category</option>${(catOf(VS.cat)?.subs || []).map(x => `<option ${VS.sub === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__none" ${VS.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>` : ''}
     <div class="seg" id="vDir"><button data-d="out" class="${VS.dir === 'out' ? 'on' : ''}">Spending</button><button data-d="in" class="${VS.dir === 'in' ? 'on' : ''}">Income</button></div>
     <label class="tgl"><input type="checkbox" id="vX" ${VS.xfer ? 'checked' : ''}> Include transfers</label></div>
   <div class="grid g-12">
     <div class="card c-4 kpi"><div class="label">${VS.dir === 'out' ? 'Spent' : 'Received'} · last 12 months</div><div class="val num">${short(tot)}</div><div class="delta">${active.length} vendors · ${mShort(m12[0])} – ${mShort(end)}</div></div>
     <div class="card c-4 kpi"><div class="label">Top vendor</div><div class="val num" style="font-size:22px">${top ? esc(top.name) : '—'}</div><div class="delta">${top ? short(top.l12) + ' · ' + top.c12 + ' transactions' : ''}</div></div>
     <div class="card c-4 kpi"><div class="label">Top 10 share</div><div class="val num">${tot ? Math.round(top10 / tot * 100) : 0}%</div><div class="delta">of the last 12 months</div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>Vendors</h3><div class="sub">Grouped from bank descriptions · tap one for history, or to rename or merge it</div></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>Vendors</h3><div class="sub">Grouped from bank descriptions · tap one for history, or to rename or merge it${VS.cat !== '*' ? ` · only ${esc(VS.cat || 'Uncategorized')}${VS.sub !== '*' ? ' · ' + esc(VS.sub === '__none' ? 'no sub-category' : VS.sub) : ''} spending${VS.sub !== '*' ? ` (sub-categories go back to ${mLabel(CTX.SINCE.slice(0, 7))})` : ''}` : ''}</div></div></div>
       <div class="scroll-x"><table class="table vt"><tr>${th('name', 'Vendor')}<th class="hide-sm">Category</th>${th('l12', 'Last 12 mo')}<th class="hide-sm">Prior 12 mo</th>${th('chg', 'Change')}${th('n', 'Txns')}<th class="hide-sm">Trend</th></tr>
       ${rows.slice(0, VS.lim).map(v => { const d = v.l12 - v.p12; return `<tr class="click" data-v="${esc(v.name)}"><td><div class="nm">${esc(v.name)}</div><div class="ds muted mob-only-inline" style="font-size:11px">${esc(v.cat)}</div></td><td class="hide-sm muted">${esc(v.cat)}</td><td><b>${money(v.l12)}</b></td><td class="hide-sm muted">${money(v.p12)}</td>
         <td class="${!v.p12 ? 'muted' : (d > 0) === (VS.dir === 'out') ? 'neg' : 'pos'}">${!v.p12 ? 'new' : (d >= 0 ? '+' : '−') + short(Math.abs(d))}</td><td>${v.c12}</td><td class="hide-sm" style="width:110px">${spark(m12.map(m => v.months[m] || 0), 'var(--s2)', 96, 24, false)}</td></tr>`; }).join('')}</table></div>
@@ -50,6 +55,8 @@ function renderVendors(pg) {
   </div>`;
   let qt; $('#vQ').oninput = e => { VS.q = e.target.value; clearTimeout(qt); qt = setTimeout(() => { const p = e.target.selectionStart; render(); const n = $('#vQ'); n.focus(); n.setSelectionRange(p, p); }, 250); };
   $$('#vDir button').forEach(b => b.onclick = () => { VS.dir = b.dataset.d; render(); });
+  $('#vCat').onchange = e => { VS.cat = e.target.value; VS.sub = '*'; VS.lim = 80; render(); };
+  if ($('#vSub')) $('#vSub').onchange = e => { VS.sub = e.target.value; VS.lim = 80; render(); };
   $('#vX').onchange = e => { VS.xfer = e.target.checked; render(); };
   $$('.srt', pg).forEach(b => b.onclick = e => { e.stopPropagation(); VS.sort = b.dataset.s; render(); });
   if ($('#vMore')) $('#vMore').onclick = () => { VS.lim += 80; render(); };
@@ -122,28 +129,86 @@ function cashStart() {
   const ov = UI.cash.override;
   return {amount: ov != null && ov !== '' ? +ov : auto, auto, asOf, pick, cashAccts, overridden: ov != null && ov !== ''};
 }
+// Recurring items found in the transactions that aren't on the cash plan yet:
+//  · weekly / every-2-weeks / twice-a-month (paychecks, allowances) from the spacing of charges
+//  · monthly bills by month: present nearly every month, usually once or twice (or a fixed number of times),
+//    amounts steady — or allowed to vary for real bills (utilities, cards) but not for everyday shopping
+//  · quarterly and yearly charges (insurance, memberships) from charges ~3 or ~12 months apart at similar amounts
 function suggestRecurring() {
-  const from = dAdd(CTX.TODAY, -150), groups = {};
-  ST.tx.forEach(t => { if (t.d < from || !t.amt) return; const n = vName(t.desc), k = n + '|' + (t.amt > 0 ? 1 : -1); (groups[k] ||= {name: n, sign: t.amt > 0 ? 1 : -1, rows: [], cat: t.cat}).rows.push(t); });
-  const have = new Set(ST.cash.map(c => (c.vendor || c.name).toLowerCase()));
-  const med = a => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
-  const out = [];
+  const lastD = ST.tx.reduce((m, t) => t.d > m ? t.d : m, '') || CTX.TODAY, lastM = lastD.slice(0, 7), from = ymAdd(lastM, -14) + '-01';
+  const have = new Set(ST.cash.flatMap(c => [(c.vendor || '').toLowerCase(), c.name.toLowerCase()]).filter(Boolean));
+  const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
+  const cv = a => { const m = a.reduce((x, y) => x + y, 0) / a.length; return m ? Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length) / m : 0; };
+  const everyday = c => /eating out|grocer|cloth|groom|entertain|car wash|^other$|amazon|shopping|gifts?|gas$|fuel|coffee|vacation|travel|medical/i.test(c || '');
+  const retail = n => /lowe'?s|home depot|walmart|target|costco|sam'?s club|hobby lobby|kohl|old navy|tj ?maxx|dollar|goodwill|7-eleven|oncue|phillips|qt\b|quiktrip|sonic|chick|mcdonald|starbucks|donut|amazon/i.test(n);
+  const months12 = Array.from({length: 12}, (_, i) => ymAdd(lastM, i - 11));
+  const groups = {};
+  ST.tx.forEach(t => { if (t.d < from || !t.amt) return; const c = t.splits ? t.splits[0].cat : t.cat, n = vName(t.desc); if (!n) return;
+    const k = n + '|' + (t.amt > 0 ? 1 : -1); (groups[k] ||= {name: n, sign: t.amt > 0 ? 1 : -1, rows: [], cats: {}}).rows.push(t); groups[k].cats[c || ''] = (groups[k].cats[c || ''] || 0) + 1; });
+  const out = [], months6 = Array.from({length: 6}, (_, i) => ymAdd(lastM, i - 5)), stale = (d, days) => dAdd(d, days) < lastD;
+  const nextMonthly = (day, step = 1) => { let m = lastM, d; do { m = ymAdd(m, step); d = mDay(+m.slice(0, 4), +m.slice(5), day); } while (d < CTX.TODAY); return d; };
   Object.values(groups).forEach(g => {
-    if (g.rows.length < 3 || have.has(g.name.toLowerCase())) return;
-    const ds = g.rows.map(t => t.d).sort(), gaps = ds.slice(1).map((d, i) => (new Date(d) - new Date(ds[i])) / 864e5), gp = med(gaps);
-    const amts = g.rows.map(t => Math.abs(t.amt)), ma = med(amts); if (ma < 5) return;
-    const close = amts.filter(a => Math.abs(a - ma) <= Math.max(2, ma * .25)).length / amts.length; if (close < .7) return;
-    let freq = gp >= 5 && gp <= 9 ? 'weekly' : gp >= 12 && gp <= 17 ? 'biweekly' : gp >= 25 && gp <= 35 ? 'monthly' : gp >= 80 && gp <= 100 ? 'quarterly' : null; if (!freq) return;
-    if (freq === 'biweekly') { const dom = [...new Set(ds.map(d => +d.slice(8)))]; if (dom.length <= 7 && dom.every(x => x <= 2 || (x >= 13 && x <= 17) || x >= 27)) freq = 'semimonthly'; }
-    const last = ds[ds.length - 1], period = {weekly: 7, biweekly: 14, semimonthly: 15, monthly: 30, quarterly: 91}[freq]; if (dAdd(last, period + 12) < CTX.TODAY) return;
-    let next = freq === 'monthly' || freq === 'quarterly' ? mDay(+ymAdd(last.slice(0, 7), freq === 'monthly' ? 1 : 3).slice(0, 4), +ymAdd(last.slice(0, 7), freq === 'monthly' ? 1 : 3).slice(5), +last.slice(8)) : dAdd(last, period);
-    while (next < CTX.TODAY) next = freq === 'monthly' ? mDay(+ymAdd(next.slice(0, 7), 1).slice(0, 4), +ymAdd(next.slice(0, 7), 1).slice(5), +last.slice(8)) : dAdd(next, period);
-    const subLike = /netflix|spotify|apple|youtube|disney|ring|adobe|starz|hulu|max|prime|icloud|espn|peacock|paramount/i.test(g.name) || /Netflix|Spotify|Apple|Ring|Cable/.test(g.cat || '');
-    const kind = g.sign > 0 ? 'income' : g.cat === 'TTS' || /quicksave|transfer|contrib|529/i.test(g.name) ? 'transfer' : subLike && ma < 150 ? 'subscription' : 'bill';
-    let day2 = null; if (freq === 'semimonthly') { const dom = ds.map(d => +d.slice(8)); day2 = dom.some(x => x >= 27) ? 31 : 15; }
-    out.push({name: g.name, vendor: g.name, kind, amount: +(g.sign * ma).toFixed(2), freq, start: freq === 'semimonthly' ? mDay(+CTX.TODAY.slice(0, 4), +CTX.TODAY.slice(5, 7), med(ds.map(d => +d.slice(8)).filter(x => x < 20)) || 1) : next, day2, cat: g.cat || '', n: g.rows.length});
+    if (have.has(g.name.toLowerCase())) return;
+    const cat = Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0][0];
+    let rows = g.rows.slice().sort((a, b) => a.d.localeCompare(b.d));
+    // A) steady series: the same amount around the same day each month (a vendor can have several, e.g. one 529 deposit per child)
+    if (g.sign < 0) {
+      const byAmt = {}; rows.forEach(t => (byAmt[Math.abs(t.amt).toFixed(2)] ||= []).push(t));
+      const series = [];
+      Object.entries(byAmt).forEach(([a, ts]) => { if (ts.length < 4 || +a < 5) return;
+        const bins = []; ts.slice().sort((x, y) => +x.d.slice(8) - +y.d.slice(8)).forEach(t => { const d = +t.d.slice(8), b = bins.find(b => Math.abs(b.c - d) <= 3 || Math.abs(b.c - d) >= 27); if (b) { b.ts.push(t); b.c = med(b.ts.map(x => +x.d.slice(8))); } else bins.push({c: d, ts: [t]}); });
+        bins.forEach(b => { const ms = new Set(b.ts.map(t => t.d.slice(0, 7))), in12 = months12.filter(m => ms.has(m)).length, lastT = b.ts.map(t => t.d).sort().pop();
+          if (in12 >= 4 && b.ts.length <= ms.size + 1 && (ms.has(lastM) || ms.has(ymAdd(lastM, -1))) && !stale(lastT, 45)) series.push({a: +a, day: b.c, ts: b.ts, n: ms.size}); }); });
+      if (series.length) {
+        const kindS = /netflix|spotify|apple\.com|icloud|youtube|disney|hulu|max|prime|peacock|paramount|espn|adobe|starz|ring|quip|ww int/i.test(g.name) ? 'subscription' : cat === 'TTS' || /contrib|529|savings|transfer/i.test(g.name + ' ' + cat) ? 'transfer' : 'bill';
+        const ord = d => d + (d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th');
+        series.sort((x, y) => x.day - y.day).forEach(se => out.push({name: series.length > 1 ? `${g.name} · ${ord(se.day)}` : g.name, vendor: g.name, kind: kindS, amount: -se.a, freq: 'monthly', start: nextMonthly(se.day), day2: null, cat, n: se.ts.length, note: ''}));
+        const used = new Set(series.flatMap(se => se.ts)); rows = rows.filter(t => !used.has(t));
+        if (rows.length < 3) return;
+      }
+    }
+    const ds = rows.map(t => t.d), last = ds[ds.length - 1];
+    const amts = rows.map(t => Math.abs(t.amt)), ma = med(amts); if (ma < 3) return;
+    const byM = {}; rows.forEach(t => { const m = t.d.slice(0, 7), o = (byM[m] ||= {s: 0, n: 0, days: []}); o.s += Math.abs(t.amt); o.n++; o.days.push(+t.d.slice(8)); });
+    const kind = g.sign > 0 ? 'income' : cat === 'TTS' || /quicksave|transfer|contrib|529|savings/i.test(g.name + ' ' + cat) ? 'transfer'
+      : (/netflix|spotify|apple\.com|icloud|youtube|disney|hulu|max|prime|peacock|paramount|espn|adobe|starz|ring|quip|ww int/i.test(g.name) || /netflix|disney|stream|subscri/i.test(cat)) && ma < 150 ? 'subscription' : 'bill';
+    const push = (freq, amount, start, note, day2 = null) => out.push({name: g.name, vendor: g.name, kind, amount: +(g.sign * amount).toFixed(2), freq, start, day2, cat, n: rows.length, note});
+    // 1) fast cadences (paychecks etc.) from spacing
+    const gaps = ds.slice(1).map((d, i) => (new Date(d) - new Date(ds[i])) / 864e5).filter(x => x > 0), gp = med(gaps), steady = amts.filter(a => Math.abs(a - ma) <= Math.max(2, ma * .25)).length / amts.length >= .7;
+    const spread = med(Object.values(byM).map(o => Math.max(...o.days) - Math.min(...o.days)));   // same-day batches (e.g. one 529 deposit per child) aren't a weekly cadence
+    if (steady && gp >= 5 && gp <= 17 && rows.length >= 6 && spread >= 8 && !stale(last, 21)) {
+      let freq = gp <= 9 ? 'weekly' : 'biweekly';
+      const dom = [...new Set(ds.slice(-8).map(d => +d.slice(8)))];
+      if (freq === 'biweekly' && dom.length <= 7 && dom.every(x => x <= 2 || (x >= 13 && x <= 17) || x >= 27)) freq = 'semimonthly';
+      if (!(everyday(cat) && freq === 'weekly' && cv(amts) > .1)) {
+        if (freq === 'semimonthly') push(freq, ma, mDay(+CTX.TODAY.slice(0, 4), +CTX.TODAY.slice(5, 7), med(ds.map(d => +d.slice(8)).filter(x => x < 20)) || 1), '', dom.some(x => x >= 27) ? 31 : 15);
+        else { let nx = dAdd(last, freq === 'weekly' ? 7 : 14); while (nx < CTX.TODAY) nx = dAdd(nx, freq === 'weekly' ? 7 : 14); push(freq, ma, nx, ''); }
+        return;
+      }
+    }
+    // 2) monthly by month presence
+    if (retail(g.name)) return;
+    const first = ds[0].slice(0, 7), span = months12.filter(m => m >= first), present = span.filter(m => byM[m]);
+    const counts = present.map(m => byM[m].n), perM = med(counts), sameCount = counts.filter(c => c === perM).length / Math.max(1, counts.length) >= .8;
+    const tot = present.map(m => byM[m].s), mcv = cv(tot);
+    if (span.length >= 3 && present.length >= Math.max(3, Math.ceil(span.length * .75)) && (byM[lastM] || byM[ymAdd(lastM, -1)])) {
+      const isCard = /card|credit/i.test(cat + ' ' + g.name);
+      const okCount = perM <= 2 || (isCard && perM <= 5) || (sameCount && mcv <= .15);
+      const okAmt = isCard ? true : everyday(cat) ? mcv <= .2 && perM <= 1 : mcv <= .9;
+      if (okCount && okAmt && !stale(last, 45)) {
+        const recent = present.slice(-3).map(m => byM[m].s), amount = med(recent), day = med(rows.slice(-3).map(t => +t.d.slice(8)));
+        push('monthly', amount, nextMonthly(day), mcv > .15 ? `varies · ${money(Math.min(...tot))}–${money(Math.max(...tot))}` : ''); return;
+      }
+    }
+    // 3) quarterly / yearly (charges ~3 or ~12 months apart at similar amounts)
+    if (everyday(cat) && cv(amts) > .1) return;
+    const mgaps = ds.slice(1).map((d, i) => ymDiffN(ds[i].slice(0, 7), d.slice(0, 7))), simAmt = cv(amts.slice(-3)) <= .2;
+    if (rows.length >= 3 && simAmt && mgaps.slice(-2).every(x => x >= 2 && x <= 4) && !stale(last, 120)) { push('quarterly', med(amts.slice(-3)), nextMonthly(+last.slice(8), 3), ''); return; }
+    if (rows.length >= 2 && rows.length <= 3 && ma >= 30 && simAmt && mgaps.slice(-1).every(x => x >= 11 && x <= 13) && !stale(last, 400)) {
+      let m = ymAdd(last.slice(0, 7), 12); const d = mDay(+m.slice(0, 4), +m.slice(5), +last.slice(8)); push('annual', amts[amts.length - 1], d, `last ${mLabel(last.slice(0, 7))}`);
+    }
   });
-  return out.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return out.sort((a, b) => Math.abs(b.amount) * (b.freq === 'annual' ? 1 / 12 : b.freq === 'quarterly' ? 1 / 3 : 1) - Math.abs(a.amount) * (a.freq === 'annual' ? 1 / 12 : a.freq === 'quarterly' ? 1 / 3 : 1));
 }
 let CPX = {open: null};
 function renderCash(pg) {
@@ -174,14 +239,14 @@ function renderCash(pg) {
     <div class="card c-3 kpi"><div class="label">Lowest point</div><div class="val num ${low < 0 ? 'neg' : ''}">${short(low)}</div><div class="delta">week of ${fmtDate(weeks[lowI])}</div></div>
     <div class="card c-12"><div class="card-h"><div><h3>Ending cash by week</h3><div class="sub">Starting cash plus everything scheduled below</div></div></div><div class="chart" id="cpChart"></div></div>
     <div class="card c-12" style="padding:10px 0 4px"><div class="scroll-x"><table class="table bb cp">${items.length ? h : `<tr><td style="padding:24px;text-align:left" class="muted">Nothing scheduled yet. Add bills, subscriptions and paychecks — or start from the suggestions below.</td></tr>`}</table></div></div>
-    ${sugg.length ? `<div class="card c-12"><div class="card-h"><div><h3>Suggested from your transactions</h3><div class="sub">Repeating charges and deposits from the last 5 months · add the ones that belong in the plan</div></div><div class="right"><button class="btn" id="cpAddAll">Add all ${sugg.length}</button></div></div>
-      <div class="list">${sugg.slice(0, 30).map((s, k) => `<div class="li"><div style="min-width:0;flex:1"><div class="nm ell">${esc(s.name)}</div><div class="ds">${FREQ[s.freq]} · next ${fmtDate(s.start)} · ${({income: 'Income', bill: 'Bill', subscription: 'Subscription', transfer: 'Transfer'})[s.kind]} · seen ${s.n}×</div></div><div class="amt num ${s.amount > 0 ? 'pos' : ''}">${money(s.amount, 2)}</div><button class="btn" style="height:30px;margin-left:10px" data-sg="${k}">Add</button></div>`).join('')}</div></div>` : ''}
+    ${sugg.length ? `<div class="card c-12"><div class="card-h"><div><h3>Suggested from your transactions</h3><div class="sub">Monthly, quarterly and yearly charges and deposits found in the last 14 months · amounts that vary use the recent typical month · add the ones that belong in the plan</div></div><div class="right"><button class="btn" id="cpAddAll">Add all ${sugg.length}</button></div></div>
+      <div class="list">${sugg.slice(0, 30).map((s, k) => `<div class="li"><div style="min-width:0;flex:1"><div class="nm ell">${esc(s.name)}</div><div class="ds">${FREQ[s.freq]} · next ${fmtDate(s.start)} · ${({income: 'Income', bill: 'Bill', subscription: 'Subscription', transfer: 'Transfer'})[s.kind]} · seen ${s.n}×${s.note ? ' · ' + esc(s.note) : ''}</div></div><div class="amt num ${s.amount > 0 ? 'pos' : ''}">${money(s.amount, 2)}</div><button class="btn" style="height:30px;margin-left:10px" data-sg="${k}">Add</button></div>`).join('')}</div></div>` : ''}
   </div>`;
   $$('[data-ci]', pg).forEach(tr => tr.onclick = () => openCashItem(ST.cash.find(c => c.id === tr.dataset.ci)));
   if ($('#cpAdd')) $('#cpAdd').onclick = () => openCashItem();
   $('#cpStart').onclick = openCashStart;
   $$('[data-sg]', pg).forEach(b => b.onclick = () => openCashItem(null, sugg[+b.dataset.sg]));
-  if ($('#cpAddAll')) $('#cpAddAll').onclick = () => { const add = sugg.map((s, k) => ({id: 'c' + Date.now() + k, active: true, sort: 100, notes: '', end: null, acct: '', ...s})); add.forEach(a => delete a.n); ST.cash.push(...add); render(); toast(`Added ${add.length} items`, () => { ST.cash = ST.cash.filter(c => !add.includes(c)); render(); }); };
+  if ($('#cpAddAll')) $('#cpAddAll').onclick = () => { const add = sugg.map((s, k) => ({id: 'c' + Date.now() + k, active: true, sort: 100, end: null, acct: '', ...s, notes: s.note || ''})); add.forEach(a => { delete a.n; delete a.note; }); ST.cash.push(...add); render(); toast(`Added ${add.length} items`, () => { ST.cash = ST.cash.filter(c => !add.includes(c)); render(); }); };
   CH.push(() => barChart($('#cpChart'), {labels: weeks.map(w => MON[+w.slice(5, 7) - 1] + ' ' + +w.slice(8)), series: [{name: 'Ending cash', values: endBal, colorFn: v => v >= 0 ? 'var(--s1)' : 'var(--neg)'}], height: 200, xGap: 46,
     tipTitle: (l, i) => 'Week of ' + fmtDate(weeks[i]), tipExtra: i => tipRow(null, 'In', money(inW[i])) + tipRow(null, 'Out', money(outW[i])) + tipRow(null, 'Net', money(net[i]))}));
 }
