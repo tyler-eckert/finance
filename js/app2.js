@@ -476,6 +476,7 @@ function drawImport() {
     SYNC.adopt('tx', saved.map(r => r.id));
     if ($('#learn')?.checked) add.concat(fix).filter(r => r.edited && r.cat).forEach(r => ST.userRules[normDesc(r.desc)] = {cat: r.cat, sub: r.sub});
     if (IMP.setBal && balRow) Object.entries(D.bals).forEach(([mo, b]) => { let j = ST.bal.months.indexOf(mo); if (j < 0 && mo > ST.bal.months[ST.bal.months.length - 1]) { while (ST.bal.months[ST.bal.months.length - 1] < mo) { ST.bal.months.push(ymAdd(ST.bal.months[ST.bal.months.length - 1], 1)); ST.bal.accounts.forEach(a => a.v.push(null)); } j = ST.bal.months.indexOf(mo); } if (j >= 0) balRow.v[j] = b.v; });
+    if (Object.keys(D.bals || {}).length) DB.saveStatementBalances(IMP.acct, D.bals, D.hi).catch(e => console.warn('[fin] statement balances not saved — run migration 1500', e.message));
     ST.tx.sort((a, b) => b.d.localeCompare(a.d));
     D2.txCountAll += saved.length - del.length;
     const newest = D.hi.slice(0, 7);
@@ -528,7 +529,8 @@ function renderBalances(pg) {
           ${vc(val(a, A), val(a, A - 1), sg)}${vc(val(a, A), prevYA(a, ya), sg)}</tr>`).join(''); }).join('')}
       <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${short(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;
   };
-  pg.innerHTML = `
+  const chk = typeof checksCard === 'function' ? checksCard() : '';
+  pg.innerHTML = `${chk ? `<div class="grid g-12" style="margin-bottom:18px">${chk}</div>` : ''}
   <div class="toolbar wrap"><div class="seg" id="balSeg"><button data-k="month" class="${balView === 'month' ? 'on' : ''}">Month entry</button><button data-k="grid" class="${balView === 'grid' ? 'on' : ''}">History grid</button></div>
     ${balView === 'month' ? `<div class="stepper"><button id="bmPrev" ${i ? '' : 'disabled'}>${icon('chev')}</button><b>${mLabel(months[i])}</b><button id="bmNext" ${i < months.length - 1 ? '' : 'disabled'}>${icon('chev')}</button></div>` : ''}
     <label class="tgl" style="margin-left:auto"><input type="checkbox" id="balInact" ${balInactive ? 'checked' : ''}> Show inactive${nHidden ? ` (${nHidden})` : ''}</label>
@@ -560,6 +562,7 @@ function renderBalances(pg) {
   $('#balInact').onchange = e => { balInactive = e.target.checked; render(); };
   $$('[data-hide]', pg).forEach(b => b.onclick = () => { const a = B.accounts[+b.dataset.hide]; a.active = a.active === false; render(); toast(a.active ? `${a.name} is active again` : `${a.name} hidden · tick “Show inactive” to see it`, () => { a.active = !a.active; render(); }); });
   $$('[data-act]', pg).forEach(b => b.onclick = () => openActivity(B.accounts[+b.dataset.act], i));
+  if (typeof wireChecks === 'function') wireChecks(pg);
 }
 function openPaste(i) {
   const m = $('#modal'); m.classList.remove('wide');

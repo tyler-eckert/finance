@@ -87,7 +87,7 @@ async function start() {
     const [{data: snap, error: e2}, ex] = await Promise.all([FDB.rpc('app_snapshot', {p_household: HH}), FDB.rpc('app_snapshot_extra', {p_household: HH})]);
     if (e2) throw e2;
     if (ex.error) console.warn('[fin] app_snapshot_extra unavailable — run migration 1200', ex.error.message);
-    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: []}, ex.data || {}); snap.extraOk = !ex.error;
+    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: [], statement_balances: []}, ex.data || {}); snap.extraOk = !ex.error;
     SNAP = snap; console.info(`[fin] snapshot ${(JSON.stringify(snap).length / 1e6).toFixed(1)} MB in ${Math.round(performance.now() - t0)} ms`);
     buildData(snap);
     await loadApp();
@@ -340,6 +340,7 @@ function buildData(S) {
     taxYears: tyRows, sources: S.valuation_sources, salaryCats,
     importAccts: S.accounts.filter(a => a.imports_transactions && a.is_active).map(a => a.name)};
   CTX.market = S.market_series || []; CTX.auto = S.automation || [];
+  CTX.stmt = (S.statement_balances || []).map(([acct, m, v, asOf, complete]) => ({acct, m, v: +v, asOf, complete}));
   window.CTX = CTX; window.DATA = DATA; window.DATA2 = DATA2; window.DATA3 = DATA3; window.DATA4 = DATA4;
 }
 
@@ -407,6 +408,7 @@ const SYNC = {
     S.scn = new Map(SCN.map((s, i) => [s.id, JSON.stringify([s.name, s.note || '', s.p, s.show !== false, i])]));
     S.ledger = new Map(TX.ledger.map(l => [l.id, JSON.stringify([l.d, l.ty, l.j, l.type, l.q, l.method, l.amt, l.conf, l.note])]));
     S.taxy = new Map(); ['FED', 'OK', 'NM'].forEach(j => { S.taxy.set(`${CTX.PY}|${j}`, JSON.stringify([+TX.prior[j] || 0, +TX.credit[j] || 0])); });
+    S.taxw = new Map(); ['FED', 'OK', 'NM'].forEach(j => { const w = TX.wh?.[j] || {}; S.taxw.set(`${CTX.CY}|${j}`, JSON.stringify([w.ytd ?? null, w.asof || null])); });
     S.plan = new Map((ST.planned || []).map(p => [p.id, JSON.stringify([p.name, p.due, p.amount, p.fund, p.notes || '', p.status || 'planned'])]));
     S.prefs = new Map([['p', JSON.stringify(prefsNow())]]);
     return S;
@@ -457,7 +459,7 @@ const RENDER_SILENT = () => { const r = window.render; r.keep = true; const s = 
 const prefsNow = () => ({excl: [...ST.excl].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
 const smartSave = s => ({enabled: !!s.enabled, cadence: s.cadence, autoAccept: s.autoAccept, basis: s.basis, condition: s.condition, vin: s.vin, miles: s.miles, annualMiles: s.annualMiles, address: s.address, zip: s.zip, off: [...(s.off || [])].sort()});
 
-const ORDER = ['cats', 'acct', 'sub', 'inv', 'valias', 'cash', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'plan', 'prefs'];
+const ORDER = ['cats', 'acct', 'sub', 'inv', 'valias', 'cash', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'taxw', 'plan', 'prefs'];
 const hh = () => CTX.HH;
 const must = r => { if (r.error) throw new Error(r.error.message + (r.error.details ? ' · ' + r.error.details : '')); return r.data; };
 const catId = n => { if (!n) return null; const id = ST.cats.find(c => c.name === n)?.id || MAP.cat[n]; if (!id) throw new Error('Unknown category ' + n); return id; };
@@ -671,6 +673,10 @@ const WRITERS = {
       else must(await FDB.from('tax_payments').update(rec).eq('id', l.id));
     }
   },
+  async taxw(ch) {   // withholding to date, for the safe-harbor check
+    for (const c of ch) { const [y, j] = c.id.split('|'), [ytd, asof] = JSON.parse(c.v);
+      must(await FDB.from('tax_years').upsert({household_id: hh(), tax_year: +y, jurisdiction: j, withholding_ytd: ytd, withholding_asof: asof}, {onConflict: 'household_id,tax_year,jurisdiction'})); }
+  },
   async taxy(ch) {
     for (const c of ch) {
       const [y, j] = c.id.split('|'), [liab, credit] = JSON.parse(c.v);
@@ -729,6 +735,16 @@ const DB = {
     const out = [];
     for (const part of chunks(recs, 500)) out.push(...must(await FDB.from('transactions').insert(part).select('id, posted_on, description, amount')));
     return out;
+  },
+  // the bank's own month-end balances from a CSV's Balance column (kept apart from what you enter, for the data checks)
+  async saveStatementBalances(acctName, bals, fileHi) {
+    const acct = MAP.acct[acctName]; if (!acct || !bals) return;
+    const rows = Object.entries(bals).map(([m, b]) => ({household_id: hh(), account_id: acct, month: mStart(m), balance: +(+b.v).toFixed(2), as_of: b.d, complete: fileHi > ymLastDay(m), source: 'csv'}))
+      .filter(r => r.complete || !CTX.stmt.some(x => x.acct === acct && x.m === r.month.slice(0, 7) && x.complete));   // never replace a true month-end with a partial month
+    if (!rows.length) return;
+    must(await FDB.from('statement_balances').upsert(rows, {onConflict: 'account_id,month'}));
+    rows.forEach(r => { const m = r.month.slice(0, 7), i = CTX.stmt.findIndex(x => x.acct === acct && x.m === m), o = {acct, m, v: r.balance, asOf: r.as_of, complete: r.complete};
+      if (i >= 0) { if (CTX.stmt[i].complete && !o.complete) return; CTX.stmt[i] = o; } else CTX.stmt.push(o); });
   },
   async loadOlder(before, limit = 5000) {
     const out = [];

@@ -17,6 +17,9 @@ const TX = {
 };
 const yrPaid = (y, j) => sum(TX.ledger.filter(l => l.ty === y && l.j === j && l.type !== 'Refund').map(l => l.amt));
 const yrRef = (y, j) => -sum(TX.ledger.filter(l => l.ty === y && l.j === j && l.type === 'Refund').map(l => l.amt));
+// paycheck withholding this year (from the latest pay stub) — the IRS treats it as paid evenly through the year
+TX.wh = Object.fromEntries(JK.map(j => { const t = D4.taxYears[CY]?.[j]; return [j, {ytd: t?.withholding_ytd != null ? +t.withholding_ytd : null, asof: t?.withholding_asof || null}]; }));
+const whFull = j => { const w = TX.wh[j]; if (!w?.ytd) return 0; const d = w.asof || TODAY, f = Math.max(1 / 12, (+d.slice(5, 7) - 1 + +d.slice(8, 10) / 31) / 12); return w.ytd / Math.min(1, f); };
 JK.forEach(j => { const t = D4.taxYears[PY]?.[j]; TX.prior[j] = t?.liability != null ? +t.liability : yrPaid(PY, j) - yrRef(PY, j); TX.credit[j] = +(t?.overpayment_applied_next || 0); });
 const rateOf = ys => Object.fromEntries(JK.map(j => { const inc = sum(ys.map(y => D4.years[y]?.inc || 0)); return [j, inc ? sum(ys.map(y => D4.years[y]?.[j] || 0)) / inc : 0]; }));
 const RATE_PRESETS = {[PY]: () => rateOf([PY]), [PY - 1]: () => rateOf([PY - 1]), 'avg': () => rateOf([PY - 1, PY])};
@@ -37,10 +40,10 @@ function taxProjection(y = CY) {
   JK.forEach(j => {
     const proj = TX.rates[j] * total, J = JUR[j], priorMult = j === 'FED' ? (TX.highAGI ? 1.1 : 1.0) : J.prior;
     const viaCur = J.cur * proj, viaPrior = priorMult * TX.prior[j], req = Math.min(viaCur, viaPrior);
-    const paid = yrPaid(y, j) + TX.credit[j];
-    const qs = QDUE(y).map((q, k) => { const due = req * (k + 1) / 4, paidBy = sum(TX.ledger.filter(l => l.ty === y && l.j === j && l.type !== 'Refund' && l.d <= ymdPlus(q.d, 3)).map(l => l.amt)) + TX.credit[j];
+    const wh = y === CY ? whFull(j) : 0, est = yrPaid(y, j), paid = est + TX.credit[j] + wh;
+    const qs = QDUE(y).map((q, k) => { const due = req * (k + 1) / 4, paidBy = sum(TX.ledger.filter(l => l.ty === y && l.j === j && l.type !== 'Refund' && l.d <= ymdPlus(q.d, 3)).map(l => l.amt)) + TX.credit[j] + wh * (k + 1) / 4;
       const st = q.d > TODAY ? 'upcoming' : paidBy + .5 >= due ? 'ok' : 'short'; return {...q, due, inst: req / 4, paidBy, st}; });
-    out.j[j] = {proj, req, viaCur, viaPrior, method: viaPrior < viaCur ? 'prior' : 'current', paid, remaining: Math.max(0, req - paid), balance: Math.max(0, proj - Math.max(paid, req)), qs};
+    out.j[j] = {proj, req, viaCur, viaPrior, priorMult, wh, est, method: viaPrior < viaCur ? 'prior' : 'current', paid, remaining: Math.max(0, req - paid), balance: Math.max(0, proj - Math.max(paid, req)), qs};
   });
   return out;
 }
@@ -79,6 +82,8 @@ function renderTaxes(pg) {
       ${JK.some(j => P.j[j].qs.some(q => q.st === 'short')) ? `<div class="banner" style="margin:14px 0 0">${icon('warn')}<span>${sum(JK.map(j => yrPaid(CY, j) + TX.credit[j])) ? `<b>Some ${CY} quarters are short.</b>` : `<b>No ${CY} estimated payments are recorded</b> and some due dates have passed. If your ${PY} overpayment was applied to ${CY}, enter it as a credit below. Otherwise,`} paying ${money(sum(JK.map(catchUp)))} by ${fmtD(nextQ.d)} brings each jurisdiction up to its safe harbor. Penalties on the missed quarters may still apply.</span></div>` : ''}
       <div class="tax-note muted">Rules: ${JK.map(j => `<b>${JUR[j].n}</b> — ${JUR[j].rule}`).join(' · ')}. A planning estimate, not tax advice; confirm amounts with your CPA.</div></div>
 
+    ${isProj ? safeHarborCard(P) : ''}
+    ${isProj ? harvestCard() : ''}
     <div class="card c-7"><div class="card-h"><div><h3>Projection from your budget</h3><div class="sub">Jan–${MON[ASOF.m - 1]} actuals, then budgeted paychecks, your minerals forecast, and dividends at their ${CY} pace</div></div></div>
       <div class="scroll-x"><table class="table cmp"><tr><th>Income</th><th>Jan–${MON[ASOF.m - 1]} actual</th><th>${ASOF.m < 12 ? MON[ASOF.m] + '–Dec projected' : 'Projected'}</th><th>${CY} total</th></tr>
       ${[['W-2 take-home', 'w2'], ['K-1 / minerals (gross)', 'k1'], ['Dividends & interest', 'div']].map(([l, k]) => `<tr><td>${l}</td><td>${money(sum(P.inc.filter(r => r.actual).map(r => r[k])))}</td><td class="muted">${money(sum(P.inc.filter(r => !r.actual).map(r => r[k])))}</td><td><b>${money(sum(P.inc.map(r => r[k])))}</b></td></tr>`).join('')}
@@ -114,6 +119,8 @@ function renderTaxes(pg) {
   $$('[data-r]').forEach(i => i.onchange = () => { TX.rates[i.dataset.r] = num(i.value) / 100; TX.preset = 'custom'; render(); });
   $$('[data-pre]').forEach(b => b.onclick = () => { TX.preset = b.dataset.pre; TX.rates = RATE_PRESETS[b.dataset.pre](); render(); });
   $$('[data-prior]').forEach(i => i.onchange = () => { TX.prior[i.dataset.prior] = num(i.value); render(); });
+  $$('[data-wh]').forEach(i => i.onchange = () => { const v = String(i.value).replace(/[$,\s]/g, ''); TX.wh[i.dataset.wh].ytd = v === '' ? null : +v; if (!TX.wh[i.dataset.wh].asof) TX.wh[i.dataset.wh].asof = TODAY; render(); });
+  $$('[data-wha]').forEach(i => i.onchange = () => { TX.wh[i.dataset.wha].asof = i.value || null; render(); });
   $$('[data-cred]').forEach(i => i.onchange = () => { TX.credit[i.dataset.cred] = num(i.value); render(); });
   if ($('#hiAGI')) $('#hiAGI').onchange = e => { TX.highAGI = e.target.checked; render(); };
   if ($('#txBud')) $('#txBud').onclick = () => { const NY = CY + 1; if (!ST.budget[NY]) createBudget(NY, 'copy'); const t = (ST.budget[NY].Tax ||= Array(12).fill(0)), was = t.slice(); t[0] = -Math.round(sum(JK.map(catchUp))); t[3] = -Math.round(sum(JK.map(j => P.j[j].balance))); render(); toast(`${NY} budget: Tax ${money(t[0])} in Jan, ${money(t[3])} in Apr`, () => { ST.budget[NY].Tax = was; render(); }); };
@@ -142,4 +149,40 @@ function openTaxEntry(pre = {}) {
   $('#teGo').onclick = () => { const a = +$('#teA').value.replace(/[$,]/g, ''); if (!a) return $('#teA').focus(); const t = $('#teT').value, ref = t === 'Refund', jj = $('#teJ').value;
     TX.ledger.push({id: 'tl' + Date.now(), d: $('#teD').value, ty: +$('#teY').value, j: $('#teJ').value, status: 'Actual', type: ref ? 'Refund' : /estimate/.test(t) ? 'Estimate' : t, q: /estimate/.test(t) ? t.slice(0, 2) : '', method: $('#teM').value, amt: ref ? -a : a, conf: $('#teC').value ? '••' + $('#teC').value.replace(/\s/g, '').slice(-4) : '', note: '', src: pre.src || 'Manual'});
     closeAll(); render(); toast(`${ref ? 'Refund' : 'Payment'} recorded · ${JUR[jj].n} ${money(a, 2)}`); };
+}
+
+/* ---- safe-harbor check: will withholding + estimates cover this year? ---- */
+function safeHarborCard(P) {
+  const ro = CTX.CAN_WRITE ? '' : 'disabled', nextQ = QDUE(CY).find(q => q.d > TODAY) || QDUE(CY + 1)[0];
+  const rows = JK.map(j => { const p = P.j[j], covered = p.paid >= p.req - .5, priorReq = p.priorMult * TX.prior[j], pctPrior = priorReq ? p.paid / priorReq : null;
+    return {j, p, covered, priorReq, pctPrior}; });
+  const allOk = rows.every(r => r.covered), shortBy = sum(rows.map(r => Math.max(0, r.p.req - r.p.paid)));
+  return `<div class="card c-12" id="shCard"><div class="card-h"><div><h3>Safe-harbor check · ${CY}</h3><div class="sub">Do withholding + estimated payments cover the safe harbor? ${TX.highAGI ? `Federal uses <b>110%</b> of ${PY}’s tax (AGI over $150k)` : `Federal uses 100% of ${PY}’s tax`} or 90% of this year’s, whichever is less</div></div>
+      <div class="right"><span class="chip ${allOk ? 'pos' : 'neg'}">${allOk ? icon('check') + ' Covered' : 'Short ' + money(shortBy)}</span></div></div>
+    <div class="scroll-x"><table class="table cmp sh-t"><tr><th>Jurisdiction</th><th>Withheld to date</th><th>As of</th><th>Withholding · full year</th><th>Estimates paid</th><th>Prior-year credit</th><th>Total covered</th><th>${PY} test</th><th>${CY} test</th><th>Needed</th><th>Status</th></tr>
+      ${rows.map(({j, p, covered, priorReq, pctPrior}) => `<tr><td><span class="tw"><i class="sw" style="background:${JUR[j].c}"></i><b>${JUR[j].n}</b></span></td>
+        <td><div class="amt-in"><span>$</span><input class="in num sm" data-wh="${j}" ${ro} value="${TX.wh[j].ytd != null ? Math.round(TX.wh[j].ytd).toLocaleString() : ''}" placeholder="from pay stub" style="width:120px"></div></td>
+        <td><input class="in sm" type="date" data-wha="${j}" ${ro} value="${TX.wh[j].asof || ''}" style="width:140px"></td>
+        <td class="num">${p.wh ? money(p.wh) : '<span class="muted">—</span>'}</td><td class="num">${money(p.est)}</td><td class="num">${money(TX.credit[j])}</td><td class="num"><b>${money(p.paid)}</b></td>
+        <td class="num">${money(priorReq)}<div class="muted" style="font-size:11px">${j === 'FED' && TX.highAGI ? '110%' : '100%'} of ${short0(TX.prior[j])}${pctPrior != null ? ` · ${Math.round(pctPrior * 100)}% covered` : ''}</div></td>
+        <td class="num">${money(p.viaCur)}<div class="muted" style="font-size:11px">${Math.round(JUR[j].cur * 100)}% of ${short0(p.proj)}</div></td>
+        <td class="num"><b>${money(p.req)}</b></td>
+        <td>${covered ? `<span class="chip pos">${icon('check')} Covered</span>` : `<span class="chip neg">Short ${money(p.req - p.paid)}</span><div class="muted" style="font-size:11px;margin-top:3px">pay by ${fmtD(nextQ.d)}</div>`}</td></tr>`).join('')}</table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Enter the year-to-date federal and state withholding from your latest pay stubs (both of you, added together). It’s projected to the full year at the same pace and counted as paid evenly through the year, the way the IRS treats it — so it also lowers the quarterly estimates above. A planning check, not tax advice.</p></div>`;
+}
+const short0 = v => short(v || 0);
+/* ---- tax-loss harvesting: priced positions with a cost basis ---- */
+function harvestCard() {
+  const pos = (SNAP.accounts || []).filter(a => a.ticker && a.is_active !== false && !a.parent_account_id && !(a.closed_on && a.closed_on.slice(0, 7) <= BS.months[L]));
+  const taxable = a => !['Retirement', 'College'].includes(a.balance_group) && a.kind !== 'hsa';
+  const rows = pos.map(a => { const v = BS['acct:' + a.id]?.[L] || 0, basis = a.cost_basis != null ? +a.cost_basis : null; return {a, v, basis, gl: basis != null ? v - basis : null, tx: taxable(a)}; });
+  const cands = rows.filter(r => r.tx && r.gl != null && r.gl <= -1000);
+  return `<div class="card c-12"><div class="card-h"><div><h3>Tax-loss harvesting</h3><div class="sub">Taxable positions trading below what you paid · selling locks in a loss that offsets gains, plus up to $3,000 of ordinary income a year</div></div>
+      <div class="right">${cands.length ? `<span class="chip neg">${cands.length} candidate${cands.length > 1 ? 's' : ''} · ${short(-sum(cands.map(r => r.gl)))} of losses</span>` : ''}</div></div>
+    ${rows.length ? `<div class="scroll-x"><table class="table cmp"><tr><th>Position</th><th>Account type</th><th>Value</th><th>Cost basis</th><th>Unrealized</th><th></th></tr>
+      ${rows.map(r => `<tr><td><b>${esc(r.a.ticker)}</b> <span class="muted">${esc(r.a.name)}</span></td><td>${r.tx ? 'Taxable' : '<span class="muted">Tax-advantaged</span>'}</td><td>${money(r.v)}</td><td>${r.basis != null ? money(r.basis) : '<span class="muted">add in Admin → Automation</span>'}</td>
+        <td class="${r.gl == null ? '' : r.gl >= 0 ? 'pos' : 'neg'}">${r.gl == null ? '—' : (r.gl >= 0 ? '+' : '−') + money(Math.abs(r.gl))}${r.gl != null && r.basis ? ` <span class="muted">${pct(r.gl / r.basis)}</span>` : ''}</td>
+        <td>${!r.tx ? '<span class="muted">No tax effect</span>' : r.gl != null && r.gl <= -1000 ? '<span class="chip neg">Harvest candidate</span>' : r.gl != null && r.gl < 0 ? '<span class="muted">Small loss</span>' : r.gl != null ? '<span class="muted">Gain · hold</span>' : ''}</td></tr>`).join('')}</table></div>
+      <p class="muted" style="font-size:11.5px;margin-top:8px">Mind the wash-sale rule: buying the same or a substantially identical holding within 30 days before or after the sale (in any of your accounts, including IRAs) disallows the loss. Values are month-end shares × price from the automation job. Not tax advice.</p>`
+    : `<p class="muted" style="font-size:12.5px">Nothing to check yet. Add a ticker, shares and cost basis for each taxable position under <b>Admin → Automation → Stock positions</b>, and positions trading below cost will show up here. (Full lot-level tracking would come with brokerage holdings.)</p>`}</div>`;
 }

@@ -71,9 +71,14 @@ function renderRetirement(pg) {
     ['minerals', 'Minerals vs. your forecast', 0, 1.5, .05, v => Math.round(v * 100) + '%'],
   ];
   host.innerHTML = `<div class="grid g-12">
-    <div class="card hero c-12 retire-hero"><div class="rh-main"><div class="label">When can I retire? · ${esc(base.name)}</div>
-      <div class="val num">${eb ? `Age ${eb}` : 'Not by 65'}</div>
-      <div class="delta">${eb ? `${YNOW + eb - ageNow} · ${eb - ageNow} years from now · earliest age with a ${fmtPct(SCCONF)} chance the money lasts to 95` : `No age between 45 and 65 reaches ${fmtPct(SCCONF)} confidence with these assumptions`}</div></div>
+    <div class="card hero c-12 retire-hero"><div class="rh-main"><div class="label">Are we going to be okay? · ${esc(sel.name)}</div>
+      <div class="rh-head"><span class="val num">${fmtPct(selRun.prob)}</span><span class="rh-say">chance we can retire at <b>${sel.p.retire}</b> spending <b>${short(sel.p.spend)}/yr</b></span></div>
+      <div class="delta">${selRun.prob >= SCCONF ? 'Meets' : 'Below'} your ${fmtPct(SCCONF)} target · share of market paths where the money lasts to 95, in today’s dollars${sel.p.ss ? ` · includes ${short(sel.p.ss)}/yr Social Security from ${sel.p.ssAge}` : ' · no Social Security included'}</div>
+      <div class="rh-quick">
+        <div><label>Retire at <b id="hq-retire">${sel.p.retire}</b></label><input type="range" min="45" max="65" step="1" value="${sel.p.retire}" data-hq="retire"></div>
+        <div><label>Spending <b id="hq-spend">${short(sel.p.spend)}/yr</b></label><input type="range" min="120000" max="360000" step="5000" value="${sel.p.spend}" data-hq="spend"></div>
+        <div><label>Social Security <b id="hq-ss">${sel.p.ss ? short(sel.p.ss) + '/yr' : 'None'}</b></label><input type="range" min="0" max="80000" step="2500" value="${sel.p.ss || 0}" data-hq="ss"></div></div>
+      <div class="delta" style="margin-top:10px">${(() => { const e = earliest(sel); return e ? `Earliest age with a ${fmtPct(SCCONF)} chance: <b>${e}</b> (${YNOW + e - ageNow}, ${e - ageNow} years from now)` : `No age between 45 and 65 reaches ${fmtPct(SCCONF)} with these assumptions`; })()}</div></div>
       <div class="rh-side"><div class="label" style="margin-bottom:8px">Confidence target</div>${confSeg}<div class="label" style="margin-top:14px;font-size:11px">Earliest age · chance at the scenario's own age</div>
         <div class="rh-chips">${SCN.map((s, i) => { const e = earliest(s); return `<div class="rh-chip"><i class="sw" style="background:${SC_COLORS[i % 5]}"></i><span>${esc(s.name)}</span><b>${e ? 'Age ' + e : '> 65'}</b><span class="rh-at">${Math.round(scnRun(s).prob * 100)}% at ${s.p.retire}</span></div>`; }).join('')}</div></div></div>
 
@@ -103,6 +108,8 @@ function renderRetirement(pg) {
   </div>`;
   // interactions
   $$('#cfSeg button', host).forEach(b => b.onclick = () => { SCCONF = +b.dataset.c; render(); });
+  const hqF = {retire: v => v, spend: v => short(v) + '/yr', ss: v => v ? short(v) + '/yr' : 'None'};
+  $$('[data-hq]', host).forEach(inp => { inp.oninput = () => { $('#hq-' + inp.dataset.hq).textContent = hqF[inp.dataset.hq](+inp.value); }; inp.onchange = () => { sel.p[inp.dataset.hq] = +inp.value; sel.note = 'Edited'; render(); }; });
   $$('.sc', host).forEach(r => r.onclick = e => { if (e.target.closest('[data-eye]')) return; SCSEL = r.dataset.s; render(); });
   $$('[data-eye]', host).forEach(b => b.onclick = () => { const s = SCN.find(x => x.id === b.dataset.eye); s.show = !s.show; render(); });
   $('#scName').onchange = e => { const v = e.target.value.trim(); if (v && SCN.some(s => s !== sel && s.name === v)) return toast('Another scenario has that name'); sel.name = v || sel.name; render(); };
@@ -199,3 +206,6 @@ function drawBench() {
   $$('.bm-chip').forEach(b => b.onclick = () => { const k = b.dataset.b; if (!bmHas(k)) return; BM.show.has(k) ? BM.show.delete(k) : BM.show.add(k); render(); });
   if ($('#bmMix')) $('#bmMix').oninput = e => { BM.stocks = +e.target.value; $('#bmMixV').textContent = BM.stocks + '%'; drawBench(); };
 }
+
+// one-line answer for other pages: the base scenario's chance at its own retirement age and spending
+function retireHeadline() { const sc = SCN[0]; if (!sc) return null; const r = scnRun(sc); return {prob: r.prob, age: sc.p.retire, spend: sc.p.spend, name: sc.name, ok: r.prob >= SCCONF, conf: SCCONF}; }
