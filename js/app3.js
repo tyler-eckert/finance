@@ -13,8 +13,8 @@ const D3 = DATA3;
 
 /* ---------------- analysis filter (exclude categories from analysis) ---------------- */
 const hasCat = n => ST.cats.some(c => c.name === n);
-ST.excl = new Set((CTX.prefs.excl ?? ['Tax']).filter(hasCat));
-ST.exclSub = new Set((CTX.prefs.exclSub || []).filter(k => hasCat(k.split('|')[0])));   // 'Category|Sub'
+ST.excl = new Set();   // always start unfiltered so nothing is missed by accident
+ST.exclSub = new Set();   // 'Category|Sub'
 const isExclP = p => ST.excl.has(p.cat || '') || ST.exclSub.has((p.cat || '') + '|' + (p.sub || ''));
 let FLT_OPEN = new Set();
 const FPRESETS = [
@@ -54,7 +54,7 @@ function openFilter(e) {
     $$('input[data-c]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.excl.delete(cb.dataset.c) : ST.excl.add(cb.dataset.c); draw(); render(); });
     $$('input[data-cs]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.exclSub.delete(cb.dataset.cs) : ST.exclSub.add(cb.dataset.cs); draw(); render(); });
     $$('[data-cx]', p).forEach(b => b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); const k = b.dataset.cx; FLT_OPEN.has(k) ? FLT_OPEN.delete(k) : FLT_OPEN.add(k); draw(); });
-    $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(['Tax'].filter(hasCat)); ST.exclSub.clear(); draw(); render(); };
+    $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(); ST.exclSub.clear(); draw(); render(); };
   };
   draw();
   p.style.top = (r.bottom + 8) + 'px'; p.style.right = Math.max(8, innerWidth - r.right) + 'px';

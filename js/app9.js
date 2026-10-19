@@ -118,7 +118,7 @@ function renderSummary(pg, embed = false) {
       : '<p class="muted">Not enough history for last year yet.</p>'}</div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Easy places to cut</h3><div class="sub">Ideas from our own spending · ${ideas.total > 0 ? `about <b>${short(ideas.total)}/yr</b> if we act on all of them` : 'nothing stands out right now'}</div></div></div>
-      <div class="cut-grid">${ideas.groups.map(g => `<div class="cut"><h4>${g.t}</h4><p class="muted">${g.d}</p>${g.items.map(it => `<div class="cut-i"><span>${esc(it.n)}${it.s ? `<small class="muted">${esc(it.s)}</small>` : ''}</span><b class="num">${it.v}</b></div>`).join('')}<div class="cut-t"><span>Could save</span><b class="num pos">~${short(g.save)}/yr</b></div></div>`).join('') || '<p class="muted">No easy cuts found — spending looks in line with usual.</p>'}</div></div>
+      <div class="cut-grid">${ideas.groups.map(g => `<div class="cut"><h4>${g.t}</h4><p class="muted">${g.d}</p>${g.items.map(it => `<div class="cut-i"><span>${esc(it.n)}${it.s ? `<small class="muted">${esc(it.s)}</small>` : ''}</span><b class="num">${it.v}</b>${it.h && CTX.CAN_WRITE ? `<button class="cut-x" data-cuthide="${esc(it.h)}" title="Not a place to cut — hide it" aria-label="Hide ${esc(it.h)}">×</button>` : ''}</div>`).join('')}<div class="cut-t"><span>Could save</span><b class="num pos">~${short(g.save)}/yr</b></div></div>`).join('') || '<p class="muted">No easy cuts found — spending looks in line with usual.</p>'}</div></div>
 
     <div class="card c-7"><div class="card-h"><div><h3>Net worth</h3><div class="sub">What we own minus what we owe · last 2 years</div></div></div>
       <div class="chart" id="smNw"></div>
@@ -164,31 +164,32 @@ function renderSummary(pg, embed = false) {
 function summIdeas(MM, M, y, mo, years, same) {
   const groups = [], last3 = [ymPlus(M, -2), ymPlus(M, -1), M], since = CTX.SINCE.slice(0, 7);
   const isVar = c => catOf(c)?.group === 'Variable Expense' && !ST.excl.has(c);
+  const HID = new Set(((typeof UI !== 'undefined' && UI.cutHide) || []).map(s => s.toLowerCase())), skip = n => HID.has(String(n).toLowerCase()) || /state ?farm|geico|allstate|progressive|usaa|farmers ins|liberty mutual|nationwide/i.test(n);
   // vendor activity in the last 3 full months (loaded transactions only)
   const V = {};
   if (last3[0] >= since) ST.tx.forEach(t => { const m = t.d.slice(0, 7); if (!last3.includes(m) || t.amt >= 0) return; const c = t.splits ? t.splits[0].cat : t.cat; if (!isVar(c)) return;
     const n = vendorName(vendorKey(t.desc)); if (!n) return; const v = (V[n] ||= {n, cat: c, m: {}, k: {}}); v.m[m] = (v.m[m] || 0) - t.amt; v.k[m] = (v.k[m] || 0) + 1; });
   // 1) subscriptions from the cash plan + charges that repeat every month at about the same amount
-  const subs = (ST.cash || []).filter(c => c.active !== false && c.kind === 'subscription' && c.amount < 0).map(c => ({n: c.name, mo: -c.amount * ({weekly: 52 / 12, biweekly: 26 / 12, semimonthly: 2, monthly: 1, quarterly: 1 / 3, annual: 1 / 12, once: 0}[c.freq] ?? 1)}));
+  const subs = (ST.cash || []).filter(c => !skip(c.name) && c.active !== false && c.kind === 'subscription' && c.amount < 0).map(c => ({n: c.name, mo: -c.amount * ({weekly: 52 / 12, biweekly: 26 / 12, semimonthly: 2, monthly: 1, quarterly: 1 / 3, annual: 1 / 12, once: 0}[c.freq] ?? 1)}));
   const seen = new Set(subs.map(s => s.n.toLowerCase()));
   Object.values(V).forEach(v => { const a = last3.map(m => v.m[m] || 0); if (a.some(x => !x) || last3.some(m => v.k[m] > 2)) return; const mean = sum(a) / 3, sd = Math.sqrt(sum(a.map(x => (x - mean) ** 2)) / 3);
-    if (mean > 400 || sd / mean > .15 || seen.has(v.n.toLowerCase()) || /credit|loan|financ|mortgage|insur|tax|tuition|daycare|rent\b/i.test(v.n)) return; subs.push({n: v.n, mo: mean, s: v.cat}); });
+    if (mean > 400 || sd / mean > .15 || skip(v.n) || seen.has(v.n.toLowerCase()) || /credit|loan|financ|mortgage|insur|tax|tuition|daycare|rent\b/i.test(v.n)) return; subs.push({n: v.n, mo: mean, s: v.cat}); });
   subs.sort((p, q) => q.mo - p.mo);
   if (subs.length) { const tot = sum(subs.map(s => s.mo)); groups.push({t: 'Subscriptions & repeating charges', d: `${plural(subs.length, 'charge')} every month, ${money(tot)}/mo in all. Cancelling the ones we don’t use is the easiest win — the estimate assumes we drop a quarter of them.`,
-    items: subs.slice(0, 8).map(s => ({n: s.n, s: s.s ? ' · ' + s.s : '', v: money(s.mo) + '/mo'})).concat(subs.length > 8 ? [{n: `+ ${subs.length - 8} more`, v: money(sum(subs.slice(8).map(s => s.mo))) + '/mo'}] : []), save: tot * 12 * .25}); }
+    items: subs.slice(0, 8).map(s => ({n: s.n, h: s.n, s: s.s ? ' · ' + s.s : '', v: money(s.mo) + '/mo'})).concat(subs.length > 8 ? [{n: `+ ${subs.length - 8} more`, v: money(sum(subs.slice(8).map(s => s.mo))) + '/mo'}] : []), save: tot * 12 * .25}); }
   // 2) everyday categories running above our usual for this time of year
   const prior = years.filter(k => k < y).slice(-3).map(k => same[years.indexOf(k)]), now = same[years.indexOf(y)];
   if (prior.length && now) {
-    const hot = Object.keys(now.cat).filter(isVar).map(c => { const usual = sum(prior.map(p => p.cat[c] || 0)) / prior.length; return {c, now: now.cat[c], usual, x: now.cat[c] - usual}; })
+    const hot = Object.keys(now.cat).filter(c => isVar(c) && !skip(c)).map(c => { const usual = sum(prior.map(p => p.cat[c] || 0)) / prior.length; return {c, now: now.cat[c], usual, x: now.cat[c] - usual}; })
       .filter(r => r.usual > 0 && r.x > Math.max(300, r.usual * .15)).sort((p, q) => q.x - p.x).slice(0, 6);
     if (hot.length) groups.push({t: 'Running above our usual', d: `Everyday categories higher than our average for January – ${MON[mo - 1]} over the past ${plural(prior.length, 'year')}. Getting back to normal would save the difference.`,
-      items: hot.map(r => ({n: r.c, s: ` · usually ${short(r.usual)}`, v: `${short(r.now)} <span class="neg">+${short(r.x)}</span>`})), save: sum(hot.map(r => r.x * 12 / mo))});
+      items: hot.map(r => ({n: r.c, h: r.c, s: ` · usually ${short(r.usual)}`, v: `${short(r.now)} <span class="neg">+${short(r.x)}</span>`})), save: sum(hot.map(r => r.x * 12 / mo))});
   }
   // 3) small, frequent purchases (coffee, fast food, quick online orders)
   const small = Object.values(V).map(v => { const n = sum(last3.map(m => v.k[m] || 0)), amt = sum(last3.map(m => v.m[m] || 0)); return {n: v.n, cat: v.cat, per: n / 3, avg: amt / Math.max(1, n), mo: amt / 3}; })
-    .filter(v => v.per >= 4 && v.avg <= 40).sort((p, q) => q.mo - p.mo).slice(0, 6);
+    .filter(v => v.per >= 4 && v.avg <= 40 && !skip(v.n)).sort((p, q) => q.mo - p.mo).slice(0, 6);
   if (small.length) groups.push({t: 'Small, frequent purchases', d: 'Little charges that add up. Cutting these in half is the estimate.',
-    items: small.map(v => ({n: v.n, s: ` · ${Math.round(v.per)}×/mo, ~${money(v.avg)} each`, v: money(v.mo) + '/mo'})), save: sum(small.map(v => v.mo)) * 12 * .5});
+    items: small.map(v => ({n: v.n, h: v.n, s: ` · ${Math.round(v.per)}×/mo, ~${money(v.avg)} each`, v: money(v.mo) + '/mo'})), save: sum(small.map(v => v.mo)) * 12 * .5});
   return {groups, total: sum(groups.map(g => g.save))};
 }
 
@@ -339,10 +340,10 @@ function ovBalanceCard() {
   const groups = BGROUPS.filter(g => B.some(a => a.group === g));
   const vc = (cur, prv, sg) => { if (cur == null || prv == null || (!cur && !prv)) return '<td class="num muted">—</td><td class="num muted"></td>'; const d = cur - prv, cls = Math.abs(d) < .5 ? 'muted' : d * sg > 0 ? 'pos' : 'neg';
     return `<td class="num ${cls}">${Math.abs(d) < .5 ? '$0' : (d > 0 ? '+' : '−') + short(Math.abs(d))}</td><td class="num ${cls}">${prv ? pct(d / Math.abs(prv), 1) : ''}</td>`; };
-  const row = (n, c, pv, yv, sg, cls = '') => `<tr class="${cls}"><td class="${cls ? '' : 'ind'}">${n}</td><td class="num">${c == null ? '—' : short(c)}</td>${vc(c, pv, sg)}${vc(c, yv, sg)}</tr>`;
+  const row = (n, c, pv, yv, sg, cls = '') => `<tr class="${cls}"><td class="${cls ? '' : 'ind'}">${n}</td><td class="num">${c == null ? '—' : short(c)}</td><td class="num muted">${yv == null ? '—' : short(yv)}</td>${vc(c, yv, sg)}</tr>`;
   const gs = (list, i) => sum(list.map(a => val(a, i) || 0));
-  return `<div class="card c-8" id="ovBal"><div class="card-h"><div><h3>Balance sheet · ${mLabel(m)}</h3><div class="sub">Latest full month vs. the month before and the same month last year</div></div><div class="right"><button class="btn" style="height:32px" onclick="go('balances')">History</button></div></div>
-    <div class="scroll-x"><table class="table ov-bt"><tr><th>Account</th><th>${mShort(m)}</th><th>MoM $</th><th>MoM %</th><th>YoY $</th><th>YoY %</th></tr>
+  return `<div class="card c-8" id="ovBal"><div class="card-h"><div><h3>Balance sheet · ${mLabel(m)}</h3><div class="sub">Latest full month vs. the same month last year</div></div><div class="right"><button class="btn" style="height:32px" onclick="go('balances')">History</button></div></div>
+    <div class="scroll-x"><table class="table ov-bt"><tr><th>Account</th><th>${mShort(m)}</th><th>${yA >= 0 ? mShort(BS.months[yA]) : 'Year ago'}</th><th>YoY $</th><th>YoY %</th></tr>
     ${groups.map(g => { const ga = B.filter(a => a.group === g && (val(a, A) || val(a, yA) || val(a, p))), sg = g === 'Debt' ? -1 : 1; if (!ga.length) return '';
       return row(g, gs(ga, A), gs(ga, p), yA >= 0 ? gs(ga, yA) : null, sg, 'grp-r') + ga.map(a => row(esc(a.name), val(a, A), val(a, p), val(a, yA), sg)).join(''); }).join('')}
     ${row('Net worth', BS.netWorth[A], BS.netWorth[p], yA >= 0 ? BS.netWorth[yA] : null, 1, 'tot')}</table></div></div>`;
@@ -390,3 +391,7 @@ function embedSummary(grid) {
   const slots = {glance: find(/at a glance$/), notes: find(/^Notes for /), month: find(/spending vs\. budget$/), ytd: find(/^The year so far$/), changed: chg, cuts: find(/^Easy places to cut$/), kids: find(/^Kids’ college$/)};
   $$('[data-slot]', grid).forEach(ph => { const c = slots[ph.dataset.slot]; if (c) ph.replaceWith(c); else ph.remove(); });
 }
+
+// hide an "easy place to cut" for good (saved with your preferences)
+document.addEventListener('click', e => { const b = e.target.closest('[data-cuthide]'); if (!b) return; e.preventDefault();
+  UI.cutHide = [...new Set([...(UI.cutHide || []), b.dataset.cuthide])]; SYNC.schedule(); render(); toast(`Hid ${b.dataset.cuthide} from easy places to cut`); });
