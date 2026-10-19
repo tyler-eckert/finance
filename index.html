@@ -46,6 +46,7 @@
       </div>
     </header>
     <section class="page" id="p-overview"></section>
+    <section class="page" id="p-summary"></section>
     <section class="page" id="p-budget"></section>
     <section class="page" id="p-invest"></section>
     <section class="page" id="p-plan"></section>
@@ -72,7 +73,8 @@
       <div class="logo-word">eckert<span>.fin</span></div>
     </div><div class="boot-body"><div class="spin"></div><p class="muted">Loading…</p></div></div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" integrity="sha384-0w2KAL2YHP6wKOkUDzkCDGgVvfmHnj02DHeQ6XcHOgTfFsGyonKOpShMH1x6nk9o" crossorigin="anonymous"></script>
-<script src="js/config.js"></script>
-<script src="js/db.js"></script>
+<script>/* always fetch the newest config + data layer (GitHub Pages caches for 10 min); app modules are versioned from config */
+(function () { var t = Date.now(), load = function (src, next) { var s = document.createElement('script'); s.src = src + '?_=' + t; s.onload = next; document.body.appendChild(s); };
+  load('js/config.js', function () { load('js/db.js'); }); })();</script>
 </body>
 </html>

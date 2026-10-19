@@ -1,6 +1,7 @@
 /* ================= shell / routing ================= */
 const PAGES = [
   {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
+  {k: 'summary', n: 'Summary', i: 'file', g: 'Analyze', sub: () => `The big picture for ${mLabel(lastFullMonth())} · in plain English`, r: renderSummary},
   {k: 'budget', n: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
   {k: 'invest', n: 'Investments', i: 'invest', g: 'Analyze', sub: () => 'Brokerage, retirement, HSA and 529s', r: renderInvest},
   {k: 'cash', n: 'Cash plan', i: 'cal', g: 'Analyze', sub: () => 'Bills, subscriptions, income and what’s coming · next 12 weeks', r: renderCash},
