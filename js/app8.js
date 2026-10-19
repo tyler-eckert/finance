@@ -360,3 +360,195 @@ function drawFlows() {
     height: 240, xGap: 56, xFmt: mShort, tipTitle: mLabel, tipFmt: v => (v >= 0 ? '+' : '−') + money(Math.abs(v)),
     tipExtra: i => tipRow(null, 'Total change', (F.monthly[i].dep + F.monthly[i].gain >= 0 ? '+' : '−') + money(Math.abs(F.monthly[i].dep + F.monthly[i].gain)))});
 }
+
+/* =====================================================================
+   College savings · 529s — rolled up and by child, with a child filter,
+   a projection through college, start markers and 4 years of semester draws.
+   The draw plan is household data: households.settings.college_plan
+     {draws: bool, rate: 0.045, kids: {Name: {on: bool, per: 15000, sem: {'2036-08': 16000, ...}}}}
+   ===================================================================== */
+const KID_COL = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+let COL_RANGE = '3y';
+const COLP = () => { const p = (CTX.settings.college_plan ||= {}); p.kids ||= {}; if (p.draws == null) p.draws = true; if (p.rate == null) p.rate = .045; return p; };
+const colHidden = () => new Set(UI.colHide || []);
+const colSems = k => { const o = []; for (let t = 0; t < 4; t++) o.push({m: `${k.y18 + t}-08`, l: `Fall ’${String(k.y18 + t).slice(2)}`, y: t + 1, f: 1}, {m: `${k.y18 + t + 1}-01`, l: `Spring ’${String(k.y18 + t + 1).slice(2)}`, y: t + 1, f: 0}); return o; };
+const kidPlan = k => { const p = COLP().kids[k.name] || {}; return {on: p.on !== false, per: p.per ?? Math.round(DATA.assume.collegeTarget / 8 / 100) * 100, sem: p.sem || {}}; };
+const kidDraw = (k, m) => { const p = kidPlan(k); if (!COLP().draws || !p.on || !colSems(k).some(s => s.m === m)) return 0; return +(p.sem[m] ?? p.per) || 0; };
+function colProject(k) {
+  const P = COLP(), r = (+P.rate || 0) / 12, mo = DATA.assume.college529Monthly || 0, start = `${k.y18}-08`, sems = colSems(k), last = sems[7].m;
+  const months = ymRange(BS.months[L], ymPlus(last, 4)), val = {}, after = {};
+  let bal = BS[k.key]?.[L] || 0, atStart = null, drawn = 0, end = null, firstShort = null;
+  months.forEach((m, i) => {
+    if (i) { bal *= 1 + r; if (m < start) bal += mo; }
+    if (m === start) atStart = bal;
+    const d = kidDraw(k, m); if (d) { bal -= d; drawn += d; after[m] = bal; if (bal < 0 && !firstShort) firstShort = m; }
+    if (m === last) end = bal;
+    val[m] = bal;
+  });
+  if (atStart == null) atStart = BS[k.key]?.[L] || 0;   // already in college
+  const n = Math.max(0, ymDiffN(BS.months[L], start)), kk = ymDiffN(start, last), g = Math.pow(1 + r, n), ann = r ? (g - 1) / r : n;
+  let extra = 0;
+  if (COLP().draws && kidPlan(k).on && drawn) { if (end < 0 && n > 0) extra = Math.ceil(-end / (ann * Math.pow(1 + r, kk)) / 5) * 5; }
+  else if (n > 0 && atStart < DATA.assume.collegeTarget) extra = Math.ceil((DATA.assume.collegeTarget - atStart) / ann / 5) * 5;
+  const covered = drawn ? Math.max(0, Math.min(1, (drawn + Math.min(0, end)) / drawn)) : Math.min(1, atStart / DATA.assume.collegeTarget);
+  return {months, val, after, atStart, drawn, end, firstShort, extra, covered, start, last, n};
+}
+let colSaveT = null;
+function saveColPlan() {
+  if (!CTX.CAN_WRITE) return;
+  clearTimeout(colSaveT);
+  colSaveT = setTimeout(async () => {
+    const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'college_plan', p_value: COLP()});
+    if (error) toast('Couldn’t save the college plan: ' + error.message);
+  }, 600);
+}
+// redraw the page but keep the cursor in the same input (so Tab / Enter keep flowing)
+function renderKeep() { setTimeout(() => { const f = document.activeElement, k = f?.dataset?.cd; render(); if (k) { const n = $(`[data-cd="${k}"]`); if (n) { n.focus(); n.select?.(); } } }, 0); }
+
+function collegeSection(kidsAll, target, mo529) {
+  if (!kidsAll.length && !BS.college[L]) return '';
+  const hid = colHidden(), kids = kidsAll.filter(k => !hid.has(k.name)), P = COLP();
+  kids.forEach(k => k.cp = colProject(k));
+  const KC = k => KID_COL[kidsAll.indexOf(k) % 5];
+  const series = j => sum(kids.map(k => BS[k.key]?.[j] || 0));
+  const tot = series(L), y1 = series(i12), ydec = series(iDecPY);
+  const first = kids.slice().sort((a, b) => a.y18 - b.y18)[0];
+  const sumStart = sum(kids.map(k => k.cp.atStart)), sumDraw = sum(kids.map(k => k.cp.drawn)), sumEnd = sum(kids.map(k => k.cp.end)), need = sum(kids.map(k => k.cp.extra));
+  const drawsOn = P.draws && kids.some(k => kidPlan(k).on);
+  const chips = kidsAll.map(k => `<button class="kchip ${hid.has(k.name) ? 'off' : ''}" data-kid="${esc(k.name)}" title="Show / hide ${esc(k.name)}"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</button>`).join('');
+  const sg = v => (v >= 0 ? '' : '−') + short(Math.abs(v));
+  return `<div class="card c-8" id="colCard"><div class="card-h"><div><h3>College savings · 529s</h3><div class="sub">${kids.length === kidsAll.length ? `All ${kids.length} plans` : `${kids.length} of ${kidsAll.length} plans`} rolled up · actual, then projected at ${(P.rate * 100).toFixed(1)}%/yr${drawsOn ? ' with semester draws' : ''}</div></div>
+      <div class="right"><div class="seg" id="colR">${[['1y', '1Y'], ['3y', '3Y'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${COL_RANGE === k ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
+      <div class="kchips">${chips}<span style="flex:1"></span><label class="tgl"><input type="checkbox" id="colProj" ${UI.colProj !== false ? 'checked' : ''}> Project through college</label><label class="tgl"><input type="checkbox" id="colDraws" ${P.draws ? 'checked' : ''} ${CTX.CAN_WRITE ? '' : 'disabled'}> Include draws</label></div>
+      <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin:12px 0 14px">
+        <div class="mini"><div class="l">Total today</div><div class="v num">${short(tot)}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${chip(nz((tot - y1) / y1))} 12 mo · ${tot - ydec >= 0 ? '+' : '−'}${short(Math.abs(tot - ydec))} since Dec</div></div>
+        <div class="mini"><div class="l">Projected at college start</div><div class="v num">${short(sumStart)}</div><div class="ds" style="font-size:11px;color:var(--text-3)">target ${short(target * kids.length)}</div></div>
+        <div class="mini"><div class="l">${drawsOn ? '4-year draws' : 'First starts'}</div><div class="v num" ${drawsOn ? '' : 'style="font-size:16px"'}>${drawsOn ? short(sumDraw) : first ? esc(first.name) + ' · ' + first.y18 : '—'}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${drawsOn ? `${kids.filter(k => kidPlan(k).on).length} child${kids.filter(k => kidPlan(k).on).length === 1 ? '' : 'ren'} · 8 semesters each` : first ? first.yrsLeft.toFixed(1) + ' yrs' : ''}</div></div>
+        <div class="mini"><div class="l">${drawsOn ? 'Left after college' : 'Extra / mo to hit target'}</div><div class="v num ${drawsOn ? (sumEnd >= 0 ? 'pos' : 'neg') : ''}">${drawsOn ? sg(sumEnd) : need ? money(need) : 'On track'}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${drawsOn ? (need ? `+${money(need)}/mo closes the gap` : 'every draw covered') : `${money(mo529)}/mo each now`}</div></div></div>
+      <div class="chart" id="colChart"></div><div class="legend"><span><i class="sw" style="background:var(--text-2)"></i>${kids.length === kidsAll.length ? 'All 529s' : 'Selected'}</span>${kids.map(k => `<span><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</span>`).join('')}${UI.colProj !== false ? '<span><i class="sw dash"></i>Projected</span><span><i class="sw" style="border-radius:50%;background:var(--text-2)"></i>College starts (Aug)</span>' : ''}</div></div>
+    <div class="card c-4"><div class="card-h"><div><h3>By child</h3><div class="sub">Last 24 months · ${money(mo529)}/mo each until college</div></div></div>
+      <div class="list">${kids.map(k => { const v = (BS[k.key] || []).slice(-24), ch = v.length > 12 && v[v.length - 13] ? (v[v.length - 1] - v[v.length - 13]) / v[v.length - 13] : 0;
+        return `<div class="li"><div style="min-width:0"><div class="nm">${esc(k.name)}</div><div class="ds">College ${k.y18} · ${k.yrsLeft.toFixed(1)} yrs</div></div><div style="margin-left:auto">${spark(v, KC(k), 64, 26, false)}</div><div class="amt num" style="margin-left:12px;min-width:72px">${short(k.bal)}<div style="font-size:11px">${chip(ch)}</div></div></div>`; }).join('') || '<p class="muted" style="padding:8px 0">Every child is filtered out — tap a name above.</p>'}</div>
+      <div class="ex-row" style="margin-top:6px"><span>Total</span><b>${short(tot)}</b></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>College projections by child</h3><div class="sub">${(P.rate * 100).toFixed(1)}% a year plus ${money(mo529)}/mo until August of the year they turn 18${drawsOn ? ', then each semester’s draw' : ` · target ${short(target)} each`}</div></div></div>
+      <div class="scroll-x"><table class="table cmp"><tr><th>Child</th><th>Today</th><th>Starts</th><th>Years left</th><th>At start</th><th>4-yr draws</th><th>Left after</th><th>${drawsOn ? 'Draws covered' : 'Funded'}</th><th>Extra / mo to close gap</th></tr>
+      ${kids.map(k => { const c = k.cp, on = drawsOn && kidPlan(k).on; return `<tr><td><span class="tw"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</span></td><td>${short(k.bal)}</td><td>Aug ${k.y18}</td><td>${k.yrsLeft.toFixed(1)}</td><td><b>${short(c.atStart)}</b></td>
+        <td>${on ? short(c.drawn) : '<span class="muted">off</span>'}</td><td class="${on ? (c.end >= 0 ? 'pos' : 'neg') : 'muted'}">${on ? sg(c.end) + (c.firstShort ? `<div class="muted" style="font-size:11px">runs out ${mLabel(c.firstShort)}</div>` : '') : '—'}</td>
+        <td style="min-width:110px"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1;height:6px"><i style="width:${c.covered * 100}%;background:${KC(k)}"></i></div><span class="muted num" style="font-size:11.5px">${Math.round(c.covered * 100)}%</span></div></td>
+        <td class="${c.extra ? '' : 'pos'}">${c.extra ? money(c.extra) : 'On track'}</td></tr>`; }).join('')}
+      <tr class="tot"><td>Total</td><td>${short(sum(kids.map(k => k.bal)))}</td><td></td><td></td><td>${short(sumStart)}</td><td>${drawsOn ? short(sumDraw) : ''}</td><td>${drawsOn ? sg(sumEnd) : ''}</td><td></td><td>${need ? money(need) : 'On track'}</td></tr></table></div></div>
+    ${drawsCard(kids, kidsAll)}`;
+}
+function drawsCard(kids, kidsAll) {
+  const P = COLP(), ro = CTX.CAN_WRITE ? '' : 'disabled', KC = k => KID_COL[kidsAll.indexOf(k) % 5];
+  const nf = v => v != null && v !== '' ? Math.round(+v).toLocaleString() : '';
+  const heads = [1, 2, 3, 4].flatMap(y => [`Yr ${y} fall`, `Yr ${y} spring`]);
+  return `<div class="card c-12" id="drawCard"><div class="card-h"><div><h3>College draws by semester</h3><div class="sub">What you expect to pull each August and January for 4 years · blank uses the per-semester amount · ${P.draws ? 'included in the projection' : '<b>turned off</b> — the projection ignores draws'}</div></div>
+      <div class="right" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><label class="tgl">Growth <input class="in sm num" id="colRate" ${ro} value="${(P.rate * 100).toFixed(1)}" style="width:60px">%/yr</label><label class="tgl"><input type="checkbox" id="colDraws2" ${P.draws ? 'checked' : ''} ${ro}> Include draws</label></div></div>
+    <div class="scroll-x"><table class="table draw-t ${P.draws ? '' : 'dim'}"><tr><th>Child</th><th>Use</th><th>Per semester</th>${heads.map(h => `<th>${h}</th>`).join('')}<th>Left after</th></tr>
+    ${kids.map(k => { const p = kidPlan(k), c = k.cp, off = !P.draws || !p.on;
+      return `<tr class="${off ? 'dim' : ''}"><td class="nowrap"><span class="tw"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</span><div class="muted" style="font-size:11px">Starts Aug ${k.y18} · ${short(c.atStart)}</div></td>
+        <td><input type="checkbox" data-kon="${esc(k.name)}" ${p.on ? 'checked' : ''} ${ro} title="Include ${esc(k.name)}'s draws"></td>
+        <td><input class="cell num" data-cd="${esc(k.name)}|per" data-kper="${esc(k.name)}" ${ro} value="${nf(p.per)}"></td>
+        ${colSems(k).map(s => { const a = c.after[s.m]; return `<td><div class="dsem">${s.l}</div><input class="cell num" data-cd="${esc(k.name)}|${s.m}" data-ksem="${esc(k.name)}" data-m="${s.m}" ${ro} value="${nf(p.sem[s.m])}" placeholder="${nf(p.per)}">
+          <div class="dbal ${a == null ? '' : a >= 0 ? '' : 'neg'}">${a == null ? '&nbsp;' : sgn(a)}</div></td>`; }).join('')}
+        <td class="num ${off ? 'muted' : c.end >= 0 ? 'pos' : 'neg'}"><b>${off ? '—' : sgn(c.end)}</b></td></tr>`; }).join('')}</table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Type an amount in any semester to override it (0 = no draw that term); clear it to fall back to the per-semester amount. The small number under each term is the 529 balance right after that draw.</p></div>`;
+}
+const sgn = v => (v < 0 ? '−' : '') + short(Math.abs(v));
+function drawCollege(kidsAll) {
+  const el = $('#colChart'); if (!el) return;
+  const hid = colHidden(), kids = kidsAll.filter(k => !hid.has(k.name)), P = COLP(), proj = UI.colProj !== false, KC = k => KID_COL[kidsAll.indexOf(k) % 5];
+  // wiring (all of the college cards)
+  $$('#colR button').forEach(b => b.onclick = () => { COL_RANGE = b.dataset.k; render(); });
+  $$('.kchip').forEach(b => b.onclick = () => { const s = colHidden(), n = b.dataset.kid; s.has(n) ? s.delete(n) : s.add(n); UI.colHide = [...s]; render(); });
+  $('#colProj').onchange = e => { UI.colProj = e.target.checked; render(); };
+  const setDraws = v => { P.draws = v; saveColPlan(); render(); };
+  $('#colDraws').onchange = e => setDraws(e.target.checked); if ($('#colDraws2')) $('#colDraws2').onchange = e => setDraws(e.target.checked);
+  const kp = n => (P.kids[n] ||= {}), num = s => { const v = String(s).replace(/[$,\s]/g, ''); return v === '' ? null : +v; };
+  if ($('#colRate')) $('#colRate').onchange = e => { const v = num(e.target.value); if (v != null && v >= 0 && v < 30) { P.rate = v / 100; saveColPlan(); } render(); };
+  $$('[data-kon]').forEach(c => c.onchange = () => { kp(c.dataset.kon).on = c.checked; saveColPlan(); render(); });
+  $$('[data-kper]').forEach(c => c.onchange = () => { const v = num(c.value); if (v == null) delete kp(c.dataset.kper).per; else kp(c.dataset.kper).per = v; saveColPlan(); renderKeep(); });
+  $$('[data-ksem]').forEach(c => c.onchange = () => { const p = kp(c.dataset.ksem), v = num(c.value); p.sem ||= {}; if (v == null) delete p.sem[c.dataset.m]; else p.sem[c.dataset.m] = v; saveColPlan(); renderKeep(); });
+  $$('#drawCard .cell').forEach(c => c.onkeydown = e => { if (e.key !== 'Enter') return; e.preventDefault(); const t = e.target.closest('td'), i = [...t.parentNode.children].indexOf(t), nx = t.parentNode.nextElementSibling?.children[i]?.querySelector('.cell'); (nx || c).focus(); nx?.select(); });
+  if (!kids.length) { el.innerHTML = ''; return; }
+  // axis: history window, then (optionally) every month through the last child's final spring draw
+  const st = COL_RANGE === '1y' ? Math.max(0, L - 12) : COL_RANGE === '3y' ? Math.max(0, L - 36) : Math.max(0, BS.college.findIndex(v => v > 0));
+  const hist = BS.months.slice(st, L + 1), endM = proj ? kids.map(k => ymPlus(k.cp.last, 4)).sort().pop() : BS.months[L];
+  const labels = hist.concat(ymRange(ymPlus(BS.months[L], 1), endM)), nH = hist.length, iOf = m => labels.indexOf(m);
+  const H = k => labels.map((m, i) => i < nH ? (BS[k.key]?.[st + i] ?? null) : null);
+  const F = k => labels.map((m, i) => i < nH - 1 ? null : (k.cp.val[m] ?? (m > k.cp.months[k.cp.months.length - 1] ? k.cp.val[k.cp.months[k.cp.months.length - 1]] : null)));
+  const sumS = arrs => labels.map((m, i) => arrs.every(a => a[i] == null) ? null : sum(arrs.map(a => a[i] ?? 0)));
+  const hs = kids.map(H), fs = proj ? kids.map(F) : [];
+  const series = [{name: kids.length === kidsAll.length ? 'All 529s' : 'Selected', values: sumS(hs), color: 'var(--text-2)', area: !proj, width: 2.5}]
+    .concat(kids.map((k, j) => ({name: k.name, values: hs[j], color: KC(k)})));
+  if (proj) series.push({name: 'Projected total', values: sumS(fs), color: 'var(--text-2)', dash: '5 5', width: 2}, ...kids.map((k, j) => ({name: k.name + ' · projected', values: fs[j], color: KC(k), dash: '4 4'})));
+  const nK = kids.length, markers = proj ? kids.map((k, j) => { const i = iOf(k.cp.start); return i < 0 ? null : {i, s: 1 + nK + 1 + j, color: KC(k), label: `${k.name} ’${String(k.y18).slice(2)}`, dy: j * 13, r: 5, ring: true}; }).filter(Boolean) : [];
+  lineChart(el, {labels, series, height: 260, zero: true, xGap: 70, xFmt: (lb, i, e) => i % e === 0 ? (labels.length > 60 ? lb.slice(0, 4) : mShort(lb)) : null, tipTitle: mLabel,
+    vlines: proj && labels.length > nH ? [{i: nH - 1, label: 'Today'}] : [], markers,
+    tipExtra: i => { const m = labels[i]; return kids.map(k => { const d = kidDraw(k, m); return d && m >= k.cp.start ? tipRow(KC(k), `${k.name} draw`, '−' + money(d)) : ''; }).join(''); }});
+}
+
+/* =====================================================================
+   Admin → Automation: the market-data Edge Function (benchmarks, macro,
+   stock prices, asset quotes) — last runs, run now, provider keys, positions
+   ===================================================================== */
+const AUTO = {prov: null, provErr: null, running: false, results: null, loaded: false};
+const AUTO_JOBS = [['benchmarks', 'Benchmarks', 'S&P 500, 60/40, bonds, global, T-bill monthly returns'], ['macro', 'Market rates', 'CPI, 30-yr mortgage, 10-yr Treasury, T-bill'],
+  ['stocks', 'Stock positions', 'Month-end shares × close for accounts with a ticker'], ['assets', 'Asset quotes', 'RentCast, FHFA, MarketCheck, VinAudit · monthly']];
+async function autoCall(body) {
+  const {data, error} = await sb.functions.invoke('market-data', {body: {household_id: CTX.HH, ...body}});
+  if (error) { let msg = error.message; try { const j = await error.context?.json?.(); if (j?.error) msg = j.error; } catch (_) {}
+    if (error.context?.status === 404 || /FunctionsFetchError|FunctionsRelayError|Failed to send/.test(error.name + ' ' + error.message)) msg = 'The market-data function isn’t deployed yet — see README → Automated data.';
+    throw new Error(msg); }
+  return data;
+}
+function mkSeries(code) { return (CTX.market || []).filter(r => r[0] === code).map(r => ({m: r[1], v: +r[2]})).sort((a, b) => a.m.localeCompare(b.m)); }
+function automationCard() {
+  if (!AUTO.loaded && CTX.CAN_WRITE) { AUTO.loaded = true; autoCall({action: 'status'}).then(d => { AUTO.prov = d.providers; }, e => { AUTO.provErr = e.message; }).finally(() => { if (cur === 'admin') render(); }); }
+  const last = Object.fromEntries((AUTO.results || CTX.auto || []).map(r => [r.job, r]));
+  const when = d => d ? new Date(d).toLocaleString(undefined, {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}) : 'never';
+  const cpi = mkSeries('CPIAUCSL'), cpiY = cpi.length > 12 ? cpi[cpi.length - 1].v / cpi[cpi.length - 13].v - 1 : null, last1 = c => mkSeries(c).at(-1);
+  const tiles = [['Inflation (CPI, 12 mo)', cpiY != null ? pct(cpiY) : '—', cpi.at(-1)?.m], ['30-yr mortgage', last1('MORTGAGE30US') ? last1('MORTGAGE30US').v.toFixed(2) + '%' : '—', last1('MORTGAGE30US')?.m],
+    ['10-yr Treasury', last1('DGS10') ? last1('DGS10').v.toFixed(2) + '%' : '—', last1('DGS10')?.m], ['3-mo T-bill', last1('TB3MS') ? last1('TB3MS').v.toFixed(2) + '%' : '—', last1('TB3MS')?.m]];
+  const P = AUTO.prov, pc = (k, n, need) => `<span class="chip ${P?.[k] ? 'pos' : ''}">${P?.[k] ? icon('check') + ' ' : ''}${n}${P && !P[k] ? ` · ${need}` : ''}</span>`;
+  const accts = (SNAP.accounts || []).filter(a => a.is_active !== false && !a.parent_account_id && (a.ticker || a.kind === 'stock' || AUTO.addId === a.id));
+  const ro = CTX.CAN_WRITE ? '' : 'disabled';
+  return `<div class="card c-12" id="autoCard"><div class="card-h"><div><h3>Automation</h3><div class="sub">Market data, stock prices and asset quotes · the <b>market-data</b> function runs every morning; API keys stay in Supabase secrets</div></div>
+      <div class="right" style="display:flex;gap:10px;align-items:center">${CTX.CAN_WRITE ? `<label class="tgl" title="Re-pull all benchmark history and re-quote assets this month"><input type="checkbox" id="autoFull"> Full history</label><button class="btn primary" id="autoRun" ${AUTO.running ? 'disabled' : ''}>${AUTO.running ? 'Running…' : 'Run now'}</button>` : ''}</div></div>
+    ${AUTO.provErr ? `<div class="hint" style="margin-bottom:10px">${esc(AUTO.provErr)}</div>` : P ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${pc('schedule', 'Daily schedule', 'set CRON_SECRET')}${pc('yahoo', 'Yahoo prices')}${pc('fred', 'FRED rates')}${pc('fhfa', 'FHFA home index')}${pc('rentcast', 'RentCast', 'add key')}${pc('marketcheck', 'MarketCheck', 'add key')}${pc('vinaudit', 'VinAudit', 'add key')}${pc('alphavantage', 'Alpha Vantage backup', 'optional')}</div>` : ''}
+    <div class="scroll-x"><table class="table auto-t"><tr><th>Job</th><th>Last run</th><th>Status</th><th>Details</th></tr>
+      ${AUTO_JOBS.map(([k, n, d]) => { const r = last[k], s = r?.summary || r || {}, errs = s.errors || [], notes = s.notes || [];
+        return `<tr><td><b>${n}</b><div class="muted" style="font-size:11.5px">${d}</div></td><td class="nowrap">${r ? when(r.finished_at || r.started_at) + (r.trigger === 'manual' ? ' · manual' : '') : (AUTO.results ? 'not run' : 'never')}</td>
+          <td>${!r ? '<span class="chip">Waiting</span>' : errs.length ? `<span class="chip neg">${errs.length} issue${errs.length > 1 ? 's' : ''}</span>` : `<span class="chip pos">${icon('check')} ${s.written ?? 0} written</span>`}</td>
+          <td class="auto-d">${errs.map(e => `<div class="neg">${esc(e)}</div>`).join('')}${notes.slice(0, 6).map(e => `<div>${esc(e)}</div>`).join('')}${notes.length > 6 ? `<div class="muted">+${notes.length - 6} more</div>` : ''}</td></tr>`; }).join('')}</table></div>
+    ${AUTO.results ? `<div class="hint" style="margin-top:10px">Done. <button class="link" onclick="location.reload()">Reload</button> to see the new numbers across the app.</div>` : ''}
+    <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin:14px 0">${tiles.map(([l, v, m]) => `<div class="mini"><div class="l">${l}</div><div class="v num">${v}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${m ? mLabel(m) + ' · FRED' : 'after the first run'}</div></div>`).join('')}</div>
+    <h4 style="margin:6px 0 8px;font-size:13px">Stock positions <span class="muted" style="font-weight:500">· balance = shares × month-end close, written for each finished month you haven’t entered yourself</span></h4>
+    <div class="scroll-x"><table class="table"><tr><th>Account</th><th>Ticker</th><th>Shares</th><th></th></tr>
+      ${accts.map(a => `<tr><td>${esc(a.name)}</td><td><input class="in sm" data-tk="${a.id}" ${ro} value="${esc(a.ticker || '')}" placeholder="e.g. PPG" style="width:110px;text-transform:uppercase"></td>
+        <td><input class="in sm num" data-sh="${a.id}" ${ro} value="${a.shares != null ? (+a.shares).toLocaleString('en-US', {maximumFractionDigits: 6}) : ''}" placeholder="0" style="width:130px"></td>
+        <td>${a.ticker ? `<button class="link" data-tkclr="${a.id}" ${ro}>Stop pricing</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No stock accounts yet.</td></tr>'}
+    </table></div>
+    ${CTX.CAN_WRITE ? `<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><span class="muted" style="font-size:12px">Price another account:</span><select class="in sm" id="tkAdd" style="width:220px"><option value="">Choose…</option>${(SNAP.accounts || []).filter(a => a.is_active !== false && !a.parent_account_id && !accts.includes(a) && ['Investing', 'Retirement'].includes(a.balance_group)).map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></div>` : ''}
+  </div>`;
+}
+function wireAutomation() {
+  if (!$('#autoCard')) return;
+  if ($('#autoRun')) $('#autoRun').onclick = async () => {
+    AUTO.running = true; render();
+    try { const d = await autoCall({force: $('#autoFull')?.checked}); AUTO.results = (d.results || []).map(r => ({job: r.job, trigger: 'manual', finished_at: new Date().toISOString(), summary: r})); toast(d.ok ? 'Automation finished' : 'Automation finished with issues — see details'); }
+    catch (e) { toast(e.message); }
+    AUTO.running = false; render();
+  };
+  const save = async (id, patch) => {
+    const a = SNAP.accounts.find(x => x.id === id);
+    const {error} = await sb.schema('finance').from('accounts').update(patch).eq('id', id);
+    if (error) return toast('Couldn’t save: ' + error.message);
+    Object.assign(a, patch); render(); toast(`${a.name} saved${patch.ticker ? ' · priced on the next run' : ''}`);
+  };
+  $$('[data-tk]').forEach(i => i.onchange = () => { const t = i.value.trim().toUpperCase(); if (t && !/^[A-Z0-9.^=-]{1,15}$/.test(t)) return toast('That doesn’t look like a ticker'); save(i.dataset.tk, {ticker: t || null}); });
+  $$('[data-sh]').forEach(i => i.onchange = () => { const v = i.value.replace(/[,\s]/g, ''); if (v !== '' && !(+v >= 0)) return toast('Shares must be a number'); save(i.dataset.sh, {shares: v === '' ? null : +v}); });
+  $$('[data-tkclr]').forEach(b => b.onclick = () => save(b.dataset.tkclr, {ticker: null}));
+  if ($('#tkAdd')) $('#tkAdd').onchange = e => { AUTO.addId = e.target.value; render(); setTimeout(() => $(`[data-tk="${AUTO.addId}"]`)?.focus(), 30); };
+}

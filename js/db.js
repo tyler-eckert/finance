@@ -84,7 +84,7 @@ async function start() {
     const [{data: snap, error: e2}, ex] = await Promise.all([FDB.rpc('app_snapshot', {p_household: HH}), FDB.rpc('app_snapshot_extra', {p_household: HH})]);
     if (e2) throw e2;
     if (ex.error) console.warn('[fin] app_snapshot_extra unavailable — run migration 1200', ex.error.message);
-    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: []}, ex.data || {}); snap.extraOk = !ex.error;
+    Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: []}, ex.data || {}); snap.extraOk = !ex.error;
     SNAP = snap; console.info(`[fin] snapshot ${(JSON.stringify(snap).length / 1e6).toFixed(1)} MB in ${Math.round(performance.now() - t0)} ms`);
     buildData(snap);
     await loadApp();
@@ -336,6 +336,7 @@ function buildData(S) {
     scenarios: S.scenarios, planned: S.planned_expenses, changeLog: S.change_log, benchmarks: S.benchmarks, benchReturns: S.benchmark_returns,
     taxYears: tyRows, sources: S.valuation_sources, salaryCats,
     importAccts: S.accounts.filter(a => a.imports_transactions && a.is_active).map(a => a.name)};
+  CTX.market = S.market_series || []; CTX.auto = S.automation || [];
   window.CTX = CTX; window.DATA = DATA; window.DATA2 = DATA2; window.DATA3 = DATA3; window.DATA4 = DATA4;
 }
 
