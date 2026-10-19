@@ -105,11 +105,20 @@ function reviewBalance(y) {
   const debt = ST.loans.map(l => ({id: l.id, n: l.name, v0: loanBal(l, m0), v1: loanBal(l, m1), rate: l.rate, end: loanPayoff(l.id)})).filter(r => r.v0 > .5 || r.v1 > .5);
   return {m0, m1, G, assets, debt, nw0: at('netWorth', i0) ?? 0, nw1: at('netWorth', i1) ?? 0};
 }
+// yearly totals per category; the current year is an estimate: actual so far + the budget for the rest of the year
+// (or the year-to-date pace where there's no budget), so it compares apples to apples with full past years
 function reviewTrends() {
-  const MM = summMonthly(), years = [...new Set(Object.keys(MM).map(m => +m.slice(0, 4)))].sort().filter(y => y <= CY);
-  const yr = (c, y) => -sum(ymRange(`${y}-01`, `${y}-12`).map(m => MM[m]?.[c] || 0));
+  const MM = summMonthly(), years = [...new Set(Object.keys(MM).map(m => +m.slice(0, 4)))].sort().filter(y => y <= CY), am = ASOF.m;
+  const actualY = (c, y) => -sum(ymRange(`${y}-01`, `${y}-12`).map(m => MM[m]?.[c] || 0));
+  const estCY = c => { const ytd = -sum(ymRange(`${CY}-01`, `${CY}-${String(am).padStart(2, '0')}`).map(m => MM[m]?.[c] || 0)); if (am >= 12) return ytd;
+    const b = typeof budgetFor === 'function' ? -budgetFor(CY, c, am + 1, 12) : 0; return ytd + (Math.abs(b) > .5 ? b : ytd / am * (12 - am)); };
+  const yr = (c, y) => y === CY ? estCY(c) : actualY(c, y);
+  const sign = c => catOf(c)?.group === 'Income' ? -1 : 1;
   const T = RVS().trends || [{t: 'Mortgage', cats: ['Mortgage']}, {t: 'Groceries & Eating Out', cats: ['Groceries', 'Eating Out']}, {t: 'Vacations & Entertainment', cats: ['Vacation', 'Entertainment']}];
-  return {years, charts: T.map(ch => ({t: ch.t, series: ch.cats.filter(c => catOf(c)).map(c => ({n: c, v: years.map(y => Math.max(0, yr(c, y)))}))})).filter(ch => ch.series.length)};
+  const all = ST.cats.filter(c => c.group !== 'TTS').map(c => ({c: c.name, g: c.group, v: years.map(y => yr(c.name, y) * sign(c.name))})).filter(r => r.v.some(v => Math.abs(v) >= 1));
+  const gOrder = {Income: 0, 'Fixed Expense': 1, 'Variable Expense': 2};
+  all.sort((a, b) => (gOrder[a.g] ?? 3) - (gOrder[b.g] ?? 3) || Math.max(...b.v) - Math.max(...a.v));
+  return {years, est: am < 12 ? CY : null, estThrough: am, all, charts: T.map(ch => ({t: ch.t, series: ch.cats.filter(c => catOf(c)).map(c => ({n: c, v: years.map(y => Math.max(0, yr(c, y)))}))})).filter(ch => ch.series.length)};
 }
 function reviewInvesting() {
   const kids = DATA.kids.map(k => { const y18 = collegeYear(k); return {...k, y18, bal: BS[k.key]?.[L] || 0, yrsLeft: 0}; }); kids.forEach(k => k.cp = colProject(k));
@@ -124,7 +133,7 @@ function reviewInvesting() {
 /* ---------------- page ---------------- */
 function renderReview(pg) {
   if (RV.y == null) RV.y = +CTX.TODAY.slice(5, 7) <= 6 ? CY - 1 : CY;   // first half of the year → review last year
-  const y = RV.y, D = reviewData(y), Bs = reviewBalance(y), ro = CTX.CAN_WRITE ? '' : 'disabled';
+  const y = RV.y, D = reviewData(y), Bs = reviewBalance(y), ro = CTX.CAN_WRITE ? '' : 'disabled', TRD = reviewTrends();
   const yrs = []; for (let k = Math.max(+CTX.SINCE.slice(0, 4), CY - 6); k <= CY; k++) yrs.push(k);
   const list = (scope, yy, label, ph) => `<div class="rv-list"><h4>${label}</h4>${noteList(scope, yy).map(n => `<div class="rv-li ${n.status === 'done' ? 'done' : ''}">
       ${scope !== 'trip' ? `<input type="checkbox" data-ndone="${n.id || ''}" ${n.status === 'done' ? 'checked' : ''} ${ro} title="Done">` : '<span class="rv-dot"></span>'}
@@ -183,8 +192,10 @@ function renderReview(pg) {
     <div class="card c-6"><div class="card-h"><div><h3>College funds by age</h3><div class="sub">Actual, then projected with your draw plan</div></div></div><div class="chart" id="rvKids"></div>${kp('invest-529', 'e.g. Super-funded all accounts with another $1,000 in August')}</div>
     <div class="card c-6"><div class="card-h"><div><h3>Nest egg by age</h3><div class="sub">Plan median · ${esc(SCN[0].name)} scenario</div></div></div><div class="chart" id="rvNest"></div>${kp('invest-nest', 'e.g. Retire at 55 drawing $225k/yr')}</div>
 
-    <div class="card c-12"><div class="card-h"><div><h3>Annual trends</h3><div class="sub">Every year on record</div></div></div>
-      <div class="rv-trends">${reviewTrends().charts.map((c, i) => `<div><h4>${esc(c.t)}</h4><div class="chart" id="rvTr${i}"></div></div>`).join('')}</div>${kp('trends', 'e.g. Food has gotten very expensive')}</div>
+    <div class="card c-12"><div class="card-h"><div><h3>Annual trends</h3><div class="sub">Every year on record${TRD.est ? ` · ${TRD.est} is an estimate: Jan–${MON[TRD.estThrough - 1]} actual + the budget for the rest of the year (hatched)` : ''}</div></div></div>
+      <div class="rv-trends">${TRD.charts.map((c, i) => `<div><h4>${esc(c.t)}</h4><div class="chart" id="rvTr${i}"></div></div>`).join('')}</div>${kp('trends', 'e.g. Food has gotten very expensive')}
+      <h4 style="margin:18px 0 8px;font-size:13px">Every category</h4>
+      <div class="rv-all">${TRD.all.map((r, i) => `<div class="rv-mini"><div class="rv-mh"><b>${esc(r.c)}</b><span class="muted num">${TRD.est ? TRD.est + ' est ' : ''}${short(r.v[r.v.length - 1])}</span></div><div class="chart" id="rvA${i}"></div></div>`).join('')}</div></div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Month notes · ${y}</h3><div class="sub">From the Summary page · they go in the deck’s speaker notes</div></div></div>
       ${monthNotes.length ? monthNotes.map(n => `<div class="sum-kv"><span><b>${mLabel(n.ref)}</b></span><span style="text-align:left;flex:1;margin-left:16px;white-space:pre-wrap">${esc(n.body)}</span></div>`).join('') : `<p class="muted">No month notes yet — add them on the Summary page as each month closes.</p>`}
@@ -208,12 +219,13 @@ function renderReview(pg) {
   if ($('#rvTitle')) $('#rvTitle').onchange = e => { RVS().title = e.target.value.trim(); saveReviewSettings(); };
   if ($('#rvClose')) $('#rvClose').onchange = e => { RVS().closing = e.target.value.trim(); saveReviewSettings(); };
   $('#rvPpt').onclick = () => openDeckExport(y);
-  const I = reviewInvesting(), TR = reviewTrends();
+  const I = reviewInvesting(), TR = TRD;
   CH.push(() => waterfall($('#rvWf'), [{name: 'Income', v: D.incTot / 1000, total: true}, {name: D.fromSavings >= 0 ? 'From savings' : 'To savings', v: -D.fromSavings / 1000 * -1}, {name: 'Expense', v: D.expense / 1000, total: true},
       {name: 'Tax', v: -D.tax / 1000}, {name: 'Large wants', v: -D.want / 1000}, {name: 'Entertain­ment', v: -D.ent / 1000}, {name: 'Vacation', v: -D.vac / 1000}, {name: 'Theoretical spend', v: D.theo / 1000, total: true}, {name: 'Large needs', v: -D.need / 1000}, {name: 'Adjusted spend', v: D.adj / 1000, total: true}], {height: 260}),
     () => lineChart($('#rvKids'), {labels: I.ages, series: I.kidSeries.map((s, i) => ({name: s.n, values: s.v.map(v => v == null ? null : Math.max(0, v)), color: KID_COL[i % 5]})), height: 220, zero: true, xFmt: (lb, i) => i % 2 === 0 ? lb : null, tipTitle: a => 'Age ' + a}),
     () => I.nest && lineChart($('#rvNest'), {labels: I.nest.ages, series: [{name: 'Plan median', values: I.nest.v, color: 'var(--s1)', area: true}], height: 220, zero: true, vlines: [{i: I.nest.ages.indexOf(I.nest.retire), label: 'Retire ' + I.nest.retire}], xFmt: (lb, i) => i % 5 === 0 ? lb : null, tipTitle: a => 'Age ' + a}),
-    ...TR.charts.map((c, i) => () => (c.series.length > 1 ? barChart : barChart)($(`#rvTr${i}`), {labels: TR.years.map(String), series: c.series.map((s, k) => ({name: s.n, values: s.v, color: ['var(--s1)', 'var(--s2)'][k % 2]})), height: 200, xGap: 34})));
+    ...TR.charts.map((c, i) => () => barChart($(`#rvTr${i}`), {labels: TR.years.map(String), series: c.series.map((s, k) => ({name: s.n, values: s.v, color: ['var(--s1)', 'var(--s2)'][k % 2], hatchFn: j => TR.years[j] === TR.est})), height: 200, xGap: 34, tipExtra: j => TR.years[j] === TR.est ? tipRow(null, 'Estimate', `Jan–${MON[TR.estThrough - 1]} actual + budget`) : ''})),
+    () => TR.all.forEach((r, i) => { const el = $(`#rvA${i}`); if (el) barChart(el, {labels: TR.years.map(y => "'" + String(y).slice(2)), series: [{name: r.c, values: r.v, color: r.g === 'Income' ? 'var(--s2)' : 'var(--s1)', hatchFn: j => TR.years[j] === TR.est}], height: 110, xGap: 26, padL: 40, ticks: 2, tipTitle: (l, j) => String(TR.years[j]) + (TR.years[j] === TR.est ? ' (estimate)' : '')}); }));
 }
 
 /* ---------------- PowerPoint export (PptxGenJS, loaded on demand) ---------------- */
@@ -225,7 +237,7 @@ function openDeckExport(y) {
   const m = $('#modal'); m.classList.remove('wide');
   m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${y} review deck</h2><p class="muted" style="font-size:12.5px">9 slides in your usual order, with your notes as bullets and comments. Charts are real PowerPoint charts you can restyle.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
     <div class="form one"><div><label>Title-slide photo <span class="muted">(optional)</span></label><input class="in" type="file" id="dkPhoto" accept="image/*">${DECK_IMG.photo ? '<div class="muted" style="font-size:11.5px;margin-top:4px">Using the last photo you picked · choose another to replace it</div>' : ''}</div>
-      <div><label>Logo for each slide <span class="muted">(optional)</span></label><input class="in" type="file" id="dkLogo" accept="image/*">${DECK_IMG.logo ? '<div class="muted" style="font-size:11.5px;margin-top:4px">Using your saved logo</div>' : ''}</div></div>
+      <div><label>Logo for each slide <span class="muted">(optional — the Family Trust logo is used otherwise)</span></label><input class="in" type="file" id="dkLogo" accept="image/*">${DECK_IMG.logo ? '<div class="muted" style="font-size:11.5px;margin-top:4px">Using your saved logo</div>' : ''}</div></div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="dkGo">${icon('download')}<span>Download .pptx</span></button></div>`;
   openLayer('modal');
   const read = (inp, k) => new Promise(res => { const f = inp.files?.[0]; if (!f) return res(); const r = new FileReader(); r.onload = () => { DECK_IMG[k] = r.result; try { localStorage.setItem('fin.deck.' + k, r.result); } catch (_) {} res(); }; r.readAsDataURL(f); });
@@ -234,6 +246,7 @@ function openDeckExport(y) {
     catch (e) { b.disabled = false; b.lastChild.textContent = 'Download .pptx'; toast(e.message); } };
 }
 async function buildDeck(y) {
+  if (!DECK_IMG.logo) { try { const r = await fetch('trust-logo.png'); if (r.ok) { const b = await r.blob(); DECK_IMG.logo = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(b); }); } } catch (_) {} }
   const D = reviewData(y), Bs = reviewBalance(y), I = reviewInvesting(), TR = reviewTrends(), S = RVS();
   const pp = new PptxGenJS(); pp.defineLayout({name: 'LETTER_L', width: 11, height: 8.5}); pp.layout = 'LETTER_L'; pp.title = `${y} Recap & ${y + 1} Goals`;
   const GREEN = '1F7A3E', DARK = '3B4F1F', GRAY = '7F7F7F', RED = 'C00000', F = 'Arial';
@@ -327,7 +340,13 @@ async function buildDeck(y) {
     bulletBox(s, bullets(noteText('slide', 'trends', y)), {x: 0.35, y: 1.5, w: 5, h: 2.8, fontSize: 11});
     const pos = [[5.6, 1.15], [0.3, 4.55], [5.6, 4.55]];
     TR.charts.slice(0, 3).forEach((c, i) => { const [x, yy] = pos[i]; s.addText(c.t + ' Trends', {x: x + 0.05, y: yy, w: 5, h: 0.3, fontFace: F, fontSize: 12, bold: true, underline: true});
-      s.addChart(c.series.length > 1 ? pp.ChartType.line : pp.ChartType.bar, c.series.map(se => ({name: se.n, labels: TR.years.map(String), values: se.v.map(Math.round)})), {x, y: yy + 0.3, w: 5.1, h: 3.0, showLegend: c.series.length > 1, legendPos: 'b', legendFontSize: 8, lineSize: 2, lineDataSymbol: 'none', valAxisLabelFontSize: 8, catAxisLabelFontSize: 8, chartColors: c.series.length > 1 ? [GREEN, '2A78D6'] : [GREEN], valGridLine: {color: 'E6E6E6', size: 0.5}}); }); }
+      s.addChart(c.series.length > 1 ? pp.ChartType.line : pp.ChartType.bar, c.series.map(se => ({name: se.n, labels: TR.years.map(yy => yy === TR.est ? yy + ' est' : String(yy)), values: se.v.map(Math.round)})), {x, y: yy + 0.3, w: 5.1, h: 3.0, showLegend: c.series.length > 1, legendPos: 'b', legendFontSize: 8, lineSize: 2, lineDataSymbol: 'none', valAxisLabelFontSize: 8, catAxisLabelFontSize: 8, chartColors: c.series.length > 1 ? [GREEN, '2A78D6'] : [GREEN], valGridLine: {color: 'E6E6E6', size: 0.5}}); }); }
+  // 8b · every category, last six years (current year estimated)
+  { const yrs = TR.years.slice(-6), idx = yrs.map(yy => TR.years.indexOf(yy)), rows = TR.all.filter(r => r.g !== 'Income').slice(0, 30);
+    const s = slide('Annual Trends by Category', TR.est ? `${TR.est} estimated: Jan–${MON[TR.estThrough - 1]} actual + budget for the rest of the year` : 'Full-year totals');
+    const half = Math.ceil(rows.length / 2), cols = [rows.slice(0, half), rows.slice(half)];
+    cols.forEach((list, k) => list.length && table(s, ['Category', ...yrs.map(yy => yy === TR.est ? yy + ' est' : String(yy))], list.map(r => [r.c, ...idx.map(i => ({text: num(r.v[i]), options: {align: 'right'}}))]),
+      {x: 0.35 + k * 5.25, y: 1.15, w: 5.05, rowH: 0.21, fontSize: 7.5}, [1.55, ...yrs.map(() => 3.5 / yrs.length)])); }
   // 9 · closing
   { const s = pp.addSlide(); const [a, b] = (S.closing || 'Thank you for coming to my TED talk · Questions?').split('·').map(x => x.trim());
     s.addText((a || '').toUpperCase(), {x: 0.6, y: 2.6, w: 9.8, h: 1.6, fontFace: F, fontSize: 40, bold: true, color: GREEN}); if (b) s.addText(b.toUpperCase(), {x: 0.6, y: 4.4, w: 9.8, h: 0.8, fontFace: F, fontSize: 28, color: '000000'}); }

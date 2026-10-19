@@ -84,7 +84,7 @@ function actuals(y, m0, m1) {
   const A = {}, S = {};
   const lo = `${y}-${String(m0).padStart(2, '0')}`, hi = `${y}-${String(m1).padStart(2, '0')}`;
   ST.tx.forEach(t => { const ym = t.d.slice(0, 7); if (ym < lo || ym > hi) return;
-    pieces(t).forEach(p => { const c = p.cat || 'Uncategorized'; A[c] = (A[c] || 0) + p.amt; const k = c + '|' + (p.sub || ''); S[k] = (S[k] || 0) + p.amt; }); });
+    pieces(t).forEach(p => { if (ST.exclSub?.size && ST.exclSub.has((p.cat || '') + '|' + (p.sub || ''))) return; const c = p.cat || 'Uncategorized'; A[c] = (A[c] || 0) + p.amt; const k = c + '|' + (p.sub || ''); S[k] = (S[k] || 0) + p.amt; }); });
   return {A, S};
 }
 const budgetFor = (y, cat, m0, m1) => { const sb = subBudgetRows(y, cat); const row = sb.length ? sb.reduce((acc, r) => acc.map((v, i) => v + (r.v[i] || 0)), Array(12).fill(0)) : (ST.budget[y]?.[cat] || Array(12).fill(0)); return sum(row.slice(m0 - 1, m1)); };
@@ -251,6 +251,7 @@ function txFiltered() {
   const rg = txRange(TXF.month);
   return ST.tx.filter(t => (!TXF.acct || t.acct === TXF.acct) && (!rg || (t.d >= rg[0] && t.d <= rg[1])) && (!TXF.unc || (!t.cat && !t.splits)) &&
     (!TXF.dir || (TXF.dir === 'out' ? t.amt < 0 : t.amt > 0)) && (!TXF.vendor || vendorName(vendorKey(t.desc)) === TXF.vendor) &&
+    (TXF.unc || !(ST.excl.size || ST.exclSub.size) || pieces(t).some(p => !isExclP(p))) &&
     (TXF.cat === '*' || pieces(t).some(p => (p.cat || '') === TXF.cat && (TXF.sub === '*' || (TXF.sub === '__none' ? !p.sub : p.sub === TXF.sub)))) && (!q || t.desc.toUpperCase().includes(q) || (t.note || '').toUpperCase().includes(q) || vendorName(vendorKey(t.desc)).toUpperCase().includes(q)));
 }
 function renderTx(pg) {
@@ -263,12 +264,10 @@ function renderTx(pg) {
     <select class="in sel" id="txMonth"><option value="">Any date</option>${[['this', 'This month'], ['last', 'Last month'], ['d30', 'Last 30 days'], ['d90', 'Last 90 days'], ['ytd', 'Year to date'], ['m12', 'Last 12 months'], ['py', 'Last year']].map(([k, l]) => `<option value="${k}" ${k === TXF.month ? 'selected' : ''}>${l}</option>`).join('')}<optgroup label="Month">${months.map(m => `<option value="${m}" ${m === TXF.month ? 'selected' : ''}>${mLabel(m)}</option>`).join('')}</optgroup></select>
     <select class="in sel" id="txDir"><option value="">In & out</option><option value="out" ${TXF.dir === 'out' ? 'selected' : ''}>Money out</option><option value="in" ${TXF.dir === 'in' ? 'selected' : ''}>Money in</option></select>
     ${TXF.vendor ? `<button class="chip pos" id="txVend" title="Clear vendor filter">${esc(TXF.vendor)} ✕</button>` : ''}
-    <select class="in sel" id="txCat">${catOptions(TXF.cat, {any: true})}</select>
-    ${TXF.cat && TXF.cat !== '*' ? (() => { const used = new Set(); ST.tx.forEach(t => pieces(t).forEach(p => { if ((p.cat || '') === TXF.cat && p.sub) used.add(p.sub); }));
-      const subs = (catOf(TXF.cat)?.subs || []).concat([...used].filter(x => !(catOf(TXF.cat)?.subs || []).includes(x)).sort());
-      return `<select class="in sel" id="txSub"><option value="*">Any sub-category</option>${subs.map(x => `<option ${TXF.sub === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__none" ${TXF.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>`; })() : ''}
+    ${TXF.cat !== '*' ? `<button class="chip pos" id="txCatClr" title="Clear category filter">${esc(TXF.cat || 'Uncategorized')}${TXF.sub !== '*' ? ' · ' + esc(TXF.sub === '__none' ? 'no sub-category' : TXF.sub) : ''} ✕</button>` : ''}
     <label class="tgl"><input type="checkbox" id="txUnc" ${TXF.unc ? 'checked' : ''}> Uncategorized</label>
   </div>
+  ${exclBanner()}
   <div class="card" style="padding-top:8px">
     <div class="bulk ${TXSEL.size ? 'on' : ''}" id="bulk"><b>${TXSEL.size} selected</b>
       <select class="in sel" id="bkCat">${catOptions('', {blank: 'Set category…'})}</select><select class="in sel" id="bkSub">${subOptions('', '')}</select>
@@ -289,8 +288,7 @@ function renderTx(pg) {
   $('#txMonth').onchange = e => { TXF.month = e.target.value; re(); };
   $('#txDir').onchange = e => { TXF.dir = e.target.value; re(); };
   if ($('#txVend')) $('#txVend').onclick = () => { TXF.vendor = ''; re(); };
-  $('#txCat').onchange = e => { TXF.cat = e.target.value; TXF.sub = '*'; re(); };
-  if ($('#txSub')) $('#txSub').onchange = e => { TXF.sub = e.target.value; re(); };
+  if ($('#txCatClr')) $('#txCatClr').onclick = () => { TXF.cat = '*'; TXF.sub = '*'; re(); };
   $('#txUnc').onchange = e => { TXF.unc = e.target.checked; re(); };
   if ($('#txMore')) $('#txMore').onclick = () => { TXF.lim += 150; render(); };
   $$('.vlink', pg).forEach(b => b.onclick = e => { e.stopPropagation(); TXF.vendor = b.dataset.v; re(); });
