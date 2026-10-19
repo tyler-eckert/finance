@@ -712,13 +712,40 @@ function renameSub(cat, oldS, newS, toCat = cat) {
   DB.moveSub(cat, oldS, toCat, newS);
   logChange(toCat !== cat ? `Moved “${oldS}” to ${toCat}${newS !== oldS ? ' as “' + newS + '”' : ''} · ${n} transactions` : newS ? `Renamed sub-category “${oldS}” → “${newS}” · ${n} transactions` : `Removed “${oldS}” · ${n} transactions now unassigned`, n, null);
 }
+/* ---- category order: arrows + drag, within each group; sub-categories within their category ---- */
+let CAT_ORDER = false, CAT_DRAG = null;
+function catOrderList() {
+  const arrows = (k, up, dn) => `<span class="ord-btns"><button class="mini-btn" data-${k}="-1" ${up ? '' : 'disabled'} title="Move up">${icon('up')}</button><button class="mini-btn" data-${k}="1" ${dn ? '' : 'disabled'} title="Move down">${icon('down')}</button></span>`;
+  return GROUPS.map(g => { const cs = ST.cats.filter(c => c.group === g.k); if (!cs.length) return '';
+    return `<div class="ct-grp" style="display:flex;align-items:center">${g.l}<button class="link" data-az="${g.k}" style="margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600">Sort A–Z</button></div>` + cs.map((c, i) => `<div class="ord-cat" draggable="true" data-oc="${esc(c.name)}">
+      <div class="ord-row"><span class="ord-h" title="Drag">${icon('grip')}</span><b>${esc(c.name)}</b><span class="muted ct-n" style="margin-left:auto">${c.subs.length ? c.subs.length + ' sub' : ''}</span>${arrows('cm', i > 0, i < cs.length - 1)}</div>
+      ${c.subs.length > 1 ? `<div class="ord-subs">${c.subs.map((s, j) => `<div class="ord-sub" data-os="${esc(s)}"><span>${esc(s)}</span>${arrows('sm', j > 0, j < c.subs.length - 1)}</div>`).join('')}<button class="link" data-saz="${esc(c.name)}" style="font-size:11.5px">Sort A–Z</button></div>` : ''}</div>`).join(''); }).join('');
+}
+function wireCatOrder(pg) {
+  const catByEl = el => catOf(el.closest('[data-oc]').dataset.oc);
+  const moveCat = (c, target, after) => { const a = ST.cats; a.splice(a.indexOf(c), 1); a.splice(a.indexOf(target) + (after ? 1 : 0), 0, c); render(); };
+  $$('[data-cm]', pg).forEach(b => b.onclick = () => { const c = catByEl(b), same = ST.cats.filter(x => x.group === c.group), t = same[same.indexOf(c) + +b.dataset.cm]; if (t) moveCat(c, t, +b.dataset.cm > 0); });
+  $$('[data-sm]', pg).forEach(b => b.onclick = () => { const c = catByEl(b), s = b.closest('[data-os]').dataset.os, i = c.subs.indexOf(s), j = i + +b.dataset.sm; if (j < 0 || j >= c.subs.length) return; c.subs.splice(i, 1); c.subs.splice(j, 0, s); render(); });
+  $$('[data-az]', pg).forEach(b => b.onclick = () => { const g = b.dataset.az, was = ST.cats.slice(), sorted = ST.cats.filter(c => c.group === g).sort((x, y) => x.name.localeCompare(y.name)); let k = 0; ST.cats = ST.cats.map(c => c.group === g ? sorted[k++] : c); render(); toast('Sorted A–Z', () => { ST.cats = was; render(); }); });
+  $$('[data-saz]', pg).forEach(b => b.onclick = () => { const c = catOf(b.dataset.saz), was = c.subs.slice(); c.subs.sort((x, y) => x.localeCompare(y)); render(); toast('Sorted A–Z', () => { c.subs = was; render(); }); });
+  // drag & drop (desktop): drop on another category in the same group
+  $$('.ord-cat', pg).forEach(el => {
+    el.ondragstart = e => { CAT_DRAG = el.dataset.oc; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', CAT_DRAG); };
+    el.ondragend = () => { CAT_DRAG = null; $$('.ord-cat', pg).forEach(x => x.classList.remove('dragging', 'drop-a', 'drop-b')); };
+    el.ondragover = e => { const src = CAT_DRAG && catOf(CAT_DRAG), t = catOf(el.dataset.oc); if (!src || src === t || src.group !== t.group) return; e.preventDefault();
+      const r = el.getBoundingClientRect(), after = e.clientY > r.top + Math.min(r.height, 44) / 2; el.classList.toggle('drop-a', after); el.classList.toggle('drop-b', !after); };
+    el.ondragleave = () => el.classList.remove('drop-a', 'drop-b');
+    el.ondrop = e => { e.preventDefault(); const src = catOf(CAT_DRAG), t = catOf(el.dataset.oc); if (src && t && src !== t && src.group === t.group) moveCat(src, t, el.classList.contains('drop-a')); };
+  });
+}
 function renderCats(pg) {
   const ytd = actuals(CY, 1, ASOF.m);
   const matches = mcMatches();
   pg.innerHTML = `<div class="toolbar"><span class="muted" style="font-size:12.5px">Changes apply to every transaction since ${Y.years[0]}, your budgets, and future import matching</span><button class="btn primary" style="margin-left:auto" onclick="openCatModal()">${icon('plus')}<span>New category</span></button></div>
   <div class="grid g-12">
-    <div class="card c-7"><div class="card-h"><div><h3>Categories</h3><div class="sub">${ST.cats.length} categories · ${sum(ST.cats.map(c => c.subs.length))} sub-categories</div></div></div>
-      ${GROUPS.map(g => `<div class="ct-grp">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => `<details class="ct" ${c.name === MC.openCat ? 'open' : ''}><summary><span class="chev">${icon('chev', 2.4)}</span><b>${esc(c.name)}</b><span class="muted ct-n">${histCount(c.name).toLocaleString()} txns · ${short(Math.abs(ytd.A[c.name] || 0))} YTD</span>
+    <div class="card c-7"><div class="card-h"><div><h3>Categories</h3><div class="sub">${CAT_ORDER ? 'Drag a row or use the arrows · this order is used in budgets, reports and every category list' : `${ST.cats.length} categories · ${sum(ST.cats.map(c => c.subs.length))} sub-categories`}</div></div>
+      ${CTX.CAN_WRITE ? `<div class="right"><button class="btn ${CAT_ORDER ? 'primary' : ''}" id="catOrd">${CAT_ORDER ? 'Done' : icon('sort') + '<span>Reorder</span>'}</button></div>` : ''}</div>
+      ${CAT_ORDER ? catOrderList() : GROUPS.map(g => `<div class="ct-grp">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => `<details class="ct" ${c.name === MC.openCat ? 'open' : ''}><summary><span class="chev">${icon('chev', 2.4)}</span><b>${esc(c.name)}</b><span class="muted ct-n">${histCount(c.name).toLocaleString()} txns · ${short(Math.abs(ytd.A[c.name] || 0))} YTD</span>
         <span class="ct-act"><button class="mini-btn" title="Rename" data-ren="${esc(c.name)}">${icon('edit')}</button><button class="mini-btn" title="Merge into…" data-mrg="${esc(c.name)}">${icon('merge')}</button></span></summary>
         <div class="ct-subs">${c.subs.map(s => `<div class="ct-sub"><span>${esc(s)}</span><span class="muted ct-n">${histCount(c.name, s).toLocaleString()}</span><span class="ct-act"><button class="mini-btn" title="Rename / move" data-rsub="${esc(c.name)}|${esc(s)}">${icon('edit')}</button><button class="mini-btn" title="Remove" data-dsub="${esc(c.name)}|${esc(s)}">${icon('trash')}</button></span></div>`).join('')}
         <button class="link" data-nsub="${esc(c.name)}">+ Add sub-category</button></div></details>`).join('')).join('')}
@@ -757,6 +784,8 @@ function renderCats(pg) {
   $$('[data-rsub]', pg).forEach(b => b.onclick = () => { const [c, s] = b.dataset.rsub.split('|'); openCatModal({rsub: [c, s]}); });
   $$('[data-dsub]', pg).forEach(b => b.onclick = () => { const [c, s] = b.dataset.dsub.split('|'); MC.openCat = c; renameSub(c, s, ''); render(); });
   $$('[data-nsub]', pg).forEach(b => b.onclick = () => openCatModal({nsub: b.dataset.nsub}));
+  if ($('#catOrd')) $('#catOrd').onclick = () => { CAT_ORDER = !CAT_ORDER; render(); };
+  if (CAT_ORDER) wireCatOrder(pg);
   $$('details.ct', pg).forEach(d => d.ontoggle = () => { if (d.open) MC.openCat = $('b', d).textContent; });
 }
 function mcMatches() {

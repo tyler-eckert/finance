@@ -386,7 +386,7 @@ const SYNC = {
   state() {
     const S = {};
     S.tx = new Map(ST.tx.filter(t => isUuid(t.id)).map(t => [t.id, JSON.stringify([t.cat || '', t.sub || '', t.note || '', t.splits ? t.splits.map(s => [s.cat, s.sub || '', +(+s.amt).toFixed(2), s.note || '']) : null])]));
-    S.cats = new Map(ST.cats.map(c => [c.id || '?' + c.name, JSON.stringify([c.name, c.group, [...c.subs].sort()])]));
+    S.cats = new Map(ST.cats.map((c, i) => [c.id || '?' + c.name, JSON.stringify([c.name, c.group, c.subs, i])]));   // order matters: position in the list = sort_order
     S.rules = new Map(Object.entries(ST.userRules).map(([k, v]) => [k, JSON.stringify([v.cat, v.sub || ''])]));
     S.budget = new Map();
     for (const y in ST.budget) for (const c in ST.budget[y]) S.budget.set(`${y}|${c}|`, JSON.stringify(ST.budget[y][c].map(v => +(+v || 0).toFixed(2))));
@@ -414,7 +414,7 @@ const SYNC = {
     const now = this.state(), out = {};
     for (const k in now) {
       const a = this.sig[k] || new Map(), b = now[k], ch = [];
-      b.forEach((v, id) => { if (a.get(id) !== v) ch.push({id, op: a.has(id) ? 'upd' : 'add', v}); });
+      b.forEach((v, id) => { if (a.get(id) !== v) ch.push({id, op: a.has(id) ? 'upd' : 'add', v, old: a.get(id)}); });
       a.forEach((v, id) => { if (!b.has(id)) ch.push({id, op: 'del', v}); });
       out[k] = ch;
     }
@@ -472,15 +472,20 @@ const WRITERS = {
     for (const c of ch) {
       if (c.op === 'del') continue;                       // removals happen through merge / explicit hooks
       const cat = ST.cats.find(x => (x.id || '?' + x.name) === c.id); if (!cat) continue;
+      const sort_order = (ST.cats.indexOf(cat) + 1) * 10;
       if (!cat.id) {
-        const row = must(await FDB.from('categories').insert({household_id: hh(), name: cat.name, kind: GROUP2KIND[cat.group] || 'variable', sort_order: 500}).select('id').single());
+        const row = must(await FDB.from('categories').insert({household_id: hh(), name: cat.name, kind: GROUP2KIND[cat.group] || 'variable', sort_order}).select('id').single());
         cat.id = row.id; MAP.cat[cat.name] = row.id; MAP.catName[row.id] = cat.name;
       } else {
         const [name, group] = JSON.parse(c.v);
-        must(await FDB.from('categories').update({name, kind: GROUP2KIND[group] || 'variable'}).eq('id', cat.id));
+        must(await FDB.from('categories').update({name, kind: GROUP2KIND[group] || 'variable', sort_order}).eq('id', cat.id));
         MAP.cat[name] = cat.id; MAP.catName[cat.id] = name;
       }
-      for (const s of cat.subs) await subId(cat.name, s);
+      const prevSubs = c.op === 'add' || !c.old ? null : JSON.parse(c.old)[2];
+      for (const [i, s] of cat.subs.entries()) {
+        const sid = await subId(cat.name, s);
+        if (sid && (!prevSubs || prevSubs.indexOf(s) !== i)) must(await FDB.from('subcategories').update({sort_order: (i + 1) * 10}).eq('id', sid));
+      }
     }
   },
   async acct(ch) {
