@@ -16,6 +16,7 @@ function vendorStats() {   // name → {months: {ym: amt}, n12, last, cats, keys
   const since = CTX.SINCE.slice(0, 7), out = {};
   const put = (name, k, m, amt, n, cat, d, sub) => {
     if (!VS.xfer && cat === 'TTS') return;
+    if (ST.excl.has(cat || '')) return;   // the top-bar “All categories” filter
     if (VS.cat !== '*' && (cat || '') !== VS.cat) return;
     if (VS.cat !== '*' && VS.sub !== '*' && (sub === undefined || (VS.sub === '__none' ? !!sub : sub !== VS.sub))) return;
     if (VS.dir === 'out' ? amt >= 0 : amt <= 0) return;
@@ -47,7 +48,7 @@ function renderVendors(pg) {
     <div class="card c-4 kpi"><div class="label">${VS.dir === 'out' ? 'Spent' : 'Received'} · last 12 months</div><div class="val num">${short(tot)}</div><div class="delta">${active.length} vendors · ${mShort(m12[0])} – ${mShort(end)}</div></div>
     <div class="card c-4 kpi"><div class="label">Top vendor</div><div class="val num" style="font-size:22px">${top ? esc(top.name) : '—'}</div><div class="delta">${top ? short(top.l12) + ' · ' + top.c12 + ' transactions' : ''}</div></div>
     <div class="card c-4 kpi"><div class="label">Top 10 share</div><div class="val num">${tot ? Math.round(top10 / tot * 100) : 0}%</div><div class="delta">of the last 12 months</div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>Vendors</h3><div class="sub">Grouped from bank descriptions · tap one for history, or to rename or merge it${VS.cat !== '*' ? ` · only ${esc(VS.cat || 'Uncategorized')}${VS.sub !== '*' ? ' · ' + esc(VS.sub === '__none' ? 'no sub-category' : VS.sub) : ''} spending${VS.sub !== '*' ? ` (sub-categories go back to ${mLabel(CTX.SINCE.slice(0, 7))})` : ''}` : ''}</div></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>Vendors</h3><div class="sub">Grouped from bank descriptions · tap one for history, or to rename or merge it${ST.excl.size ? ` · ${exclLabel()}` : ''}${VS.cat !== '*' ? ` · only ${esc(VS.cat || 'Uncategorized')}${VS.sub !== '*' ? ' · ' + esc(VS.sub === '__none' ? 'no sub-category' : VS.sub) : ''} spending${VS.sub !== '*' ? ` (sub-categories go back to ${mLabel(CTX.SINCE.slice(0, 7))})` : ''}` : ''}</div></div></div>
       <div class="scroll-x"><table class="table vt"><tr>${th('name', 'Vendor')}<th class="hide-sm">Category</th>${th('l12', 'Last 12 mo')}<th class="hide-sm">Prior 12 mo</th>${th('chg', 'Change')}${th('n', 'Txns')}<th class="hide-sm">Trend</th></tr>
       ${rows.slice(0, VS.lim).map(v => { const d = v.l12 - v.p12; return `<tr class="click" data-v="${esc(v.name)}"><td><div class="nm">${esc(v.name)}</div><div class="ds muted mob-only-inline" style="font-size:11px">${esc(v.cat)}</div></td><td class="hide-sm muted">${esc(v.cat)}</td><td><b>${money(v.l12)}</b></td><td class="hide-sm muted">${money(v.p12)}</td>
         <td class="${!v.p12 ? 'muted' : (d > 0) === (VS.dir === 'out') ? 'neg' : 'pos'}">${!v.p12 ? 'new' : (d >= 0 ? '+' : '−') + short(Math.abs(d))}</td><td>${v.c12}</td><td class="hide-sm" style="width:110px">${spark(m12.map(m => v.months[m] || 0), 'var(--s2)', 96, 24, false)}</td></tr>`; }).join('')}</table></div>

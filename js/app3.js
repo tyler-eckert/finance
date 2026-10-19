@@ -32,7 +32,7 @@ function cashflowByMonth(y) {
 }
 function filterBtnSync() {
   const b = $('#filterBtn'); if (!b) return;
-  b.style.display = ['overview', 'budget'].includes(cur) ? '' : 'none';
+  b.style.display = ['overview', 'budget', 'vendors', 'summary'].includes(cur) ? '' : 'none';
   b.innerHTML = `${icon('filter')}<span>${ST.excl.size ? ST.excl.size + ' excluded' : 'All categories'}</span>`;
   b.classList.toggle('active-f', ST.excl.size > 0);
 }
@@ -43,7 +43,7 @@ function openFilter(e) {
     p.innerHTML = `<div class="flt-h"><b>Include in analysis</b><button class="link" id="fltClr">Reset</button></div>
       <div class="flt-presets">${FPRESETS.map(x => `<button data-p="${x.k}" class="${x.s.length === ST.excl.size && x.s.every(s => ST.excl.has(s)) ? 'on' : ''}">${x.l}</button>`).join('')}</div>
       <div class="flt-list">${GROUPS.filter(g => g.k !== 'TTS').map(g => `<div class="flt-g">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => `<label><input type="checkbox" data-c="${esc(c.name)}" ${ST.excl.has(c.name) ? '' : 'checked'}><span>${esc(c.name)}</span></label>`).join('')).join('')}</div>
-      <div class="muted" style="font-size:11.5px;padding:8px 4px 2px">Applies to Overview and Budget, including KPIs, charts, the waterfall and yearly totals. Transfers to savings are never counted.</div>`;
+      <div class="muted" style="font-size:11.5px;padding:8px 4px 2px">Applies to Overview, Budget, Summary and Vendors, including KPIs, charts, the waterfall and yearly totals. Transfers to savings are never counted.</div>`;
     $$('[data-p]', p).forEach(b => b.onclick = ev => { ev.stopPropagation(); ST.excl = new Set(FPRESETS.find(x => x.k === b.dataset.p).s); draw(); render(); });
     $$('input[data-c]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.excl.delete(cb.dataset.c) : ST.excl.add(cb.dataset.c); draw(); render(); });
     $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(['Tax'].filter(hasCat)); draw(); render(); };
