@@ -418,7 +418,7 @@ function collegeSection(kidsAll, target, mo529) {
   const chips = kidsAll.map(k => `<button class="kchip ${hid.has(k.name) ? 'off' : ''}" data-kid="${esc(k.name)}" title="Show / hide ${esc(k.name)}"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</button>`).join('');
   const sg = v => (v >= 0 ? '' : '−') + short(Math.abs(v));
   return `<div class="card c-8" id="colCard"><div class="card-h"><div><h3>College savings · 529s</h3><div class="sub">${kids.length === kidsAll.length ? `All ${kids.length} plans` : `${kids.length} of ${kidsAll.length} plans`} rolled up · actual, then projected at ${(P.rate * 100).toFixed(1)}%/yr${drawsOn ? ' with semester draws' : ''}</div></div>
-      <div class="right"><div class="seg" id="colR">${[['1y', '1Y'], ['3y', '3Y'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${COL_RANGE === k ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
+      <div class="right" style="display:flex;gap:8px;align-items:center">${CTX.CAN_WRITE ? `<button class="btn" id="kidsBtn" style="height:32px">${icon('edit')}<span>Children</span></button>` : ''}<div class="seg" id="colR">${[['1y', '1Y'], ['3y', '3Y'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${COL_RANGE === k ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
       <div class="kchips">${chips}<span style="flex:1"></span><label class="tgl"><input type="checkbox" id="colProj" ${UI.colProj !== false ? 'checked' : ''}> Project through college</label><label class="tgl"><input type="checkbox" id="colDraws" ${P.draws ? 'checked' : ''} ${CTX.CAN_WRITE ? '' : 'disabled'}> Include draws</label></div>
       <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin:12px 0 14px">
         <div class="mini"><div class="l">Total today</div><div class="v num">${short(tot)}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${chip(nz((tot - y1) / y1))} 12 mo · ${tot - ydec >= 0 ? '+' : '−'}${short(Math.abs(tot - ydec))} since Dec</div></div>
@@ -432,7 +432,7 @@ function collegeSection(kidsAll, target, mo529) {
       <div class="ex-row" style="margin-top:6px"><span>Total</span><b>${short(tot)}</b></div></div>
     <div class="card c-12"><div class="card-h"><div><h3>College projections by child</h3><div class="sub">${(P.rate * 100).toFixed(1)}% a year plus ${money(mo529)}/mo until August of the year they turn 18${drawsOn ? ', then each semester’s draw' : ` · target ${short(target)} each`}</div></div></div>
       <div class="scroll-x"><table class="table cmp"><tr><th>Child</th><th>Today</th><th>Starts</th><th>Years left</th><th>At start</th><th>4-yr draws</th><th>Left after</th><th>${drawsOn ? 'Draws covered' : 'Funded'}</th><th>Extra / mo to close gap</th></tr>
-      ${kids.map(k => { const c = k.cp, on = drawsOn && kidPlan(k).on; return `<tr><td><span class="tw"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</span></td><td>${short(k.bal)}</td><td>Aug ${k.y18}</td><td>${k.yrsLeft.toFixed(1)}</td><td><b>${short(c.atStart)}</b></td>
+      ${kids.map(k => { const c = k.cp, on = drawsOn && kidPlan(k).on; return `<tr><td><span class="tw"><i class="sw" style="background:${KC(k)}"></i>${esc(k.name)}</span></td><td>${short(k.bal)}</td><td>${startSel(k)}</td><td>${k.yrsLeft.toFixed(1)}</td><td><b>${short(c.atStart)}</b></td>
         <td>${on ? short(c.drawn) : '<span class="muted">off</span>'}</td><td class="${on ? (c.end >= 0 ? 'pos' : 'neg') : 'muted'}">${on ? sg(c.end) + (c.firstShort ? `<div class="muted" style="font-size:11px">runs out ${mLabel(c.firstShort)}</div>` : '') : '—'}</td>
         <td style="min-width:110px"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1;height:6px"><i style="width:${c.covered * 100}%;background:${KC(k)}"></i></div><span class="muted num" style="font-size:11.5px">${Math.round(c.covered * 100)}%</span></div></td>
         <td class="${c.extra ? '' : 'pos'}">${c.extra ? money(c.extra) : 'On track'}</td></tr>`; }).join('')}
@@ -463,6 +463,9 @@ function drawCollege(kidsAll) {
   $$('#colR button').forEach(b => b.onclick = () => { COL_RANGE = b.dataset.k; render(); });
   $$('.kchip').forEach(b => b.onclick = () => { const s = colHidden(), n = b.dataset.kid; s.has(n) ? s.delete(n) : s.add(n); UI.colHide = [...s]; render(); });
   $('#colProj').onchange = e => { UI.colProj = e.target.checked; render(); };
+  if ($('#kidsBtn')) $('#kidsBtn').onclick = openKidsModal;
+  $$('[data-kstart]').forEach(sel => sel.onchange = () => { const k = kidsAll.find(x => x.name === sel.dataset.kstart); setStartYear(k.name, k.dob, +sel.value); saveColPlan(); render();
+    toast(`${k.name} starts college Aug ${sel.value}`); });
   const setDraws = v => { P.draws = v; saveColPlan(); render(); };
   $('#colDraws').onchange = e => setDraws(e.target.checked); if ($('#colDraws2')) $('#colDraws2').onchange = e => setDraws(e.target.checked);
   const kp = n => (P.kids[n] ||= {}), num = s => { const v = String(s).replace(/[$,\s]/g, ''); return v === '' ? null : +v; };
@@ -551,4 +554,78 @@ function wireAutomation() {
   $$('[data-sh]').forEach(i => i.onchange = () => { const v = i.value.replace(/[,\s]/g, ''); if (v !== '' && !(+v >= 0)) return toast('Shares must be a number'); save(i.dataset.sh, {shares: v === '' ? null : +v}); });
   $$('[data-tkclr]').forEach(b => b.onclick = () => save(b.dataset.tkclr, {ticker: null}));
   if ($('#tkAdd')) $('#tkAdd').onchange = e => { AUTO.addId = e.target.value; render(); setTimeout(() => $(`[data-tk="${AUTO.addId}"]`)?.focus(), 30); };
+}
+
+/* ---- children: college start year and adding / editing kids ---- */
+const startSel = k => {
+  const auto = autoCollegeYear(k.dob), ys = []; for (let y = auto - 2; y <= auto + 4; y++) ys.push(y);
+  if (!CTX.CAN_WRITE) return `Aug ${k.y18}${k.y18 !== auto ? ' <span class="chip">adjusted</span>' : ''}`;
+  return `<select class="in sm sel" data-kstart="${esc(k.name)}" title="When ${esc(k.name)} starts college">${ys.map(y => `<option value="${y}" ${y === k.y18 ? 'selected' : ''}>Aug ${y}${y === auto ? ' · on time' : y > auto ? ` · +${y - auto} yr` : ` · −${auto - y} yr`}</option>`).join('')}</select>`;
+};
+// move the start year (and any per-semester overrides with it); the on-time year clears the override
+function setStartYear(name, dob, year) {
+  const P = COLP(), p = (P.kids[name] ||= {}), prev = +p.startYear || autoCollegeYear(dob), d = year - prev;
+  if (d && p.sem) p.sem = Object.fromEntries(Object.entries(p.sem).map(([m, v]) => [`${+m.slice(0, 4) + d}${m.slice(4)}`, v]));
+  if (year === autoCollegeYear(dob)) delete p.startYear; else p.startYear = year;
+}
+function openKidsModal() {
+  const m = $('#modal'); m.classList.add('wide');
+  const list = (CTX.settings.kids || []).map(k => ({...k}));
+  const accts = (SNAP.accounts || []).filter(a => a.balance_group === 'College' && !a.parent_account_id);
+  const linked = k => accts.find(a => a.owner_label === k.name || a.name.startsWith(k.name));
+  const free = accts.filter(a => !list.some(k => linked(k) === a));
+  const draw = () => {
+    m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">Children & college</h2><p class="muted" style="font-size:12.5px">College start defaults to the August after they turn 18 (fall birthdays a year later). Change it for a child who’s held back or starts early.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+    <div class="scroll-x"><table class="table kid-t"><tr><th>Child</th><th>Birth date</th><th>College starts</th><th>529 account</th><th></th></tr>
+      ${list.map((k, i) => { const auto = autoCollegeYear(k.dob), cur = +COLP().kids[k.name]?.startYear || auto, ys = []; for (let y = auto - 2; y <= auto + 4; y++) ys.push(y);
+        return `<tr><td><b>${esc(k.name)}</b></td><td><input class="in sm" type="date" data-kdob="${i}" value="${esc(k.dob)}"></td>
+          <td><select class="in sm sel" data-ky="${i}">${ys.map(y => `<option value="${y}" ${y === cur ? 'selected' : ''}>Aug ${y}${y === auto ? ' · on time' : y > auto ? ` · +${y - auto} yr` : ` · −${auto - y} yr`}</option>`).join('')}</select></td>
+          <td class="muted">${linked(k) ? esc(linked(k).name) : '<span class="neg">none linked</span>'}</td><td><button class="link" data-krm="${i}" style="color:var(--neg)">Remove</button></td></tr>`; }).join('')}</table></div>
+    <h4 style="margin:16px 0 8px;font-size:13px">Add a child</h4>
+    <div class="form" style="grid-template-columns:1.2fr 1fr 1.4fr 1fr">
+      <div><label>Name</label><input class="in" id="nkName" placeholder="First name"></div>
+      <div><label>Birth date</label><input class="in" type="date" id="nkDob"></div>
+      <div><label>529 account</label><select class="in" id="nkAcct"><option value="new">Create a new 529 account</option>${free.map(a => `<option value="${a.id}">Use ${esc(a.name)}</option>`).join('')}</select></div>
+      <div><label>Balance today <span class="muted">(optional)</span></label><input class="in num" id="nkBal" placeholder="$0"></div>
+    </div>
+    <div class="hint" id="kMsg" style="display:none;margin-top:10px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="kGo">Save</button></div>`;
+    $$('[data-kdob]', m).forEach(i => i.onchange = () => { list[+i.dataset.kdob].dob = i.value; draw(); });
+    $$('[data-ky]', m).forEach(s => s.onchange = () => { list[+s.dataset.ky].year = +s.value; });
+    $$('[data-krm]', m).forEach(b => b.onclick = () => { const k = list[+b.dataset.krm]; if (confirmRm(k)) { list.splice(+b.dataset.krm, 1); draw(); } });
+    $('#nkAcct').onchange = e => { $('#nkBal').disabled = e.target.value !== 'new'; };
+    $('#kGo').onclick = save;
+  };
+  const confirmRm = k => { const el = $('#kMsg'); if (el.dataset.rm === k.name) return true; el.dataset.rm = k.name; el.style.display = ''; el.textContent = `Click Remove again to take ${k.name} off the plan. The 529 account and its history stay on Balances.`; return false; };
+  const msg = t => { const el = $('#kMsg'); el.style.display = ''; el.textContent = t; };
+  const save = async () => {
+    const was = CTX.settings.kids || [], name = $('#nkName').value.trim(), dob = $('#nkDob').value, acct = $('#nkAcct').value, bal = +$('#nkBal').value.replace(/[$,\s]/g, '') || 0;
+    if (name || dob) {
+      if (!name || !dob) return msg('Enter both a name and a birth date for the new child.');
+      if (list.some(k => k.name.toLowerCase() === name.toLowerCase())) return msg(`There’s already a child named ${name}.`);
+      list.push({name, dob, isNew: true, acct, bal});
+    }
+    if (list.some(k => !/^\d{4}-\d{2}-\d{2}$/.test(k.dob || ''))) return msg('Every child needs a birth date.');
+    $('#kGo').disabled = true;
+    try {
+      // start years (shifts semester overrides with them); dropped kids leave the plan
+      list.forEach(k => setStartYear(k.name, k.dob, k.year || +COLP().kids[k.name]?.startYear || autoCollegeYear(k.dob)));
+      Object.keys(COLP().kids).forEach(n => { if (!list.some(k => k.name === n)) delete COLP().kids[n]; });
+      const kids = list.map(k => ({name: k.name, dob: k.dob}));
+      const changed = JSON.stringify(kids) !== JSON.stringify(was.map(k => ({name: k.name, dob: k.dob})));
+      for (const k of list.filter(x => x.isNew)) {
+        let id = k.acct;
+        if (k.acct === 'new') {
+          const {data, error} = await FDB.from('accounts').insert({household_id: CTX.HH, name: `${k.name} 529`, kind: 'college', balance_group: 'College', owner_label: k.name, in_net_worth: true, in_investable: false, sort_order: 600}).select('id').single();
+          if (error) throw error; id = data.id;
+          if (k.bal) { const {error: e2} = await FDB.from('account_balances').insert({household_id: CTX.HH, account_id: id, month: BS.months[L] + '-01', balance: k.bal, source: 'manual'}); if (e2) throw e2; }
+        } else { const {error} = await FDB.from('accounts').update({owner_label: k.name}).eq('id', id); if (error) throw error; }
+      }
+      if (changed) { const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'kids', p_value: kids}); if (error) throw error; CTX.settings.kids = kids; }
+      const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'college_plan', p_value: COLP()}); if (error) throw error;
+      if (changed) { closeAll(); toast('Saved · reloading with the updated children…'); setTimeout(() => location.reload(), 700); }
+      else { closeAll(); render(); toast('College start years saved'); }
+    } catch (e) { $('#kGo').disabled = false; list.splice(0, list.length, ...list.filter(k => !k.isNew)); msg('Couldn’t save: ' + (e.message || e) + (/set_household_setting|kids/.test(e.message || '') ? ' — run migration 1400.' : '')); }
+  };
+  draw(); openLayer('modal');
 }

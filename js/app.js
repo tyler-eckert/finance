@@ -398,7 +398,7 @@ function renderInvest(pg) {
   const accts = CTX.invAccts.filter(a => a.group !== 'College').map(a => ({...a, c: a.group === 'Retirement' ? 'var(--s2)' : a.kind === 'hsa' ? 'var(--s5)' : 'var(--s1)'}));
   const mo529 = DATA.assume.college529Monthly;
   const kids = DATA.kids.map(k => {
-    const bal = BS[k.key]?.[L] || 0, born = new Date(k.dob), y18 = born.getFullYear() + 18 + (born.getMonth() >= 8 ? 1 : 0), yrsLeft = Math.max(0, (new Date(y18, 7) - new Date(CTX.TODAY)) / 3.156e10);
+    const bal = BS[k.key]?.[L] || 0, y18 = collegeYear(k), yrsLeft = Math.max(0, (new Date(y18, 7) - new Date(CTX.TODAY)) / 3.156e10);
     const r = .045 / 12, n = Math.round(yrsLeft * 12), proj = bal * Math.pow(1 + r, n) + mo529 * ((Math.pow(1 + r, n) - 1) / r);
     return {...k, bal, y18, proj, yrsLeft};
   });
@@ -504,7 +504,7 @@ function planEvents() {
   const ev = [], mk = m => mLabel(m);
   (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due >= CTX.ASOF_YM).forEach(p => ev.push({w: mk(p.due), n: p.name, d: p.notes || ({cash: 'Paid from cash', brokerage: 'From brokerage', college_529: '529 + cash flow', budget: 'In the monthly budget', other: ''}[p.fund] || ''), a: -Math.abs(p.amount), pid: p.id, far: p.due > ymAdd(CTX.ASOF_YM, 60) ? 1 : 0}));
   ST.loans.filter(l => l.status === 'active').forEach(l => { const pm = loanPayoff(l.id); ev.push({w: mk(pm), n: l.name + ' paid off', d: `Frees ${money((l.pmt || 0) + (l.escrow && l.type !== 'Mortgage' ? l.escrow : 0))}/mo`, a: null, far: pm > ymAdd(CTX.ASOF_YM, 60) ? 1 : 0}); });
-  DATA.kids.forEach(k => { if ((ST.planned || []).some(p => p.name.includes(k.name))) return; const y = new Date(k.dob).getFullYear() + 18 + (new Date(k.dob).getMonth() >= 8 ? 1 : 0); ev.push({w: 'Aug ' + y, n: k.name + ' starts college', d: '529 + cash flow', a: -DATA.assume.collegeTarget, far: 1}); });
+  DATA.kids.forEach(k => { if ((ST.planned || []).some(p => p.name.includes(k.name))) return; const y = collegeYear(k); ev.push({w: 'Aug ' + y, n: k.name + ' starts college', d: '529 + cash flow', a: -DATA.assume.collegeTarget, far: 1}); });
   try { const P = taxProjection(CY), nq = QDUE(CY).concat(QDUE(CY + 1)).find(q => q.d > CTX.TODAY); const due = sum(JK.map(j => Math.max(0, P.j[j].req - P.j[j].paid))); if (nq && due > 0) ev.push({w: fmtD(nq.d).replace(/ \d+,/, ''), n: 'Estimated tax payments', d: 'Catch-up to each safe harbor', a: -due}); } catch (e) {}
   const base = SCN[0]; ev.push({w: String(YNOW + base.p.retire - ageNow), n: 'Retirement · age ' + base.p.retire + ' (' + base.name + ')', d: `Salary & 401(k) contributions stop · ${Math.round(scnRun(base).prob * 100)}% chance money lasts to 95`, a: null, far: 1});
   return ev;

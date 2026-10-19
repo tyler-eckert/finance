@@ -651,3 +651,4 @@ body.lay-on .card.lay-hidden .lay-ctl{opacity:1}
 .ord-sub{display:flex;align-items:center;gap:8px;padding:2px 0;font-size:12.5px;border-top:1px dashed var(--border)}.ord-sub:first-child{border-top:0}
 .ord-sub span:first-child{flex:1}
 @media (hover:none){.ord-h{display:none}}
+.kid-t td{vertical-align:middle}.kid-t .in.sm{min-width:140px}
