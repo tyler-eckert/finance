@@ -319,6 +319,7 @@ function renderOverview(pg) {
       <div class="delta">${exclLabel()} · ${ytdInc ? Math.round((ytdInc + ytdExp) / ytdInc * 100) : 0}% of income kept</div>
       <div style="margin-top:14px">${spark(CF.inc.map((v, i) => v - CF.exp[i]), 'var(--s2)', 200, 40)}</div></div>
 
+    <div data-slot="glance"></div><div data-slot="notes"></div>
     <div class="card c-8">
       <div class="card-h"><div><h3>Net worth · actual & plan</h3><div class="sub">Month-end actuals, then the plan's projected range · ${PV.real ? "today's dollars (past values inflation-adjusted too)" : 'nominal dollars'}</div></div>
         <div class="right"><div class="seg" id="nwSeg">${['1y', '3y', 'all'].map(k => `<button data-k="${k}" class="${k === nwRange ? 'on' : ''}">${k.toUpperCase()}</button>`).join('')}</div></div></div>
@@ -332,16 +333,17 @@ function renderOverview(pg) {
       <div id="alloc"></div>
     </div>
 
-    <div class="card c-7">
-      <div class="card-h"><div><h3>Cash flow · ${CY}</h3><div class="sub">Monthly income vs. spending · ${exclLabel()}</div></div></div>
-      <div class="chart" id="cfChart"></div>
-      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Income</span><span><i class="sw" style="background:var(--s2)"></i>Spending</span></div>
-    </div>
+    ${ovAssetsCard()}${ovBalanceCard()}
+    <div data-slot="month"></div><div data-slot="ytd"></div>
+    ${ovVendorsCard()}
     <div class="card c-5">
       <div class="card-h"><div><h3>Insights</h3><div class="sub">Ranked by dollar impact</div></div><div class="right"><button class="btn" onclick="go('plan')" style="height:32px">See all</button></div></div>
       ${insHTML(INS.slice(0, 3))}
     </div>
+    ${ovUpcomingCard()}<div data-slot="changed"></div>
+    <div data-slot="cuts"></div><div data-slot="kids"></div>
   </div>`;
+  embedSummary($('.grid', pg));
   // allocation stacked bar
   const parts = [
     {n: 'Brokerage', v: BS.brokerage[L], c: 'var(--s1)'},
@@ -362,7 +364,7 @@ function renderOverview(pg) {
     histPlanChart($('#nwChart'), {hLabels: labels, hVals: vals, kind: 'nw', name: 'Net worth', height: 280, events: ev});
   };
   const m = CF.inc, ex = CF.exp;
-  CH.push(drawNW, () => barChart($('#cfChart'), {labels: MON.slice(0, m.length), series: [{name: 'Income', values: m, color: 'var(--s1)'}, {name: 'Spending', values: ex, color: 'var(--s2)'}], height: 300, tipTitle: l => l + ' ' + CY, tipExtra: i => tipRow(null, 'Net', money(m[i] - ex[i]))}));
+  CH.push(drawNW);
 }
 
 /* ================= page: budget ================= */

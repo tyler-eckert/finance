@@ -16,7 +16,7 @@ function vendorStats() {   // name → {months: {ym: amt}, n12, last, cats, keys
   const since = CTX.SINCE.slice(0, 7), out = {};
   const put = (name, k, m, amt, n, cat, d, sub) => {
     if (!VS.xfer && cat === 'TTS') return;
-    if (ST.excl.has(cat || '')) return;   // the top-bar “All categories” filter
+    if (ST.excl.has(cat || '') || (sub !== undefined && ST.exclSub.has((cat || '') + '|' + sub))) return;   // the top-bar “All categories” filter
     if (VS.cat !== '*' && (cat || '') !== VS.cat) return;
     if (VS.cat !== '*' && VS.sub !== '*' && (sub === undefined || (VS.sub === '__none' ? !!sub : sub !== VS.sub))) return;
     if (VS.dir === 'out' ? amt >= 0 : amt <= 0) return;
@@ -40,10 +40,9 @@ function renderVendors(pg) {
   const th = (k, l) => `<th class="${k === 'name' ? '' : ''}"><button class="link srt ${VS.sort === k ? 'on' : ''}" data-s="${k}">${l}</button></th>`;
   pg.innerHTML = `<div class="toolbar wrap">
     <div class="search">${icon('search')}<input class="in" id="vQ" placeholder="Search vendors or categories" value="${esc(VS.q)}"></div>
-    <select class="in sel" id="vCat">${catOptions(VS.cat, {any: true})}</select>
-    ${VS.cat !== '*' && VS.cat ? `<select class="in sel" id="vSub"><option value="*">Any sub-category</option>${(catOf(VS.cat)?.subs || []).map(x => `<option ${VS.sub === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="__none" ${VS.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>` : ''}
     <div class="seg" id="vDir"><button data-d="out" class="${VS.dir === 'out' ? 'on' : ''}">Spending</button><button data-d="in" class="${VS.dir === 'in' ? 'on' : ''}">Income</button></div>
     <label class="tgl"><input type="checkbox" id="vX" ${VS.xfer ? 'checked' : ''}> Include transfers</label></div>
+  ${exclBanner()}
   <div class="grid g-12">
     <div class="card c-4 kpi"><div class="label">${VS.dir === 'out' ? 'Spent' : 'Received'} · last 12 months</div><div class="val num">${short(tot)}</div><div class="delta">${active.length} vendors · ${mShort(m12[0])} – ${mShort(end)}</div></div>
     <div class="card c-4 kpi"><div class="label">Top vendor</div><div class="val num" style="font-size:22px">${top ? esc(top.name) : '—'}</div><div class="delta">${top ? short(top.l12) + ' · ' + top.c12 + ' transactions' : ''}</div></div>
@@ -56,8 +55,7 @@ function renderVendors(pg) {
   </div>`;
   let qt; $('#vQ').oninput = e => { VS.q = e.target.value; clearTimeout(qt); qt = setTimeout(() => { const p = e.target.selectionStart; render(); const n = $('#vQ'); n.focus(); n.setSelectionRange(p, p); }, 250); };
   $$('#vDir button').forEach(b => b.onclick = () => { VS.dir = b.dataset.d; render(); });
-  $('#vCat').onchange = e => { VS.cat = e.target.value; VS.sub = '*'; VS.lim = 80; render(); };
-  if ($('#vSub')) $('#vSub').onchange = e => { VS.sub = e.target.value; VS.lim = 80; render(); };
+
   $('#vX').onchange = e => { VS.xfer = e.target.checked; render(); };
   $$('.srt', pg).forEach(b => b.onclick = e => { e.stopPropagation(); VS.sort = b.dataset.s; render(); });
   if ($('#vMore')) $('#vMore').onclick = () => { VS.lim += 80; render(); };

@@ -14,6 +14,9 @@ const D3 = DATA3;
 /* ---------------- analysis filter (exclude categories from analysis) ---------------- */
 const hasCat = n => ST.cats.some(c => c.name === n);
 ST.excl = new Set((CTX.prefs.excl ?? ['Tax']).filter(hasCat));
+ST.exclSub = new Set((CTX.prefs.exclSub || []).filter(k => hasCat(k.split('|')[0])));   // 'Category|Sub'
+const isExclP = p => ST.excl.has(p.cat || '') || ST.exclSub.has((p.cat || '') + '|' + (p.sub || ''));
+let FLT_OPEN = new Set();
 const FPRESETS = [
   {k: 'all', l: 'Everything', s: []},
   {k: 'tax', l: 'Without taxes', s: ['Tax']},
@@ -32,9 +35,10 @@ function cashflowByMonth(y) {
 }
 function filterBtnSync() {
   const b = $('#filterBtn'); if (!b) return;
-  b.style.display = ['overview', 'budget', 'vendors', 'summary'].includes(cur) ? '' : 'none';
-  b.innerHTML = `${icon('filter')}<span>${ST.excl.size ? ST.excl.size + ' excluded' : 'All categories'}</span>`;
-  b.classList.toggle('active-f', ST.excl.size > 0);
+  b.style.display = ['overview', 'budget', 'vendors', 'tx'].includes(cur) ? '' : 'none';
+  const n = ST.excl.size + ST.exclSub.size;
+  b.innerHTML = `${icon('filter')}<span>${n ? n + ' excluded' : 'All categories'}</span>`;
+  b.classList.toggle('active-f', n > 0);
 }
 function openFilter(e) {
   e && e.stopPropagation();
@@ -42,18 +46,22 @@ function openFilter(e) {
   const draw = () => {
     p.innerHTML = `<div class="flt-h"><b>Include in analysis</b><button class="link" id="fltClr">Reset</button></div>
       <div class="flt-presets">${FPRESETS.map(x => `<button data-p="${x.k}" class="${x.s.length === ST.excl.size && x.s.every(s => ST.excl.has(s)) ? 'on' : ''}">${x.l}</button>`).join('')}</div>
-      <div class="flt-list">${GROUPS.filter(g => g.k !== 'TTS').map(g => `<div class="flt-g">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => `<label><input type="checkbox" data-c="${esc(c.name)}" ${ST.excl.has(c.name) ? '' : 'checked'}><span>${esc(c.name)}</span></label>`).join('')).join('')}</div>
-      <div class="muted" style="font-size:11.5px;padding:8px 4px 2px">Applies to Overview, Budget, Summary and Vendors, including KPIs, charts, the waterfall and yearly totals. Transfers to savings are never counted.</div>`;
-    $$('[data-p]', p).forEach(b => b.onclick = ev => { ev.stopPropagation(); ST.excl = new Set(FPRESETS.find(x => x.k === b.dataset.p).s); draw(); render(); });
+      <div class="flt-list">${GROUPS.filter(g => g.k !== 'TTS').map(g => `<div class="flt-g">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => { const off = ST.excl.has(c.name), nSub = c.subs.filter(sb => ST.exclSub.has(c.name + '|' + sb)).length, op = FLT_OPEN.has(c.name);
+        return `<div class="flt-c"><label><input type="checkbox" data-c="${esc(c.name)}" ${off ? '' : 'checked'}><span>${esc(c.name)}${nSub && !off ? ` <i class="muted" style="font-style:normal;font-size:11px">· ${nSub} sub off</i>` : ''}</span></label>${c.subs.length ? `<button class="flt-x ${op ? 'on' : ''}" data-cx="${esc(c.name)}" title="Sub-categories">${icon('chev', 2.4)}</button>` : ''}</div>`
+          + (op && c.subs.length ? `<div class="flt-subs">${c.subs.concat(['']).map(sb => `<label class="${off ? 'dis' : ''}"><input type="checkbox" data-cs="${esc(c.name + '|' + sb)}" ${off ? 'disabled' : ''} ${off || ST.exclSub.has(c.name + '|' + sb) ? '' : 'checked'}><span>${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></label>`).join('')}</div>` : ''); }).join('')).join('')}</div>
+      <div class="muted" style="font-size:11.5px;padding:8px 4px 2px">Applies to Overview, Budget, Transactions and Vendors, including KPIs, charts, the waterfall and yearly totals. Open a category (›) to leave out just some of its sub-categories — that applies to transactions loaded since ${mLabel(CTX.SINCE.slice(0, 7))}. Transfers to savings are never counted.</div>`;
+    $$('[data-p]', p).forEach(b => b.onclick = ev => { ev.stopPropagation(); ST.excl = new Set(FPRESETS.find(x => x.k === b.dataset.p).s); ST.exclSub.clear(); draw(); render(); });
     $$('input[data-c]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.excl.delete(cb.dataset.c) : ST.excl.add(cb.dataset.c); draw(); render(); });
-    $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(['Tax'].filter(hasCat)); draw(); render(); };
+    $$('input[data-cs]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.exclSub.delete(cb.dataset.cs) : ST.exclSub.add(cb.dataset.cs); draw(); render(); });
+    $$('[data-cx]', p).forEach(b => b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); const k = b.dataset.cx; FLT_OPEN.has(k) ? FLT_OPEN.delete(k) : FLT_OPEN.add(k); draw(); });
+    $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(['Tax'].filter(hasCat)); ST.exclSub.clear(); draw(); render(); };
   };
   draw();
   p.style.top = (r.bottom + 8) + 'px'; p.style.right = Math.max(8, innerWidth - r.right) + 'px';
   p.classList.toggle('on');
 }
 document.addEventListener('click', e => { const p = $('#fltPop'); if (p && p.classList.contains('on') && !p.contains(e.target)) p.classList.remove('on'); });
-const exclBanner = () => ST.excl.size ? `<div class="flt-banner">${icon('filter')}<span>Excluding <b>${[...ST.excl].map(esc).join(', ')}</b> from this analysis</span><button class="link" onclick="ST.excl.clear();render()">Show everything</button></div>` : '';
+const exclBanner = () => (ST.excl.size || ST.exclSub.size) ? `<div class="flt-banner">${icon('filter')}<span>Excluding <b>${[...ST.excl].concat([...ST.exclSub].map(k => k.endsWith('|') ? k.slice(0, -1) + ' · no sub-category' : k.replace('|', ' · '))).map(esc).join(', ')}</b> from this analysis</span><button class="link" onclick="ST.excl.clear();ST.exclSub.clear();render()">Show everything</button></div>` : '';
 
 /* ---------------- loan math ---------------- */
 const ymAdd = (ym, k) => { let [y, m] = ym.split('-').map(Number); m += k; y += Math.floor((m - 1) / 12); m = ((m - 1) % 12 + 12) % 12 + 1; return `${y}-${String(m).padStart(2, '0')}`; };

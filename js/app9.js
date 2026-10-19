@@ -25,7 +25,7 @@ const yRange = (y, m0, m1) => ymRange(`${y}-${String(m0).padStart(2, '0')}`, `${
 const ab = v => (v < 0 ? '−' : '') + short(Math.abs(v));
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
-function renderSummary(pg) {
+function renderSummary(pg, embed = false) {
   const M0 = lastFullMonth(); if (!SUMM.m || SUMM.m > M0) SUMM.m = M0;
   const M = SUMM.m, y = +M.slice(0, 4), mo = +M.slice(5, 7), monName = MON[mo - 1], MM = summMonthly();
   const firstYear = Math.min(...Object.keys(MM).map(k => +k.slice(0, 4)));
@@ -149,15 +149,15 @@ function renderSummary(pg) {
           <div class="muted" style="font-size:12px">${on ? `Covers ${Math.round(c.covered * 100)}% of the ${short(c.drawn)} we plan to pull over 4 years` : `${Math.round(c.covered * 100)}% of the ${short(DATA.assume.collegeTarget)} goal`}${ok ? '' : ` · about <b>${money(c.extra)}/mo</b> more would close the gap`}</div></div>`; }).join('')}</div></div>` : ''}
   </div>`;
 
-  $('#smPrev').onclick = () => { SUMM.m = ymPlus(M, -1); render(); };
-  $('#smNext').onclick = () => { SUMM.m = ymPlus(M, 1); render(); };
-  $('#smPrint').onclick = () => window.print();
+  $('#smPrev', pg).onclick = () => { SUMM.m = ymPlus(M, -1); render(); };
+  $('#smNext', pg).onclick = () => { SUMM.m = ymPlus(M, 1); render(); };
+  $('#smPrint', pg).onclick = () => window.print();
   if (typeof wireNotes === 'function') wireNotes(pg);
-  CH.push(() => barChart($('#smYears'), {labels: years.map(String), series: [{name: `Jan – ${monName}`, values: same.map(s => s.out), color: 'var(--s1)'},
+  CH.push(() => $('#smYears') && barChart($('#smYears'), {labels: years.map(String), series: [{name: `Jan – ${monName}`, values: same.map(s => s.out), color: 'var(--s1)'},
       {name: 'Full year', values: full, color: 'var(--s2)', hatchFn: i => years[i] === y && mo < 12}], height: 230, xGap: 40, tipTitle: l => l,
       tipExtra: i => years[i] === y && mo < 12 ? tipRow(null, 'Full year', 'projected') : ''}),
-    () => { const i0 = Math.max(0, j - 24), lab = BS.months.slice(i0, j + 1); lineChart($('#smNw'), {labels: lab, series: [{name: 'Net worth', values: BS.netWorth.slice(i0, j + 1), color: 'var(--s1)', area: true}], height: 220, xGap: 70, xFmt: (lb, i, e) => i % e === 0 ? mShort(lb) : null, tipTitle: mLabel}); },
-    () => barChart($('#smSave'), {labels: last12, series: [{name: 'Kept', values: savedSeries, colorFn: v => v >= 0 ? 'var(--pos)' : 'var(--neg)'}], height: 220, xGap: 46, xFmt: mShort, tipTitle: mLabel}));
+    () => { if (!$('#smNw')) return; const i0 = Math.max(0, j - 24), lab = BS.months.slice(i0, j + 1); lineChart($('#smNw'), {labels: lab, series: [{name: 'Net worth', values: BS.netWorth.slice(i0, j + 1), color: 'var(--s1)', area: true}], height: 220, xGap: 70, xFmt: (lb, i, e) => i % e === 0 ? mShort(lb) : null, tipTitle: mLabel}); },
+    () => $('#smSave') && barChart($('#smSave'), {labels: last12, series: [{name: 'Kept', values: savedSeries, colorFn: v => v >= 0 ? 'var(--pos)' : 'var(--neg)'}], height: 220, xGap: 46, xFmt: mShort, tipTitle: mLabel}));
 }
 
 // Savings ideas: subscriptions & repeating charges, categories running above usual, small frequent purchases
@@ -316,4 +316,77 @@ function loanDecisionCard(act) {
         <div class="muted">Investing it instead (risk-adjusted) ends up ${r.edge >= 0 ? `<b class="pos">${short(r.edge)} ahead</b>` : `<b class="neg">${short(-r.edge)} behind</b>`} on average by the original payoff</div>` : ''}
         ${r.refi ? r.refi.ok ? `<div style="margin-top:4px">Refi at ${pctRate(mkt)}: <b>${money(r.refi.save)}/mo</b> less · ~${short(r.refi.cost)} costs · breaks even in <b>${r.refi.be} months</b></div>` : `<div class="muted" style="margin-top:4px">Refinancing: your rate is only ${(r.refi.gap * 100).toFixed(2)} pts ${r.refi.gap >= 0 ? 'above' : 'below'} today’s average — not worth the closing costs yet (look at ~0.75+).</div>` : ''}</div></div>`).join('')}</div>
     <p class="muted" style="font-size:11.5px;margin-top:8px">Rules of thumb, not advice: a loan costing more than the portfolio’s expected after-tax return (less a point for risk) is worth paying down; one cheaper than safe Treasuries is worth keeping; refinancing usually pays when today’s rate is ~0.75 points lower and you’ll stay past the break-even. Expected return comes from the base scenario on the Plan page.</p></div>`;
+}
+
+/* =====================================================================
+   Overview extras: assets & liabilities, latest balance sheet (MoM / YoY),
+   top vendors with a full-year ghost, and an "upcoming" tile for taxes + milestones
+   ===================================================================== */
+function ovAssetsCard() {
+  const rows = ST.assets.filter(a => a.status === 'active').map(a => { const v = valueAtM(a, LASTM), ln = a.loan ? loanById(a.loan) : null, owe = ln ? loanBal(ln) : 0; return {n: a.name, v, owe, eq: v - owe, sub: ln ? ln.name : 'Owned outright'}; })
+    .concat(ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id) && loanBal(l) > .5).map(l => ({n: l.name, v: 0, owe: loanBal(l), eq: -loanBal(l), sub: 'Loan · nothing behind it'})))
+    .sort((a, b) => Math.max(b.v, b.owe) - Math.max(a.v, a.owe));
+  const mx = Math.max(1, ...rows.map(r => Math.max(r.v, r.owe))), TV = sum(rows.map(r => r.v)), TO = sum(rows.map(r => r.owe));
+  return `<div class="card c-4" id="ovAL"><div class="card-h"><div><h3>Assets & what we owe</h3><div class="sub">Worth ${short(TV)} · owe ${short(TO)} · equity ${short(TV - TO)}</div></div></div>
+    <div class="al-list">${rows.map(r => `<div class="al"><div class="al-top"><div style="min-width:0"><div class="nm">${esc(r.n)}</div><div class="ds">${esc(r.sub)}</div></div><div class="al-v num"><b class="${r.eq < 0 ? 'neg' : ''}">${r.eq < 0 ? '−' : ''}${short(Math.abs(r.eq))}</b><span class="muted">${r.v ? short(r.v) + ' value' : ''}${r.v && r.owe ? ' · ' : ''}${r.owe ? short(r.owe) + ' owed' : ''}</span></div></div>
+      <div class="al-bar"><i class="eq" style="width:${Math.max(0, r.v - r.owe) / mx * 100}%"></i><i class="ow" style="width:${Math.min(r.owe, r.v || r.owe) / mx * 100}%"></i></div></div>`).join('') || '<p class="muted">No assets or loans yet.</p>'}</div>
+    <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Equity</span><span><i class="sw" style="background:var(--neg)"></i>Owed</span></div></div>`;
+}
+function ovBalanceCard() {
+  const nowM = ym(CTX.TODAY); let A = L; if (BS.months[A] >= nowM && A > 0) A--;
+  const m = BS.months[A], p = A - 1, yA = A - 12;
+  const B = ST.bal.accounts.filter(a => a.active !== false), val = (a, i) => i < 0 ? null : (BS[(a.kind === 'loan' ? 'loan:' : 'acct:') + a.id]?.[i] ?? null);
+  const groups = BGROUPS.filter(g => B.some(a => a.group === g));
+  const vc = (cur, prv, sg) => { if (cur == null || prv == null || (!cur && !prv)) return '<td class="num muted">—</td><td class="num muted"></td>'; const d = cur - prv, cls = Math.abs(d) < .5 ? 'muted' : d * sg > 0 ? 'pos' : 'neg';
+    return `<td class="num ${cls}">${Math.abs(d) < .5 ? '$0' : (d > 0 ? '+' : '−') + short(Math.abs(d))}</td><td class="num ${cls}">${prv ? pct(d / Math.abs(prv), 1) : ''}</td>`; };
+  const row = (n, c, pv, yv, sg, cls = '') => `<tr class="${cls}"><td class="${cls ? '' : 'ind'}">${n}</td><td class="num">${c == null ? '—' : short(c)}</td>${vc(c, pv, sg)}${vc(c, yv, sg)}</tr>`;
+  const gs = (list, i) => sum(list.map(a => val(a, i) || 0));
+  return `<div class="card c-8" id="ovBal"><div class="card-h"><div><h3>Balance sheet · ${mLabel(m)}</h3><div class="sub">Latest full month vs. the month before and the same month last year</div></div><div class="right"><button class="btn" style="height:32px" onclick="go('balances')">History</button></div></div>
+    <div class="scroll-x"><table class="table ov-bt"><tr><th>Account</th><th>${mShort(m)}</th><th>MoM $</th><th>MoM %</th><th>YoY $</th><th>YoY %</th></tr>
+    ${groups.map(g => { const ga = B.filter(a => a.group === g && (val(a, A) || val(a, yA) || val(a, p))), sg = g === 'Debt' ? -1 : 1; if (!ga.length) return '';
+      return row(g, gs(ga, A), gs(ga, p), yA >= 0 ? gs(ga, yA) : null, sg, 'grp-r') + ga.map(a => row(esc(a.name), val(a, A), val(a, p), val(a, yA), sg)).join(''); }).join('')}
+    ${row('Net worth', BS.netWorth[A], BS.netWorth[p], yA >= 0 ? BS.netWorth[yA] : null, 1, 'tot')}</table></div></div>`;
+}
+const OV_SKIP = /^(mortgage|tax|car payments)$/i;
+function ovVendorsCard() {
+  const am = ASOF.m, by = {};
+  ST.tx.forEach(t => { if (t.d.slice(0, 4) !== String(CY) || +t.d.slice(5, 7) > am) return; pieces(t).forEach(p => { const g = catOf(p.cat)?.group; if (p.amt >= 0 || !p.cat || g !== 'Variable Expense' || OV_SKIP.test(p.cat) || isExclP(p)) return;
+    const n = vendorName(vendorKey(t.desc)) || 'Other'; (by[n] ||= {n, v: 0, c: {}}).v -= p.amt; by[n].c[p.cat] = (by[n].c[p.cat] || 0) - p.amt; }); });
+  const top = Object.values(by).sort((a, b) => b.v - a.v).slice(0, 10).map(r => ({...r, est: r.v * 12 / am, cat: Object.entries(r.c).sort((a, b) => b[1] - a[1])[0][0]})), mx = Math.max(1, ...top.map(r => r.est));
+  return `<div class="card c-7" id="ovVend"><div class="card-h"><div><h3>Top 10 vendors · ${CY}</h3><div class="sub">Everyday spending, Jan–${MON[am - 1]} · ghost bar = full-year estimate at this pace · leaves out mortgage, taxes, loans and fixed bills</div></div><div class="right"><button class="btn" style="height:32px" onclick="go('vendors')">All vendors</button></div></div>
+    <div class="vb-list">${top.map(r => `<div class="vb" title="${esc(r.cat)}"><div class="vb-n">${esc(r.n)}<span class="muted">${esc(r.cat)}</span></div><div class="vb-track"><i class="ghost" style="width:${r.est / mx * 100}%"></i><i class="act" style="width:${r.v / mx * 100}%"><em>${short(r.v)}</em></i></div><div class="vb-e num">${short(r.est)}<span>/yr est</span></div></div>`).join('') || '<p class="muted">No spending yet this year.</p>'}</div>
+    <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Spent so far</span><span><i class="sw" style="background:var(--s1);opacity:.22"></i>Full-year estimate</span></div></div>`;
+}
+function ovUpcomingCard() {
+  const today = CTX.TODAY, end = (() => { const d = new Date(today + 'T12:00:00'); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })(), items = [];
+  if (typeof taxProjection === 'function') {
+    const P = taxProjection(CY), JN = {FED: 'Federal', OK: 'Oklahoma', NM: 'New Mexico'}, by = {};
+    const addT = (d, j, amt, what) => { if (d <= today || d > end || amt < 1) return; const o = (by[d] ||= {d, parts: [], what}); o.parts.push([JN[j] || j, amt]); };
+    Object.entries(P.j).forEach(([j, p]) => {
+      let cum = p.paid; p.qs.filter(q => q.d > today).forEach(q => { const need = Math.max(0, q.due - cum); cum += need; addT(q.d, j, need, `${q.q} ${CY} estimates`); });
+      const nextInst = Math.min((JUR[j]?.cur || .9) * p.proj, (j === 'FED' && TX.highAGI ? 1.1 : 1) * p.proj) / 4;
+      addT(`${CY + 1}-04-15`, j, p.balance + nextInst, `${CY} balance due + Q1 ${CY + 1} estimate`);
+      addT(`${CY + 1}-06-15`, j, nextInst, `Q2 ${CY + 1} estimates`); addT(`${CY + 1}-09-15`, j, nextInst, `Q3 ${CY + 1} estimates`);
+    });
+    Object.values(by).forEach(o => items.push({d: o.d, k: 'Tax', n: o.what, a: -sum(o.parts.map(x => x[1])), ds: o.parts.map(([n, v]) => `${n} ${short(v)}`).join(' · ')}));
+  }
+  (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due + '-15' > today && p.due + '-01' <= end).forEach(p => items.push({d: p.due + '-01', k: 'Milestone', n: p.name, a: -Math.abs(p.amount), ds: p.notes || ''}));
+  ST.loans.filter(l => l.status === 'active').forEach(l => { const pm = loanPayoff(l.id); if (pm + '-28' > today && pm + '-01' <= end) items.push({d: pm + '-28', k: 'Loan', n: l.name + ' paid off', a: null, ds: `Frees ${money(l.pmt || 0)}/mo`}); });
+  DATA.kids.forEach(k => { const d = `${collegeYear(k)}-08-15`; if (d > today && d <= end) items.push({d, k: 'College', n: k.name + ' starts college', a: null, ds: ''}); });
+  items.sort((a, b) => a.d.localeCompare(b.d));
+  const fd = d => `${MON[+d.slice(5, 7) - 1]} ${+d.slice(8, 10)}, ${d.slice(0, 4)}`;
+  return `<div class="card c-5" id="ovUp"><div class="card-h"><div><h3>Coming up · next 12 months</h3><div class="sub">Tax payments and milestones · ${money(-sum(items.filter(i => i.k === 'Tax').map(i => i.a)))} of tax</div></div></div>
+    <div class="tl">${items.map(e => `<div class="ev"><div class="when">${fd(e.d)}</div><div class="row"><div><div class="nm" style="font-weight:600"><span class="chip ${e.k === 'Tax' ? 'neg' : e.k === 'Loan' ? 'pos' : ''}" style="margin-right:6px">${e.k}</span>${esc(e.n)}</div>${e.ds ? `<div class="muted" style="font-size:12px">${esc(e.ds)}</div>` : ''}</div><div class="amt num">${e.a ? money(e.a) : ''}</div></div></div>`).join('') || '<p class="muted">Nothing scheduled in the next year.</p>'}</div></div>`;
+}
+// Summary cards to fold into the Overview (minus the ones the Overview already covers)
+const OV_DROP = /^(Spending compared with past years|Net worth|Where it is|What we kept each month|Savings)$/;
+function embedSummary(grid) {
+  const tmp = document.createElement('div'); renderSummary(tmp, true);
+  const cards = [...tmp.querySelectorAll('.grid > .card')], tb = tmp.querySelector('.toolbar');
+  const T = c => c.querySelector('h3')?.textContent.trim() || '';
+  const keep = cards.filter(c => !OV_DROP.test(T(c))), find = re => keep.find(c => re.test(T(c)));
+  const glance = find(/at a glance$/); if (glance && tb) { const st = tb.querySelector('.stepper'); const h = glance.querySelector('.card-h'); if (st && h) { const r = document.createElement('div'); r.className = 'right'; r.appendChild(st); h.appendChild(r); } }
+  const chg = find(/^What’s changed$/); if (chg) { chg.classList.remove('c-5'); chg.classList.add('c-7'); }
+  const slots = {glance: find(/at a glance$/), notes: find(/^Notes for /), month: find(/spending vs\. budget$/), ytd: find(/^The year so far$/), changed: chg, cuts: find(/^Easy places to cut$/), kids: find(/^Kids’ college$/)};
+  $$('[data-slot]', grid).forEach(ph => { const c = slots[ph.dataset.slot]; if (c) ph.replaceWith(c); else ph.remove(); });
 }
