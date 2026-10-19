@@ -77,7 +77,7 @@ function openVendor(name) {
     <button class="btn" id="vAll" style="margin-top:10px">${icon('tx')}<span>See all in Transactions</span></button>`;
   openLayer('drawer');
   $$('#vList .li').forEach(li => li.onclick = () => openTxEdit(li.dataset.id));
-  $('#vAll').onclick = () => { TXF.vendor = name; TXF.cat = '*'; TXF.month = ''; go('tx'); };
+  $('#vAll').onclick = () => { TXF.vendor = name; TXF.cat = '*'; TXF.sub = '*'; TXF.month = ''; go('tx'); };
   if ($('#vRenGo')) $('#vRenGo').onclick = () => {
     const nn = $('#vRen').value.trim(); if (!nn || nn === name) return;
     const was = ST.valias.map(a => ({...a}));
