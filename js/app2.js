@@ -105,11 +105,20 @@ function wireCatSub(catSel, subSel, onChange) {
   catSel.onchange = () => { subSel.innerHTML = subOptions(catSel.value, ''); onChange && onChange(); };
   subSel.onchange = () => {
     if (subSel.value !== '__new') return onChange && onChange();
-    const inp = document.createElement('input'); inp.className = 'in'; inp.placeholder = 'New sub-category name'; subSel.replaceWith(inp); inp.focus();
-    const done = () => { const v = inp.value.trim(); if (v && catOf(catSel.value) && !catOf(catSel.value).subs.includes(v)) catOf(catSel.value).subs.push(v); subSel.innerHTML = subOptions(catSel.value, v); inp.replaceWith(subSel); onChange && onChange(); };
-    inp.onblur = done; inp.onkeydown = e => e.key === 'Enter' && inp.blur();
+    if (!catOf(catSel.value)) { subSel.value = ''; return toast('Pick a category first'); }
+    const inp = document.createElement('input'); inp.className = 'in new-sub ' + (subSel.classList.contains('sm') ? 'sm' : ''); inp.placeholder = 'New sub-category, then Enter'; inp.enterKeyHint = 'done';
+    subSel.replaceWith(inp); setTimeout(() => inp.focus(), 0);
+    let fin = false;
+    const done = () => { if (fin) return; fin = true;
+      const c = catOf(catSel.value), v = inp.value.trim().replace(/\s+/g, ' ');
+      const hit = c && c.subs.find(s => s.toLowerCase() === v.toLowerCase());
+      const nm = hit || v; if (c && v && !hit) c.subs.push(v);
+      subSel.innerHTML = subOptions(catSel.value, nm); if (inp.isConnected) inp.replaceWith(subSel); onChange && onChange();
+      if (v && !hit) toast(`Added “${v}” to ${c.name}`); };
+    inp._done = done; inp.onblur = done; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(); } if (e.key === 'Escape') { inp.value = ''; done(); } };
   };
 }
+const flushSubs = () => $$('input.new-sub').forEach(i => i._done && i._done());
 const fmtDate = d => MON[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8, 10));
 const cleanDesc = d => d.replace(/ (CHK|DEBIT CRD|CARD PUR).*$/i, '').trim();
 
@@ -279,7 +288,7 @@ function renderTx(pg) {
   $('#selAll').onchange = e => { list.slice(0, TXF.lim).forEach(t => e.target.checked ? TXSEL.add(t.id) : TXSEL.delete(t.id)); render(); };
   wireCatSub($('#bkCat'), $('#bkSub'));
   $('#bkClear').onclick = () => { TXSEL.clear(); render(); };
-  $('#bkApply').onclick = () => { const c = $('#bkCat').value; if (!c) return; const ids = [...TXSEL]; recat(ids, c, $('#bkSub').value, `Bulk: ${ids.length} → ${c}`); TXSEL.clear(); render(); };
+  $('#bkApply').onclick = () => { flushSubs(); const c = $('#bkCat').value; if (!c) return; const ids = [...TXSEL]; recat(ids, c, $('#bkSub').value, `Bulk: ${ids.length} → ${c}`); TXSEL.clear(); render(); };
 }
 function recat(ids, cat, sub, label) {
   const before = ids.map(id => { const t = ST.tx.find(x => x.id === id); return [id, t.cat, t.sub, t.splits]; });
@@ -311,6 +320,7 @@ function openTxEdit(id) {
   $('#eSplit').onclick = () => openSplit(t);
   if ($('#eUnsplit')) $('#eUnsplit').onclick = () => { t.cat = t.splits[0].cat; t.sub = t.splits[0].sub; delete t.splits; closeAll(); render(); toast('Split removed'); };
   $('#eSave').onclick = () => {
+    flushSubs();
     t.note = $('#eNote').value;
     if (!t.splits) {
       const c = $('#eCat').value, s = $('#eSub').value === '__new' ? '' : $('#eSub').value;
@@ -447,6 +457,7 @@ function drawImport() {
     wireCatSub($('.iCat', tr), $('.iSub', tr), () => { r.cat = $('.iCat', tr).value; r.sub = $('.iSub', tr)?.value === '__new' ? '' : ($('.iSub', tr)?.value || ''); r.edited = true; });
   });
   $('#impGo').onclick = async () => {
+    flushSubs();
     const add = D.rows.filter(r => r.keep && r.st === 'new'), fix = D.rows.filter(r => r.keep && r.st === 'fix'), del = IMP.replace ? D.stale : [];
     if (!add.length && !fix.length && !del.length && !(IMP.setBal && balRow)) return closeAll();
     const btn = $('#impGo'); btn.disabled = true; btn.textContent = 'Importing…';
@@ -496,7 +507,7 @@ function renderBalances(pg) {
     <div class="card c-4 kpi"><div class="label">Quick fill${CTX.CAN_WRITE ? '' : ' · view only'}</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn" id="copyAll">${icon('undo')}<span>Carry forward blanks</span></button><button class="btn" id="pasteBtn">${icon('file')}<span>Paste values</span></button></div><div class="muted" style="font-size:11.5px;margin-top:8px">Saved as you type · loans here are statement balances</div></div>
     ${groups.map(g => `<div class="card c-6"><div class="card-h"><div><h3>${g}</h3><div class="sub">${short(sum(VA.filter(a => a.group === g).map(a => a.v[i] ?? a.v[i - 1] ?? 0)))}${g === 'Debt' ? ' owed' : ''}${VA.some(a => a.group === g && a.v[i] == null) ? ' · incl. last month for blanks' : ''}</div></div></div>
       ${VA.map(a => a.group !== g ? '' : `<div class="bal-row ${a.v[i] == null ? 'empty' : ''} ${a.active === false ? 'inact' : ''}" data-k="${kOf(a)}">
-        <div class="bal-nm"><div class="nm">${esc(a.name)}${a.active === false ? ' <span class="chip">Inactive</span>' : ''}</div><div class="ds">${esc(a.inst)} · last ${a.v[i - 1] != null ? short(a.v[i - 1]) : '—'}${a.rollup ? ` · <button class="link" data-act="${kOf(a)}">Activity by account</button>` : ''}</div></div>
+        <div class="bal-nm"><div class="nm">${esc(a.name)}${a.active === false ? ' <span class="chip">Inactive</span>' : ''}</div><div class="ds">${esc(a.inst)} · last ${a.v[i - 1] != null ? short(a.v[i - 1]) : '—'}${a.kind === 'account' && ['Investing', 'Retirement', 'College'].includes(a.group) && CTX.CAN_WRITE ? ` · <button class="link" data-act="${kOf(a)}">${a.rollup ? 'By account' : 'Split into accounts'}</button>` : ''}</div></div>
         <div class="bal-sp hide-sm">${spark(a.v.slice(Math.max(0, i - 11), i + 1).map((v, j, arr) => v ?? arr[j - 1] ?? 0), g === 'Debt' ? 'var(--s5)' : 'var(--s1)', 70, 26, false)}</div>
         <div class="bal-in"><span>$</span><input class="in num balIn" ${a.rollup ? 'readonly title="Sum of the accounts under it — use Activity by account"' : ''} inputmode="decimal" placeholder="${a.v[i - 1] != null ? Math.round(a.v[i - 1]).toLocaleString() : '0'}" value="${a.v[i] != null ? a.v[i].toLocaleString('en-US', {maximumFractionDigits: 2}) : ''}"></div>
         <div class="bal-ch num">${a.v[i] != null && a.v[i - 1] ? `<span class="${(a.v[i] - a.v[i - 1]) * signOf(a) >= 0 ? 'pos' : 'neg'}">${pct((a.v[i] - a.v[i - 1]) / a.v[i - 1], 1)}</span>` : a.v[i] == null ? '<span class="tag new">Due</span>' : ''}</div>${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn bal-hide" data-hide="${kOf(a)}" title="${a.active === false ? 'Mark active' : 'Mark inactive (hide)'}">${icon(a.active === false ? 'eye' : 'eyeOff')}</button>` : ''}</div>`).join('')}</div>`).join('')}

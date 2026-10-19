@@ -414,22 +414,56 @@ function renderInvest(pg) {
 
     ${accountProjection()}
     ${SCH.length ? benchCard() : ''}
-    ${SCH.length ? `<div class="card c-7"><div class="card-h"><div><h3>Monthly gain / loss</h3><div class="sub">Market change + dividends − fees, excluding deposits & withdrawals</div></div></div><div class="chart" id="retChart"></div></div>` : ''}
-    <div class="card c-5"><div class="card-h"><div><h3>College · 529 plans</h3><div class="sub">${money(mo529)}/mo each at 4.5% · target ${short(target)} per child</div></div></div>
-      ${kids.map(k => `<div class="kid"><div><div class="nm" style="font-weight:600">${k.name}</div><div class="ds muted" style="font-size:12px">${short(k.bal)} today · college ${k.y18}</div></div><div class="num" style="text-align:right;font-weight:600">${short(k.proj)}<div class="muted" style="font-size:11px;font-weight:500">projected at 18</div></div>
-        <div class="pbar" style="grid-column:1/-1;height:8px"><i style="width:${Math.min(100, k.proj / target * 100)}%;background:var(--s5)"></i></div>
-        <div class="muted" style="grid-column:1/-1;font-size:11.5px">${k.proj >= target ? 'On track' : `Gap ${short(target - k.proj)} → ≈ ${money(Math.ceil(((target - k.proj) * (.045 / 12) / (Math.pow(1 + .045 / 12, Math.round(k.yrsLeft * 12)) - 1)) / 5) * 5)}/mo more closes it`}</div></div>`).join('')}
-    </div>
+    ${SCH.length ? `<div class="card c-12"><div class="card-h"><div><h3>Monthly gain / loss</h3><div class="sub">Market change + dividends − fees, excluding deposits & withdrawals</div></div></div><div class="chart" id="retChart"></div></div>` : ''}
+    ${collegeSection(kids, target, mo529)}
   </div>`;
   const labels = SCH.map(r => r.m), vals = SCH.map(r => r.end);
   const mk = SCH.map((r, i) => (r.dep + r.wd) !== 0 ? {i, color: r.dep + r.wd > 0 ? 'var(--s2)' : 'var(--s5)'} : null).filter(Boolean);
   $$('#pmSeg button').forEach(b => b.onclick = () => { PV.pm = b.dataset.k; render(); }); wirePlanControls('pf');
   if (!SCH.length) PV.pm = 'total';
+  CH.push(() => drawCollege(kids));
   const i0 = Math.max(0, L - 60);
   CH.push(() => PV.pm === 'total' ? histPlanChart($('#schChart'), {hLabels: BS.months.slice(i0), hVals: BS.months.slice(i0).map((m, k) => investable(i0 + k)), kind: 'inv', name: 'Investable', height: 300, events: []}) : lineChart($('#schChart'), {labels, series: [{name: 'Balance', values: vals, color: 'var(--s1)', area: true}], markers: mk, height: 250, xFmt: (lb, i, e) => i % e === 0 ? mShort(lb) : null, tipTitle: mLabel,
       tipExtra: i => { const r = SCH[i]; return (r.dep ? tipRow('var(--s2)', 'Deposit', short(r.dep)) : '') + (r.wd ? tipRow('var(--s5)', 'Withdrawal', short(r.wd)) : '') + tipRow(null, 'Gain', short(r.div + r.mkt + r.fee)); }}),
     () => { if (!SCH.length) return; const g = SCH.map(r => r.div + r.mkt + r.fee); barChart($('#retChart'), {labels, series: [{name: 'Gain / loss', values: g, colorFn: v => v >= 0 ? 'var(--pos)' : 'var(--neg)'}], height: 230, xGap: 52, xFmt: mShort, tipTitle: mLabel,
       tipExtra: i => tipRow(null, 'Return', pct(g[i] / SCH[i].start, 2))}); });
+}
+
+/* ---------- college: rolled up and by child ---------- */
+const KID_COL = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
+let COL_RANGE = '3y';
+function collegeSection(kids, target, mo529) {
+  if (!kids.length && !BS.college[L]) return '';
+  const tot = BS.college[L], y1 = BS.college[i12] || 0, ydec = BS.college[iDecPY] || 0;
+  const r = .045 / 12, needFor = k => k.proj >= target ? 0 : Math.ceil(((target - k.proj) * r / (Math.pow(1 + r, Math.max(1, Math.round(k.yrsLeft * 12))) - 1)) / 5) * 5;
+  const first = kids.slice().sort((a, b) => a.y18 - b.y18)[0];
+  const sumProj = sum(kids.map(k => k.proj)), need = sum(kids.map(needFor));
+  return `<div class="card c-8"><div class="card-h"><div><h3>College savings · 529s</h3><div class="sub">All ${kids.length} plans rolled up, and each child · month-end balances</div></div>
+      <div class="right"><div class="seg" id="colR">${['1y', '3y', 'all'].map(k => `<button data-k="${k}" class="${COL_RANGE === k ? 'on' : ''}">${k.toUpperCase()}</button>`).join('')}</div></div></div>
+      <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+        <div class="mini"><div class="l">Total today</div><div class="v num">${short(tot)}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${chip(nz((tot - y1) / y1))} 12 mo</div></div>
+        <div class="mini"><div class="l">Since Dec</div><div class="v num ${tot - ydec >= 0 ? 'pos' : 'neg'}">${tot - ydec >= 0 ? '+' : '−'}${short(Math.abs(tot - ydec))}</div></div>
+        <div class="mini"><div class="l">Projected at 18 · all</div><div class="v num">${short(sumProj)}</div><div class="ds" style="font-size:11px;color:var(--text-3)">target ${short(target * kids.length)}</div></div>
+        <div class="mini"><div class="l">First starts</div><div class="v num" style="font-size:16px">${first ? esc(first.name) + ' · ' + first.y18 : '—'}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${first ? first.yrsLeft.toFixed(1) + ' yrs' : ''}</div></div></div>
+      <div class="chart" id="colChart"></div><div class="legend"><span><i class="sw" style="background:var(--text-2)"></i>All 529s</span>${kids.map((k, i) => `<span><i class="sw" style="background:${KID_COL[i % 5]}"></i>${esc(k.name)}</span>`).join('')}</div></div>
+    <div class="card c-4"><div class="card-h"><div><h3>By child</h3><div class="sub">Last 24 months · ${money(mo529)}/mo each assumed</div></div></div>
+      <div class="list">${kids.map((k, i) => { const v = (BS[k.key] || []).slice(-24), ch = v.length > 12 && v[v.length - 13] ? (v[v.length - 1] - v[v.length - 13]) / v[v.length - 13] : 0;
+        return `<div class="li"><div style="min-width:0"><div class="nm">${esc(k.name)}</div><div class="ds">College ${k.y18} · ${k.yrsLeft.toFixed(1)} yrs</div></div><div style="margin-left:auto">${spark(v, KID_COL[i % 5], 64, 26, false)}</div><div class="amt num" style="margin-left:12px;min-width:72px">${short(k.bal)}<div style="font-size:11px;font-weight:600" class="${ch >= 0 ? 'pos' : 'neg'}">${pct(ch, 0)} 1y</div></div></div>`; }).join('')}</div>
+      <div class="ex-row" style="margin-top:6px"><span>Total</span><b>${short(tot)}</b></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>College projections by child</h3><div class="sub">4.5% a year plus ${money(mo529)}/mo until August of the year they turn 18 · target ${short(target)} each</div></div></div>
+      <div class="scroll-x"><table class="table cmp"><tr><th>Child</th><th>Today</th><th>Starts</th><th>Years left</th><th>Projected</th><th>Target</th><th>Funded</th><th>Extra / mo to close gap</th></tr>
+      ${kids.map((k, i) => `<tr><td><span class="tw"><i class="sw" style="background:${KID_COL[i % 5]}"></i>${esc(k.name)}</span></td><td>${short(k.bal)}</td><td>Aug ${k.y18}</td><td>${k.yrsLeft.toFixed(1)}</td><td><b>${short(k.proj)}</b></td><td class="muted">${short(target)}</td>
+        <td style="min-width:110px"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1;height:6px"><i style="width:${Math.min(100, k.proj / target * 100)}%;background:${KID_COL[i % 5]}"></i></div><span class="muted num" style="font-size:11.5px">${Math.round(k.proj / target * 100)}%</span></div></td>
+        <td class="${needFor(k) ? '' : 'pos'}">${needFor(k) ? money(needFor(k)) : 'On track'}</td></tr>`).join('')}
+      <tr class="tot"><td>Total</td><td>${short(sum(kids.map(k => k.bal)))}</td><td></td><td></td><td>${short(sumProj)}</td><td class="muted">${short(target * kids.length)}</td><td></td><td>${need ? money(need) : 'On track'}</td></tr></table></div></div>`;
+}
+function drawCollege(kids) {
+  const el = $('#colChart'); if (!el) return;
+  $$('#colR button').forEach(b => b.onclick = () => { COL_RANGE = b.dataset.k; $$('#colR button').forEach(x => x.classList.toggle('on', x === b)); drawCollege(kids); });
+  const st = COL_RANGE === '1y' ? Math.max(0, L - 12) : COL_RANGE === '3y' ? Math.max(0, L - 36) : Math.max(0, BS.college.findIndex(v => v > 0));
+  const labels = BS.months.slice(st);
+  lineChart(el, {labels, series: [{name: 'All 529s', values: BS.college.slice(st), color: 'var(--text-2)', area: true, width: 2.5}].concat(kids.map((k, i) => ({name: k.name, values: (BS[k.key] || []).slice(st), color: KID_COL[i % 5]}))),
+    height: 240, zero: true, xGap: 70, xFmt: (lb, i, e) => i % e === 0 ? mShort(lb) : null, tipTitle: mLabel});
 }
 
 /* ================= page: plan ================= */

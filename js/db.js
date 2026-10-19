@@ -496,10 +496,10 @@ const WRITERS = {
     for (const c of ch) {
       if (c.op === 'del') continue;
       const a = ST.subAccts.find(x => (x.id || x.tmp) === c.id); if (!a) continue;
-      const rec = {last4: a.last4 || null, nickname: a.nickname || null, is_active: a.active !== false, name: a.name || `${MAP.acctName[a.parent] || 'Account'} ••${a.last4}`};
+      const rec = {last4: a.last4 || null, nickname: a.nickname || null, is_active: a.active !== false, name: a.name || `${MAP.acctName[a.parent] || 'Account'} · ${a.nickname || '••' + a.last4}`};
       if (!a.id) {
         const par = ST.bal.accounts.find(x => x.id === a.parent);
-        const row = must(await FDB.from('accounts').insert({household_id: hh(), parent_account_id: a.parent, kind: 'brokerage', balance_group: par?.group || 'Investing',
+        const row = must(await FDB.from('accounts').insert({household_id: hh(), parent_account_id: a.parent, kind: ({Retirement: 'retirement', College: 'college'})[par?.group] || 'brokerage', balance_group: par?.group || 'Investing',
           institution: par?.inst || null, in_net_worth: false, in_investable: false, sort_order: 950, ...rec}).select('id').single());
         a.id = row.id; a.name = rec.name; MAP.acct[rec.name] = row.id; MAP.acctName[row.id] = rec.name;
         if (a.tmp && ST.inv[a.tmp]) { ST.inv[row.id] = ST.inv[a.tmp]; delete ST.inv[a.tmp]; }

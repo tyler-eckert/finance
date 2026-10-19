@@ -232,32 +232,49 @@ const INV_F = [['start', 'Starting'], ['dep', 'Deposits'], ['wd', 'Withdrawals']
 const invEnd = r => sum(INV_F.map(([k]) => +r[k] || 0));
 function prevEnd(id, m) { const rows = ST.inv[id] || {}; const ks = Object.keys(rows).filter(k => k < m).sort(); return ks.length ? rows[ks[ks.length - 1]].end : 0; }
 function openActivity(parent, i) {
-  const m = ST.bal.months[i], kids = () => ST.subAccts.filter(a => a.parent === parent.id && a.active !== false).sort((a, b) => (a.sort || 0) - (b.sort || 0) || String(a.last4).localeCompare(String(b.last4)));
-  const draft = {}; kids().forEach(a => { const key = a.id || a.tmp, r = ST.inv[key]?.[m]; draft[key] = r ? {...r} : {start: prevEnd(key, m), dep: 0, wd: 0, div: 0, xfer: 0, mkt: 0, fee: 0}; });
+  const m = ST.bal.months[i], kids = () => ST.subAccts.filter(a => a.parent === parent.id && a.active !== false).sort((a, b) => (a.sort || 0) - (b.sort || 0) || String(a.last4 || a.nickname).localeCompare(String(b.last4 || b.nickname)));
+  UI.subMode ||= {};
+  let mode = UI.subMode[parent.id] || (parent.acctKind === 'brokerage' ? 'activity' : 'balance');
+  const blank = key => ({start: prevEnd(key, m), dep: 0, wd: 0, div: 0, xfer: 0, mkt: 0, fee: 0});
+  const draft = {}, dk = a => { const k = a.id || a.tmp; if (!draft[k] && a.tmp && draft[a.tmp]) draft[k] = draft[a.tmp]; return k; };
+  kids().forEach(a => { const key = dk(a), r = ST.inv[key]?.[m]; draft[key] = r ? {...r} : blank(key); });
+  const endOf = r => mode === 'balance' ? (r.end ?? invEnd(r)) : invEnd(r);
+  const label = a => a.nickname || (a.last4 ? '••' + a.last4 : 'Account');
   const modal = $('#modal');
   const draw = () => {
-    const ks = kids(), tot = Object.fromEntries(INV_F.map(([k]) => [k, sum(ks.map(a => +draft[a.id || a.tmp]?.[k] || 0))]));
-    const nf = v => v ? (+v).toLocaleString('en-US', {maximumFractionDigits: 2}) : '';
+    const ks = kids(), nf = v => v ? (+v).toLocaleString('en-US', {maximumFractionDigits: 2}) : '';
+    const tot = Object.fromEntries(INV_F.map(([k]) => [k, sum(ks.map(a => +draft[dk(a)]?.[k] || 0))])), totEnd = sum(ks.map(a => endOf(draft[dk(a)])));
     modal.classList.add('wide');
-    modal.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${esc(parent.name)} · ${mLabel(m)}</h2><p class="muted" style="font-size:12.5px">Enter each account's activity with its sign (withdrawals, fees and losses negative). Ending = the sum of the row; ${esc(parent.name)} is the total of all accounts.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
-    <div class="scroll-x"><table class="table inv-t"><tr><th>Account</th>${INV_F.map(([, l]) => `<th>${l}</th>`).join('')}<th>Ending</th></tr>
-      ${ks.map(a => { const key = a.id || a.tmp, r = draft[key]; return `<tr data-key="${key}"><td><input class="in sm" data-nick="${key}" value="${esc(a.nickname || '')}" placeholder="Nickname" style="min-width:110px"><div class="muted" style="font-size:11px;margin-top:2px">••${esc(a.last4)}</div></td>
-        ${INV_F.map(([k]) => `<td><input class="cell num" data-f="${k}" value="${nf(r[k])}" placeholder="0"></td>`).join('')}<td class="num"><b>${money(invEnd(r), 2)}</b></td></tr>`; }).join('')}
-      <tr class="tot"><td>Total</td>${INV_F.map(([k]) => `<td class="num">${money(tot[k])}</td>`).join('')}<td class="num">${money(invEnd(tot), 2)}</td></tr></table></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Add account:</span><input class="in sm" id="nkL4" placeholder="Last 4" maxlength="4" style="width:80px;min-width:0"><input class="in sm" id="nkNm" placeholder="Nickname" style="width:150px"><button class="btn" id="nkAdd" style="height:30px">${icon('plus')}<span>Add</span></button>
-      <button class="btn" id="nkCarry" style="height:30px;margin-left:auto">Starting = last month's ending</button></div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="actGo">Save ${mLabel(m)}</button></div>`;
+    const head = mode === 'activity' ? `<tr><th>Account</th>${INV_F.map(([, l]) => `<th>${l}</th>`).join('')}<th>Ending</th></tr>` : `<tr><th>Account</th><th>Last month</th><th>${MON[+m.slice(5) - 1]} ending balance</th><th>Change</th></tr>`;
+    const row = a => { const key = dk(a), r = draft[key], prev = prevEnd(key, m), e = endOf(r);
+      const nm = `<td><input class="in sm" data-nick="${key}" value="${esc(a.nickname || '')}" placeholder="Nickname" style="min-width:130px"><div class="muted" style="font-size:11px;margin-top:2px">${a.last4 ? '••' + esc(a.last4) : '&nbsp;'}</div></td>`;
+      return mode === 'activity' ? `<tr data-key="${key}">${nm}${INV_F.map(([k]) => `<td><input class="cell num" data-f="${k}" value="${nf(r[k])}" placeholder="0"></td>`).join('')}<td class="num"><b>${money(e, 2)}</b></td></tr>`
+        : `<tr data-key="${key}">${nm}<td class="num muted">${prev ? money(prev, 2) : '—'}</td><td><input class="cell num" data-f="end" value="${nf(r.end ?? (draft[key]._set ? e : ''))}" placeholder="${prev ? Math.round(prev).toLocaleString() : '0'}" style="width:140px"></td><td class="num ${e - prev >= 0 ? 'pos' : 'neg'}">${(draft[key]._set || ST.inv[key]?.[m]) && prev ? (e - prev >= 0 ? '+' : '−') + money(Math.abs(e - prev), 2).replace('−', '') : ''}</td></tr>`; };
+    const foot = mode === 'activity' ? `<tr class="tot"><td>Total</td>${INV_F.map(([k]) => `<td class="num">${money(tot[k])}</td>`).join('')}<td class="num">${money(totEnd, 2)}</td></tr>`
+      : `<tr class="tot"><td>Total</td><td class="num muted">${money(sum(ks.map(a => prevEnd(dk(a), m))), 2)}</td><td class="num">${money(totEnd, 2)}</td><td></td></tr>`;
+    modal.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${esc(parent.name)} · ${mLabel(m)}</h2><p class="muted" style="font-size:12.5px">${mode === 'activity' ? 'Enter each account’s activity with its sign (withdrawals, fees and losses negative). Ending = the sum of the row.' : 'Enter each account’s month-end balance.'} ${esc(parent.name)} becomes the total of the accounts below.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+    <div class="seg" id="actMode" style="margin-bottom:12px"><button data-m="balance" class="${mode === 'balance' ? 'on' : ''}">Balances only</button><button data-m="activity" class="${mode === 'activity' ? 'on' : ''}">Full activity</button></div>
+    ${ks.length ? `<div class="scroll-x"><table class="table inv-t">${head}${ks.map(row).join('')}${foot}</table></div>` : `<p class="muted" style="padding:10px 0">No underlying accounts yet. Add each account that makes up ${esc(parent.name)} below; from then on its balance is their total.</p>`}
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><span class="muted" style="font-size:12px">Add account:</span><input class="in sm" id="nkNm" placeholder="Name (e.g. Roth, Pre-tax, Rollover)" style="width:230px"><input class="in sm" id="nkL4" placeholder="Last 4 (optional)" maxlength="4" inputmode="numeric" style="width:130px;min-width:0"><button class="btn" id="nkAdd" style="height:30px">${icon('plus')}<span>Add</span></button>
+      ${mode === 'activity' && ks.length ? `<button class="btn" id="nkCarry" style="height:30px;margin-left:auto">Starting = last month's ending</button>` : ''}</div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="actGo" ${ks.length ? '' : 'disabled style="opacity:.45"'}>Save ${mLabel(m)}</button></div>`;
+    $$('#actMode button', modal).forEach(b => b.onclick = () => { mode = UI.subMode[parent.id] = b.dataset.m; draw(); });
     $$('tr[data-key]', modal).forEach(tr => { const r = draft[tr.dataset.key];
-      $$('[data-f]', tr).forEach(inp => { inp.onfocus = () => inp.select(); inp.onchange = () => { r[inp.dataset.f] = +inp.value.replace(/[$,\s]/g, '') || 0; const at = inp.dataset.f, key = tr.dataset.key; draw(); $(`tr[data-key="${key}"] [data-f="${at}"]`, modal)?.focus(); }; }); });
+      $$('[data-f]', tr).forEach(inp => { inp.onfocus = () => inp.select(); inp.onchange = () => { const raw = inp.value.replace(/[$,\s]/g, ''); if (inp.dataset.f === 'end') { r.end = raw === '' ? undefined : +raw || 0; r._set = raw !== ''; } else r[inp.dataset.f] = +raw || 0;
+        const at = inp.dataset.f, key = tr.dataset.key; draw(); const nx = $$(`[data-f="${at}"]`, modal); const k = nx.findIndex(x => x.closest('tr').dataset.key === key); (nx[k + 1] || nx[k])?.focus(); }; }); });
     $$('[data-nick]', modal).forEach(inp => inp.onchange = () => { const a = ST.subAccts.find(x => (x.id || x.tmp) === inp.dataset.nick); a.nickname = inp.value.trim(); });
-    $('#nkAdd').onclick = () => { const l4 = $('#nkL4').value.replace(/\D/g, '').slice(-4); if (!l4) return $('#nkL4').focus(); if (kids().some(a => a.last4 === l4)) return toast('Already added');
-      const a = {id: null, tmp: 't' + Date.now(), parent: parent.id, last4: l4, nickname: $('#nkNm').value.trim(), active: true, sort: 950 + kids().length}; ST.subAccts.push(a); draft[a.tmp] = {start: 0, dep: 0, wd: 0, div: 0, xfer: 0, mkt: 0, fee: 0}; draw(); };
-    $('#nkCarry').onclick = () => { kids().forEach(a => { const key = a.id || a.tmp; draft[key].start = prevEnd(key, m); }); draw(); };
+    $('#nkAdd').onclick = () => { const l4 = $('#nkL4').value.replace(/\D/g, '').slice(-4), nn = $('#nkNm').value.trim(); if (!l4 && !nn) return $('#nkNm').focus();
+      if (kids().some(a => (l4 && a.last4 === l4) || (nn && (a.nickname || '').toLowerCase() === nn.toLowerCase()))) return toast('Already added');
+      const a = {id: null, tmp: 't' + Date.now(), parent: parent.id, last4: l4, nickname: nn, active: true, sort: 950 + kids().length}; ST.subAccts.push(a); draft[a.tmp] = blank(a.tmp); draw(); };
+    if ($('#nkCarry')) $('#nkCarry').onclick = () => { kids().forEach(a => { const key = dk(a); draft[key].start = prevEnd(key, m); }); draw(); };
     $('#actGo').onclick = () => {
       const ks = kids(); let tot = {start: 0, dep: 0, wd: 0, div: 0, xfer: 0, mkt: 0, fee: 0, end: 0};
-      ks.forEach(a => { const key = a.id || a.tmp, r = {...draft[key]}; r.end = +invEnd(r).toFixed(2); (ST.inv[key] ||= {})[m] = r; for (const k in tot) tot[k] += +r[k] || 0; });
+      ks.forEach(a => { const key = dk(a), d = draft[key]; let r;
+        if (mode === 'balance') { if (!d._set && !ST.inv[key]?.[m]) return; const start = prevEnd(key, m), end = +(+(d.end ?? start)).toFixed(2); r = {start, dep: 0, wd: 0, div: 0, xfer: 0, mkt: +(end - start).toFixed(2), fee: 0, end}; }
+        else { r = {...d}; delete r._set; r.end = +invEnd(r).toFixed(2); }
+        (ST.inv[key] ||= {})[m] = r; for (const k in tot) tot[k] += +r[k] || 0; });
       for (const k in tot) tot[k] = +tot[k].toFixed(2);
-      (ST.inv[parent.id] ||= {})[m] = tot; parent.v[i] = tot.end;
+      (ST.inv[parent.id] ||= {})[m] = tot; parent.v[i] = tot.end; parent.rollup = true;
       if (CTX.SCH_ACCT === parent.name) { const row = {m, start: tot.start, dep: tot.dep + Math.max(0, tot.xfer), wd: tot.wd + Math.min(0, tot.xfer), div: tot.div, mkt: tot.mkt, fee: tot.fee, end: tot.end};
         const j = SCH.findIndex(r => r.m === m); if (j >= 0) SCH[j] = row; else { SCH.push(row); SCH.sort((a, b) => a.m.localeCompare(b.m)); } }
       closeAll(); render(); toast(`${parent.name} · ${mLabel(m)}: ${money(tot.end, 2)}`);
