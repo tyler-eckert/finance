@@ -775,3 +775,5 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;ba
   .inv-f td{padding:0!important;width:auto!important;min-width:0!important;border:0}
   .inv-f td:nth-child(1){grid-area:date}.inv-f td:nth-child(2){grid-area:desc}.inv-f td:nth-child(3){grid-area:sub}.inv-f td:nth-child(4){grid-area:amt}.inv-f td:nth-child(5){grid-area:x;align-self:center}
 }
+
+.iv-new{display:flex;gap:4px;align-items:center}.iv-new .in{flex:1}
