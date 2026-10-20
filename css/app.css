@@ -867,3 +867,15 @@ body.lay-dragging{overscroll-behavior:none;touch-action:none;-webkit-user-select
   body.scrolled .top h1{font-size:20px}
   .top-shim{display:none}
 }
+
+/* Budget grid: fill-right button next to the cell being edited */
+.fill-btn{position:absolute;transform:translateY(-50%);display:none;z-index:5;height:22px;padding:0 7px;border-radius:6px;border:1px solid color-mix(in srgb,var(--s1) 45%,var(--border));background:var(--surface);color:var(--s1);font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;box-shadow:var(--shadow)}
+.fill-btn.on{display:block}.fill-btn:hover{background:var(--s1);color:#fff}
+/* Budget grid follows Admin → Table density: cell height and text size come from the density settings */
+.table.bb td{padding-top:1px;padding-bottom:1px}
+.table.bb tr.grp td{padding-top:calc(var(--td-py) * 2 + 2px)}
+.bb .cell{height:calc(var(--td-py) * 2 + var(--td-fs) * 1.45);font-size:var(--td-fs)}
+.bb .ro{line-height:calc(var(--td-py) * 2 + var(--td-fs) * 1.45);font-size:calc(var(--td-fs) - .5px)}
+.bb td.num,.bb .stick{font-size:var(--td-fs)}
+.bb .mini-btn,.bb .chev{height:min(28px,calc(var(--td-py) * 2 + var(--td-fs) * 1.45));width:min(28px,calc(var(--td-py) * 2 + var(--td-fs) * 1.45))}
+.bb td{line-height:1.2}

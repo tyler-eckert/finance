@@ -654,7 +654,7 @@ function renderBuilder(pg) {
     h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${grpTot(g.k).map(v => `<td class="num">${f(v)}</td>`).join('')}<td class="num">${f(sum(grpTot(g.k)))}</td><td></td></tr>`;
   });
   h += `<tr class="tot net"><td class="stick">Net</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td></td></tr>`;
-  pg.innerHTML = `<div class="toolbar wrap">${yearSeg}<span class="muted" style="font-size:12px">Signed: income positive, expenses negative · type a number, Tab to the next month</span>
+  pg.innerHTML = `<div class="toolbar wrap">${yearSeg}<span class="muted" style="font-size:12px">Signed: income positive, expenses negative · Tab or Enter to move · <b>Fill →</b> (or Ctrl+Enter) copies a month to the rest of the year</span>
     <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" onclick="openCatModal()">${icon('plus')}<span>New category</span></button></div></div>
   <div class="grid g-12">
     <div class="card c-3 kpi"><div class="label">Planned income</div><div class="val num">${short(sum(inc))}</div></div>
@@ -665,10 +665,35 @@ function renderBuilder(pg) {
   <div class="menu" id="rowMenu"></div>`;
   $$('#bySeg button').forEach(b => b.onclick = () => { byYear = +b.dataset.y; render(); });
   $$('.bb .chev', pg).forEach(b => b.onclick = () => { const k = b.dataset.tg; bbOpen.has(k) ? bbOpen.delete(k) : bbOpen.add(k); render(); });
-  $$('.bb input.cell', pg).forEach(inp => {
-    inp.onfocus = () => inp.select();
-    inp.onchange = () => { const v = +(inp.value.replace(/[$,\s]/g, '')) || 0, c = inp.dataset.c, s = inp.dataset.s, i = +inp.dataset.i; const sign = groupOf(c) === 'Income' ? 1 : -1; const val = inp.value.trim().startsWith('-') || inp.value.trim().startsWith('+') ? v : sign * Math.abs(v);
-      if (s) SB[c + '|' + s][i] = val; else B[c][i] = val; const ae = document.activeElement, sel = ae && ae.dataset ? [ae.dataset.c, ae.dataset.s, ae.dataset.i] : null; render(); if (sel) { const n = $$('.bb input.cell').find(x => x.dataset.c === sel[0] && x.dataset.s === sel[1] && x.dataset.i === sel[2]); n && n.focus(); } };
+  // ----- cell editing: Tab / Shift+Tab move across (wrapping to the next row), Enter moves down, and
+  //       "Fill →" (or Ctrl/⌘+Enter) copies the value into every later month of that row
+  const cellKey = x => [x.dataset.c, x.dataset.s || '', x.dataset.i].join('|');
+  const focusCell = k => { if (!k) return; const n = $$('.bb input.cell').find(x => cellKey(x) === k); if (n) { n.focus({preventScroll: false}); n.select(); } };
+  const valOf = inp => { const v = +(inp.value.replace(/[$,\s]/g, '')) || 0, sign = groupOf(inp.dataset.c) === 'Income' ? 1 : -1; return inp.value.trim().startsWith('-') || inp.value.trim().startsWith('+') ? v : sign * Math.abs(v); };
+  const rowOf = inp => inp.dataset.s ? SB[inp.dataset.c + '|' + inp.dataset.s] : B[inp.dataset.c];
+  const commit = inp => { rowOf(inp)[+inp.dataset.i] = valOf(inp); inp.dataset.done = '1'; };
+  const fillRight = inp => { const row = rowOf(inp), i = +inp.dataset.i, v = valOf(inp); for (let k = i; k < 12; k++) row[k] = v; const key = cellKey(inp); render(); focusCell(key); toast(`${inp.dataset.s || inp.dataset.c}: ${money(Math.abs(v))} applied to ${MON[i]}–Dec`); };
+  const fb = document.createElement('button'); fb.className = 'fill-btn'; fb.type = 'button'; fb.title = 'Use this amount for this month and every month after it (Ctrl/⌘+Enter)'; fb.innerHTML = 'Fill →';
+  const fbHost = $('.bb', pg)?.closest('.card'); if (fbHost) { fbHost.style.position = 'relative'; fbHost.appendChild(fb); }
+  let fbFor = null; fb.onmousedown = e => e.preventDefault(); fb.onclick = () => fbFor && fillRight(fbFor);
+  const showFb = inp => { if (!fbHost || +inp.dataset.i === 11) { fb.classList.remove('on'); return; } const r = inp.getBoundingClientRect(), h = fbHost.getBoundingClientRect(); fbFor = inp;
+    fb.style.left = (r.right - h.left - 2) + 'px'; fb.style.top = (r.top - h.top + r.height / 2) + 'px'; fb.classList.add('on'); };
+  const cells = $$('.bb input.cell', pg);
+  cells.forEach((inp, idx) => {
+    inp.onfocus = () => { inp.select(); showFb(inp); };
+    inp.onblur = () => setTimeout(() => { if (document.activeElement !== inp && fbFor === inp) fb.classList.remove('on'); }, 0);
+    inp.onkeydown = e => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fillRight(inp); return; }
+      let to = null;
+      if (e.key === 'Tab') to = cells[idx + (e.shiftKey ? -1 : 1)];
+      else if (e.key === 'Enter') { const same = cells.filter(x => x.dataset.i === inp.dataset.i); to = same[same.indexOf(inp) + (e.shiftKey ? -1 : 1)]; }
+      else return;
+      if (!to) return;   // first / last cell: let the browser move on
+      e.preventDefault(); const k = cellKey(to), changed = inp.value !== inp.defaultValue;
+      if (changed) { commit(inp); render(); focusCell(k); } else { to.focus(); to.select(); }
+    };
+    // a change by clicking somewhere else: save it, then put focus back wherever it went
+    inp.onchange = () => { if (inp.dataset.done) return; commit(inp); setTimeout(() => { const ae = document.activeElement, k = ae?.classList?.contains('cell') ? cellKey(ae) : null; render(); focusCell(k); }, 0); };
   });
   $$('[data-addsub]', pg).forEach(b => b.onclick = () => { const [c, s] = b.dataset.addsub.split('|'); const cur = rowVals(c); const subsActive = subBudgetRows(byYear, c).length; SB[c + '|' + s] = subsActive ? Array(12).fill(0) : cur.slice(); render(); });
   $$('[data-rmsub]', pg).forEach(b => b.onclick = () => { delete SB[b.dataset.rmsub]; render(); });
