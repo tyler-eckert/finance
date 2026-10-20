@@ -36,6 +36,12 @@ function tagCards(page, el) {
   return pageCards(el).map(c => { let k = normKey(cardTitle(c)); seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) k += '-' + seen[k]; c.dataset.cid = k; return {el: c, k, t: cardTitle(c) || 'Untitled card'}; });
 }
 const pageLayout = page => (UI.layout[page] ||= {order: [], hidden: []});
+// card order and hidden cards are kept per device (phone / computer); older saved layouts without them fall back to the shared list
+const LGET = (L, key) => (L?.[key + 'By']?.[devKey()] ?? L?.[key] ?? []);
+const LDK = (page, key) => { const L = pageLayout(page), dk = devKey(); L[key + 'By'] ||= {}; if (!L[key + 'By'][dk]) L[key + 'By'][dk] = (L[key] || []).slice(); return L[key + 'By'][dk]; };
+const setOrder = (page, list) => { LDK(page, 'order'); pageLayout(page).orderBy[devKey()] = list; };
+function resetPageDev(page) { const L = UI.layout[page]; if (!L) return; const dk = devKey();
+  (L.orderBy ||= {})[dk] = []; (L.hiddenBy ||= {})[dk] = []; ['size', 'tall', 'free', 'pos'].forEach(k => { if (L[k]) delete L[k][dk]; }); }
 // tile sizes and compact view are kept separately for a phone-size screen and a computer-size one
 const devKey = () => innerWidth <= 860 ? 'phone' : 'desk';
 const SIZES = {desk: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12], phone: [4, 6, 12]};
@@ -43,7 +49,7 @@ const SIZE_NAME = n => ({2: '⅙', 3: '¼', 4: '⅓', 5: '5/12', 6: '½', 7: '7/
 const isCompact = () => (UI.compact || {})[devKey()] !== false;   // on unless turned off for this kind of device
 function applyCompact() { document.body.classList.toggle('compact', isCompact()); }
 let DEV_NOW = devKey();
-addEventListener('resize', () => { const d = devKey(); if (d !== DEV_NOW) { DEV_NOW = d; applyCompact(); if (typeof render === 'function') render(); } });
+addEventListener('resize', () => { const d = devKey(); if (d !== DEV_NOW) { DEV_NOW = d; applyCompact(); if (typeof buildNav === 'function') buildNav(); if (typeof render === 'function') render(); } });
 
 /* Apply the saved order / visibility after each render (called from render()) */
 function applyLayout(page, el) {
@@ -56,14 +62,14 @@ function applyLayout(page, el) {
     b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right or bottom edge (or use − / +) to resize it, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp" title="Tiles pack into any empty space, and you can drop a tile anywhere"><input type="checkbox" id="layFree" ${L.free?.[devKey()] ? 'checked' : ''}> Free placement</label><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
     el.prepend(b);
     $('#layDone').onclick = () => { LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved'); };
-    $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); delete UI.layout[page]; render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
+    $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); resetPageDev(page); render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
     $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
     $('#layCompact').onchange = e => { (UI.compact ||= {})[devKey()] = e.target.checked; applyCompact(); render(); };
   }
   const dk = devKey(), SZ = L.size?.[dk] || {}, TL = L.tall?.[dk] || {}, FREE = !!L.free?.[dk], POS = L.pos?.[dk] || {};
   const grids = [...new Set(cards.map(c => c.el.parentElement))]; grids.forEach(g => g.classList.toggle('free', FREE));
   // effective order: the saved order, with any card it doesn't know yet (new or renamed) slotted in after the card before it on the page
-  const keys = cards.map(c => c.k), ORD = L.order.filter(k => keys.includes(k));
+  const keys = cards.map(c => c.k), ORD = LGET(L, 'order').filter(k => keys.includes(k));
   if (ORD.length) keys.forEach((k, i) => { if (ORD.includes(k)) return; const prev = keys.slice(0, i).reverse().find(x => ORD.includes(x)); ORD.splice(prev ? ORD.indexOf(prev) + 1 : 0, 0, k); });
   cards.forEach((c, i) => {
     const oi = ORD.indexOf(c.k); c.el.style.order = oi < 0 ? 1000 + i : oi;
@@ -72,7 +78,7 @@ function applyLayout(page, el) {
     if (FREE && POS[c.k]) { const n = spanOf(c.el), col = Math.max(1, Math.min(13 - n, POS[c.k].c)); c.el.style.gridColumn = `${col} / span ${n}`; c.el.dataset.pin = POS[c.k].r; if (fr) c.el.style.gridRow = `${POS[c.k].r} / span ${fr}`; }
     c.el.dataset.extra = TL[c.k] || ''; c.el.style.height = ''; c.el.style.minHeight = ''; c.el.classList.remove('lay-tall-scroll');
     c.el.style.alignSelf = TL[c.k] ? 'start' : '';   // a card with its own height doesn't stretch to its row
-    const hid = L.hidden.includes(c.k);
+    const hid = LGET(L, 'hidden').includes(c.k);
     c.el.classList.toggle('lay-hidden', hid && LAYOUT_EDIT);
     c.el.style.display = hid && !LAYOUT_EDIT ? 'none' : '';
     c.el.querySelector(':scope > .lay-ctl')?.remove();
@@ -113,7 +119,7 @@ function applyLayout(page, el) {
     $$('[data-sz]', ctl).forEach(b => b.onclick = () => { const list = SIZES[dk], now = spanOf(c.el);
       const n = +b.dataset.sz > 0 ? (list.find(x => x > now) ?? list[list.length - 1]) : ([...list].reverse().find(x => x < now) ?? list[0]);
       const lay = pageLayout(page); ((lay.size ||= {})[dk] ||= {})[c.k] = n; render(); });
-    $('[data-hd]', ctl).onclick = () => { const H = pageLayout(page).hidden; H.includes(c.k) ? H.splice(H.indexOf(c.k), 1) : H.push(c.k); render(); };
+    $('[data-hd]', ctl).onclick = () => { const H = LDK(page, 'hidden'); H.includes(c.k) ? H.splice(H.indexOf(c.k), 1) : H.push(c.k); render(); };
     const grip = $('.grip', ctl);
     if (FREE) { grip.title = 'Drag anywhere · double-click to un-pin'; grip.onpointerdown = e => freeDrag(e, page, el, c, dk); grip.ondblclick = () => { const lay = pageLayout(page); if (lay.pos?.[dk]) delete lay.pos[dk][c.k]; render(); }; }
     else grip.onmousedown = grip.ontouchstart = () => c.el.setAttribute('draggable', 'true');
@@ -123,7 +129,7 @@ function applyLayout(page, el) {
     c.el.ondragleave = () => c.el.classList.remove('lay-drop');
     c.el.ondrop = e => { e.preventDefault(); c.el.classList.remove('lay-drop'); const from = e.dataTransfer.getData('text/plain'); if (!from || from === c.k) return;
       const r = c.el.getBoundingClientRect(), after = (e.clientY - r.top) > r.height / 2 || (e.clientX - r.left) > r.width * .66;
-      const list = visualOrder(el).filter(k => k !== from), at = list.indexOf(c.k) + (after ? 1 : 0); list.splice(at, 0, from); pageLayout(page).order = list; render(); };
+      const list = visualOrder(el).filter(k => k !== from), at = list.indexOf(c.k) + (after ? 1 : 0); list.splice(at, 0, from); setOrder(page, list); render(); };
   });
 }
 const visualOrder = el => pageCards(el).map((c, i) => ({k: c.dataset.cid, o: +c.style.order || i, i})).sort((a, b) => a.o - b.o || a.i - b.i).map(x => x.k);
@@ -131,7 +137,7 @@ function moveCard(page, el, k, dir) {
   const list = visualOrder(el), card = pageCards(el).find(c => c.dataset.cid === k), sibs = pageCards(el).filter(c => c.parentElement === card.parentElement).map(c => c.dataset.cid);
   const mine = list.filter(x => sibs.includes(x)), i = mine.indexOf(k), j = i + dir; if (j < 0 || j >= mine.length) return;
   const a = list.indexOf(mine[i]), b = list.indexOf(mine[j]); [list[a], list[b]] = [list[b], list[a]];
-  pageLayout(page).order = list; render();
+  setOrder(page, list); render();
 }
 function layBtnSync() { const b = $('#layoutBtn'); if (!b) return; b.classList.toggle('active-f', LAYOUT_EDIT); b.style.display = cur === 'admin' ? 'none' : ''; }
 
@@ -185,11 +191,11 @@ function renderAdmin(pg) {
       <div class="ctrl"><div><label>Distance from the bottom<b id="tbV">${UI.mobile?.tabBottom == null ? 'Auto' : UI.mobile.tabBottom + 'px'}</b></label><input type="range" id="tbR" min="0" max="60" step="1" value="${UI.mobile?.tabBottom ?? 24}"></div></div>
       <p class="muted" style="font-size:11.5px;margin-top:6px">Applies on phones (the bar is hidden on wide screens). Try 4–10px if the bar floats too high when opened from the Home Screen.</p></div>
 
-    <div class="card c-12"><div class="card-h"><div><h3>Page layout</h3><div class="sub">Show, hide and order the cards on each page · or open a page and press <b>Layout</b> to drag cards around</div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>Page layout · ${devKey() === 'phone' ? 'this phone' : 'computers'}</h3><div class="sub">Show, hide and order the cards on each page · phones and computers each keep their own · or open a page and press <b>Layout</b> to drag cards around</div></div>
       <div class="right"><button class="btn" id="layResetAll">Reset all pages</button></div></div>
-      <div class="adm-pages">${PAGES.filter(p => p.k !== 'admin').map(p => { const L = UI.layout[p.k] || {order: [], hidden: []}; const cards = (ADM.scan[p.k] || []).map((c, i) => ({...c, o: L.order.indexOf(c.k) < 0 ? 1000 + i : L.order.indexOf(c.k)})).sort((a, b) => a.o - b.o);
-        return `<div class="adm-page"><h4>${icon(p.i)}${esc(p.n)}<span class="muted" style="margin-left:auto;font-weight:500;font-size:11.5px">${L.hidden.length ? L.hidden.length + ' hidden' : ''}</span></h4>
-          ${cards.map((c, i) => `<div class="adm-card ${L.hidden.includes(c.k) ? 'off' : ''}"><span title="${esc(c.t)}">${esc(c.t)}</span><button class="mini-btn" data-pmv="${p.k}|${c.k}|-1" ${i ? '' : 'disabled style="opacity:.3"'}>${icon('up')}</button><button class="mini-btn" data-pmv="${p.k}|${c.k}|1" ${i < cards.length - 1 ? '' : 'disabled style="opacity:.3"'}>${icon('down')}</button><button class="mini-btn" data-phd="${p.k}|${c.k}" title="${L.hidden.includes(c.k) ? 'Show' : 'Hide'}">${icon(L.hidden.includes(c.k) ? 'eyeOff' : 'eye')}</button></div>`).join('') || '<p class="muted" style="font-size:12px">No cards</p>'}
+      <div class="adm-pages">${PAGES.filter(p => p.k !== 'admin').map(p => { const L = UI.layout[p.k] || {order: [], hidden: []}, LO = LGET(L, 'order'), LH = LGET(L, 'hidden'); const cards = (ADM.scan[p.k] || []).map((c, i) => ({...c, o: LO.indexOf(c.k) < 0 ? 1000 + i : LO.indexOf(c.k)})).sort((a, b) => a.o - b.o);
+        return `<div class="adm-page"><h4>${icon(p.i)}${esc(p.n)}<span class="muted" style="margin-left:auto;font-weight:500;font-size:11.5px">${LH.length ? LH.length + ' hidden' : ''}</span></h4>
+          ${cards.map((c, i) => `<div class="adm-card ${LH.includes(c.k) ? 'off' : ''}"><span title="${esc(c.t)}">${esc(c.t)}</span><button class="mini-btn" data-pmv="${p.k}|${c.k}|-1" ${i ? '' : 'disabled style="opacity:.3"'}>${icon('up')}</button><button class="mini-btn" data-pmv="${p.k}|${c.k}|1" ${i < cards.length - 1 ? '' : 'disabled style="opacity:.3"'}>${icon('down')}</button><button class="mini-btn" data-phd="${p.k}|${c.k}" title="${LH.includes(c.k) ? 'Show' : 'Hide'}">${icon(L.hidden.includes(c.k) ? 'eyeOff' : 'eye')}</button></div>`).join('') || '<p class="muted" style="font-size:12px">No cards</p>'}
           <div style="display:flex;gap:10px;margin-top:8px"><button class="link" data-pgo="${p.k}">Customize on page →</button>${UI.layout[p.k] ? `<button class="link" data-prs="${p.k}" style="margin-left:auto">Reset</button>` : ''}</div></div>`; }).join('')}</div>
       <p class="muted" style="font-size:11.5px;margin-top:10px">Cards that change with the page's selection (for example, the selected loan's detail) are listed under the name they had when this page last loaded.</p></div>
     ${automationCard()}
@@ -219,12 +225,12 @@ function renderAdmin(pg) {
   $('#tbR').onchange = () => render();
   $('#tbAuto').onclick = () => { (UI.mobile ||= {}).tabBottom = null; applyDensity(); render(); };
   // layout
-  $$('[data-phd]', pg).forEach(b => b.onclick = () => { const [pk, k] = b.dataset.phd.split('|'), H = pageLayout(pk).hidden; H.includes(k) ? H.splice(H.indexOf(k), 1) : H.push(k); render(); });
-  $$('[data-pmv]', pg).forEach(b => b.onclick = () => { const [pk, k, d] = b.dataset.pmv.split('|'); const L = pageLayout(pk), all = ADM.scan[pk].map((c, i) => ({k: c.k, o: L.order.indexOf(c.k) < 0 ? 1000 + i : L.order.indexOf(c.k)})).sort((a, b) => a.o - b.o).map(c => c.k);
-    const i = all.indexOf(k), j = i + +d; if (j < 0 || j >= all.length) return; [all[i], all[j]] = [all[j], all[i]]; L.order = all; render(); });
+  $$('[data-phd]', pg).forEach(b => b.onclick = () => { const [pk, k] = b.dataset.phd.split('|'), H = LDK(pk, 'hidden'); H.includes(k) ? H.splice(H.indexOf(k), 1) : H.push(k); render(); });
+  $$('[data-pmv]', pg).forEach(b => b.onclick = () => { const [pk, k, d] = b.dataset.pmv.split('|'); const LO = LGET(pageLayout(pk), 'order'), all = ADM.scan[pk].map((c, i) => ({k: c.k, o: LO.indexOf(c.k) < 0 ? 1000 + i : LO.indexOf(c.k)})).sort((a, b) => a.o - b.o).map(c => c.k);
+    const i = all.indexOf(k), j = i + +d; if (j < 0 || j >= all.length) return; [all[i], all[j]] = [all[j], all[i]]; setOrder(pk, all); render(); });
   $$('[data-pgo]', pg).forEach(b => b.onclick = () => { LAYOUT_EDIT = true; go(b.dataset.pgo); layBtnSync(); });
-  $$('[data-prs]', pg).forEach(b => b.onclick = () => { delete UI.layout[b.dataset.prs]; render(); });
-  $('#layResetAll').onclick = () => { const was = clone(UI.layout); UI.layout = {}; render(); toast('All page layouts reset', () => { UI.layout = was; render(); }); };
+  $$('[data-prs]', pg).forEach(b => b.onclick = () => { resetPageDev(b.dataset.prs); render(); });
+  $('#layResetAll').onclick = () => { const was = clone(UI.layout); Object.keys(UI.layout).forEach(resetPageDev); render(); toast(`All page layouts reset on ${devKey() === 'phone' ? 'this phone' : 'computers'}`, () => { UI.layout = was; render(); }); };
 }
 const confirmInline = (el, msg) => window.confirm(msg + ' Continue?');
 function openRemove(p) {
@@ -356,7 +362,7 @@ function tabsCard() {
       <button class="mini-btn" data-tgrp title="Move to ${tabGroup(p) === 'Analyze' ? 'Manage' : 'Analyze'}">${tabGroup(p) === 'Analyze' ? '↓ Manage' : '↑ Analyze'}</button>
       <label class="tb-bar" title="Show on the phone's bottom bar (up to 4)"><input type="checkbox" data-tbar ${bar.includes(p.k) ? 'checked' : ''} ${hid || lock ? 'disabled' : ''}> Phone bar</label>
       ${lock ? '<span class="chip" title="Admin always stays visible">Always on</span>' : `<button class="btn tb-vis" data-tvis style="height:28px">${icon(hid ? 'eyeOff' : 'eye')}<span>${hid ? 'Hidden' : 'Shown'}</span></button>`}</span></div>`; };
-  return `<div class="card c-12" id="tabsCard"><div class="card-h"><div><h3>Tabs</h3><div class="sub">Show, hide and reorder the pages in the menu · drag a row or use the arrows · saved to your profile</div></div>
+  return `<div class="card c-12" id="tabsCard"><div class="card-h"><div><h3>Tabs · ${devKey() === 'phone' ? 'this phone' : 'computers'}</h3><div class="sub">Show, hide and reorder the pages in the menu · phones and computers each keep their own · drag a row or use the arrows</div></div>
     <div class="right"><button class="btn" id="tbReset">Reset tabs</button></div></div>
     <div class="tb-cols">${['Analyze', 'Manage'].map(g => { const list = navPages(g); return `<div><div class="nav-label" style="margin:0 0 6px">${g}</div><div class="tb-list" data-tg="${g}">${list.map((p, i) => row(p, list, i)).join('') || '<p class="muted">No tabs here.</p>'}</div></div>`; }).join('')}</div>
     <p class="muted" style="font-size:11.5px;margin-top:8px">A hidden tab is only removed from the menu — its data and settings stay, and you can show it again here. The phone bar holds 4 tabs; the rest are under More.</p></div>`;
@@ -378,5 +384,5 @@ function wireTabsCard() {
       const after = e.clientY - r.getBoundingClientRect().top > r.offsetHeight / 2, list = fullOrder().filter(x => x !== from); list.splice(list.indexOf(k) + (after ? 1 : 0), 0, from);
       (T.group ||= {})[from] = g; T.order = list; save(); };
   });
-  $('#tbReset').onclick = () => { const was = clone(T); UI.tabs = {order: [], hidden: [], group: {}, bar: null}; save(); toast('Tabs reset', () => { UI.tabs = was; save(); }); };
+  $('#tbReset').onclick = () => { const was = clone(T); (UI.tabsBy ||= {})[devKey()] = {order: [], hidden: [], group: {}, bar: null}; save(); toast('Tabs reset', () => { UI.tabsBy[devKey()] = was; save(); }); };
 }

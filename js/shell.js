@@ -19,7 +19,7 @@ const PAGES = [
 ];
 const TABS_DEF = ['overview', 'budget', 'tx', 'invest'];
 // tab order, visibility, section and the phone bar come from UI.tabs (Admin → Tabs); Admin itself can't be hidden
-const TABSET = () => (UI.tabs ||= {order: [], hidden: [], group: {}, bar: null});
+const TABSET = () => { const dk = devKey(); UI.tabsBy ||= {}; return UI.tabsBy[dk] ||= clone(UI.tabs || {order: [], hidden: [], group: {}, bar: null}); };   // per device; starts from the shared setup
 const tabGroup = p => TABSET().group?.[p.k] || p.g;
 const tabHidden = k => k !== 'admin' && (TABSET().hidden || []).includes(k);
 function navPages(g) { const o = TABSET().order || []; return PAGES.map((p, i) => ({p, i})).filter(x => (!g || tabGroup(x.p) === g))
@@ -81,3 +81,5 @@ render.keep = false; render();
   let on = UI.navMini; if (on == null) { try { on = localStorage.getItem(KEY) === '1'; } catch (_) { on = false; } }
   set(!!on); b.onclick = () => { const v = !document.body.classList.contains('nav-mini'); set(v); UI.navMini = v; SYNC.schedule(); if (typeof render === 'function') render(); };
   $$('.nav-btn').forEach(x => x.title = x.textContent.trim()); })();
+
+addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 8), {passive: true});
