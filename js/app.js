@@ -374,6 +374,7 @@ function renderOverview(pg) {
 
 /* ================= page: budget ================= */
 let bMode = 'month';
+const YOPEN = new Set();
 function renderYears(pg, seg) {
   const yrs = Y.years.map(String), idx = yrs.map((y, i) => i).filter(i => i >= yrs.length - 8), cys = String(CY);
   const exRowsY = Y.rows.filter(r => ST.excl.has(r.name));
@@ -383,14 +384,25 @@ function renderYears(pg, seg) {
   const vals = exp.concat([expAt(0, true)]);
   const cats = Y.rows.filter(r => /Variable|Fixed/.test(r.group) && !/Total/.test(r.name) && !ST.excl.has(r.name) && Math.abs(r.y[YI - 1]) > 1500).sort((a, b) => a.y[YI - 1] - b.y[YI - 1]);
   const show = idx.slice(-6);
-  pg.innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">${seg}<span class="chip">${yrs[idx[0]]} – ${cys}</span></div>
+  // sub-categories by year (from the monthly history)
+  const SY = {}; Object.entries(DATA.subMonthly || {}).forEach(([m, o]) => { const y = m.slice(0, 4); for (const [k, v] of Object.entries(o)) { if (ST.exclSub?.has(k)) continue; ((SY[k] ||= {})[y] = (SY[k][y] || 0) + v); } });
+  const subsOf = c => Object.keys(SY).filter(k => k.startsWith(c + '|')).map(k => k.slice(c.length + 1)).filter(sb => show.some(i => Math.abs(SY[c + '|' + sb][yrs[i]] || 0) >= 1))
+    .sort((a, b) => (SY[c + '|' + a][yrs[show[show.length - 2] ?? show[0]]] || 0) - (SY[c + '|' + b][yrs[show[show.length - 2] ?? show[0]]] || 0));
+  const hasSubs = cats.filter(r => subsOf(r.name).length).map(r => r.name);
+  const subRows = r => { if (!YOPEN.has(r.name)) return ''; const subs = subsOf(r.name);
+    const rest = show.map(i => -r.y[i] - sum(subs.map(sb => -(SY[r.name + '|' + sb][yrs[i]] || 0))));
+    return subs.map(sb => `<tr class="sub"><td><span class="tw sub-name">${esc(sb)}</span></td>${show.map(i => `<td>${short(-(SY[r.name + '|' + sb][yrs[i]] || 0))}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -(SY[r.name + '|' + sb][yrs[i]] || 0)), 'var(--s4)', 100, 22, false)}</td></tr>`).join('')
+      + (rest.some(v => Math.abs(v) >= 50) ? `<tr class="sub"><td><span class="tw sub-name"><i class="muted">No sub-category</i></span></td>${rest.map(v => `<td>${short(v)}</td>`).join('')}<td class="hide-sm"></td></tr>` : ''); };
+  pg.innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">${seg}<span class="chip">${yrs[idx[0]]} – ${cys}</span>${hasSubs.length ? `<button class="btn" id="yrExp" style="margin-left:auto">${icon('chev')}<span>${YOPEN.size ? 'Collapse all' : 'Expand all'}</span></button>` : ''}</div>
   <div class="grid g-12">
     <div class="card c-12"><div class="card-h"><div><h3>Annual spending</h3><div class="sub">${exclLabel()} · dashed bar is the full-year ${CY} forecast (actuals + remaining budget)</div></div></div><div class="chart" id="yrChart"></div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>By category</h3><div class="sub">Largest categories by ${PY} spend</div></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>By category</h3><div class="sub">Largest categories by ${PY} spend · open a category for its sub-categories</div></div></div>
     <div class="scroll-x"><table class="table"><tr><th>Category</th>${show.map(i => `<th>${yrs[i]}${yrs[i] === cys ? ' YTD' : ''}</th>`).join('')}<th class="hide-sm">Trend</th></tr>
-    ${cats.map(r => `<tr><td>${esc(r.name)}</td>${show.map(i => `<td>${short(-r.y[i])}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -r.y[i]), 'var(--s2)', 100, 26, false)}</td></tr>`).join('')}</table></div></div>
+    ${cats.map(r => { const has = hasSubs.includes(r.name), op = YOPEN.has(r.name); return `<tr class="${has ? 'click' : ''} ${op ? 'open' : ''}" ${has ? `data-yc="${esc(r.name)}"` : ''}><td><span class="tw">${has ? `<button class="chev ${op ? 'on' : ''}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(r.name)}</span></td>${show.map(i => `<td>${short(-r.y[i])}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -r.y[i]), 'var(--s2)', 100, 26, false)}</td></tr>` + subRows(r); }).join('')}</table></div></div>
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
+  $$('[data-yc]', pg).forEach(tr => tr.onclick = () => { const k = tr.dataset.yc; YOPEN.has(k) ? YOPEN.delete(k) : YOPEN.add(k); render(); });
+  if ($('#yrExp')) $('#yrExp').onclick = () => { if (YOPEN.size) YOPEN.clear(); else hasSubs.forEach(n => YOPEN.add(n)); render(); };
   CH.push(() => barChart($('#yrChart'), {labels, series: [{name: 'Spending', values: vals, color: 'var(--s2)', hatchFn: i => i === labels.length - 1}], height: 250, xGap: 60,
     tipExtra: i => { const j = idx[i]; return j == null ? '' : tipRow(null, 'Income', short(yr('Total Income').y[j] - sum(exRowsY.filter(r => r.group === 'Income').map(r => r.y[j])))); }}));
 }
