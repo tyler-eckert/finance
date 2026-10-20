@@ -718,6 +718,17 @@ const DB = {
   },
   undoChange(logId) { SYNC.queue(async () => { must(await FDB.rpc('undo_change', {p_log_id: logId})); }); },
   mergeCategory(fromId, intoId) { SYNC.queue(async () => { must(await FDB.rpc('merge_category', {p_from: fromId, p_into: intoId})); SYNC.sig.cats.delete(fromId); }); },
+  // merge a whole category into another one as a sub-category of it (fold: its own sub-categories collapse into that one too)
+  mergeAsSub(fromId, fromName, intoId, intoName, subName, fold) {
+    SYNC.queue(async () => {
+      const sid = await subId(intoName, subName), q = t => FDB.from(t).update({category_id: intoId, subcategory_id: sid}).eq('household_id', hh()).eq('category_id', fromId).is('subcategory_id', null);
+      must(await q('transactions')); must(await q('transaction_splits')); must(await q('match_rules'));
+      if (fold) { const subs = must(await FDB.from('subcategories').select('id').eq('category_id', fromId));
+        for (const r of subs) must(await FDB.rpc('move_subcategory', {p_sub: r.id, p_to_category: intoId, p_new_name: subName})); }
+      must(await FDB.rpc('merge_category', {p_from: fromId, p_into: intoId})); SYNC.sig.cats.delete(fromId);
+      Object.keys(MAP.sub).filter(k => k.startsWith(fromId + '|')).forEach(k => delete MAP.sub[k]);
+    });
+  },
   moveSub(cat, sub, toCat, newName) {
     SYNC.queue(async () => {
       const sid = MAP.sub[catId(cat) + '|' + sub]; if (!sid) return;

@@ -760,6 +760,19 @@ function mergeCat(from, into) {
   ST.excl.delete(from);
   logChange(`Merged “${from}” into “${into}” · ${n.toLocaleString()} transactions moved, budgets combined`, n, null);
 }
+// "Merge into" a category as one of its sub-categories: less buckets, the detail lives in sub-categories
+function mergeCatAsSub(from, into, subName, fold) {
+  const n = histCount(from), src = catOf(from), dst = catOf(into);
+  if (!dst.subs.includes(subName)) dst.subs.push(subName);
+  if (!fold) src.subs.forEach(x => x !== subName && !dst.subs.includes(x) && dst.subs.push(x));
+  eachPiece(p => { if (p.cat === from) { p.cat = into; p.sub = fold ? subName : (p.sub || subName); } });
+  for (const y in ST.budget) if (ST.budget[y][from]) { ST.budget[y][into] = (ST.budget[y][into] || Array(12).fill(0)).map((v, i) => v + ST.budget[y][from][i]); delete ST.budget[y][from]; }
+  for (const y in ST.subBudget) for (const k of Object.keys(ST.subBudget[y])) if (k.startsWith(from + '|')) { if (!fold) { const nk = into + k.slice(from.length); if (!ST.subBudget[y][nk]) ST.subBudget[y][nk] = ST.subBudget[y][k]; } delete ST.subBudget[y][k]; }
+  for (const k of Object.keys(ST.catCounts)) if (k.split('|')[0] === from) { const sb = k.split('|')[1], nk = into + '|' + (fold || !sb ? subName : sb); ST.catCounts[nk] = (ST.catCounts[nk] || 0) + ST.catCounts[k]; delete ST.catCounts[k]; }
+  ST.cats = ST.cats.filter(c => c !== src); ST.excl.delete(from);
+  if (src.id && dst.id) DB.mergeAsSub(src.id, from, dst.id, into, subName, fold);
+  logChange(`Merged “${from}” into “${into}” as sub-category “${subName}” · ${n.toLocaleString()} transactions moved`, n, null);
+}
 function renameSub(cat, oldS, newS, toCat = cat) {
   const snap = snapshot(), n = histCount(cat, oldS);
   const c = catOf(cat), d = catOf(toCat);
@@ -861,15 +874,26 @@ function openCatModal(o = {}) {
   const head = (t, s) => `<div class="dh"><div><h2 style="font-size:20px">${t}</h2>${s ? `<p class="muted" style="font-size:12.5px">${s}</p>` : ''}</div><button class="x" onclick="closeAll()">${icon('close')}</button></div>`;
   const foot = l => `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="cmGo">${l}</button></div>`;
   if (o.rename) m.innerHTML = head(`Rename “${esc(o.rename)}”`, `Updates ${histCount(o.rename).toLocaleString()} transactions, all budgets and import rules.`) + `<div class="form one"><div><label>New name</label><input class="in" id="cmN" value="${esc(o.rename)}"></div><div><label>Group</label><select class="in" id="cmG">${grpOptions(catOf(o.rename))}</select></div></div>` + foot('Rename everywhere');
-  else if (o.merge) m.innerHTML = head(`Merge “${esc(o.merge)}”`, `Moves ${histCount(o.merge).toLocaleString()} transactions and its sub-categories, adds its budget to the target, then removes it.`) + `<div class="form one"><div><label>Merge into</label><select class="in" id="cmT">${catOptions('', {blank: 'Choose…'}).replace(`<option>${esc(o.merge)}</option>`, '')}</select></div></div>` + foot('Merge');
-  else if (o.rsub) m.innerHTML = head(`Edit “${esc(o.rsub[1])}”`, `${histCount(o.rsub[0], o.rsub[1]).toLocaleString()} transactions in ${esc(o.rsub[0])}.`) + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" value="${esc(o.rsub[1])}"></div><div><label>Parent category</label><select class="in" id="cmT">${catOptions(o.rsub[0])}</select></div></div>` + foot('Apply to history');
+  else if (o.merge) { const sc = catOf(o.merge), ns = sc.subs.length;
+    m.innerHTML = head(`Merge “${esc(o.merge)}”`, `Moves ${histCount(o.merge).toLocaleString()} transactions into another category, adds its budget to it, then removes “${esc(o.merge)}”.`) + `<div class="form one"><div><label>Merge into</label><select class="in" id="cmT">${catOptions('', {blank: 'Choose…'}).replace(`<option>${esc(o.merge)}</option>`, '')}</select></div>
+      <div><label>How</label><div class="mg-opts"><label class="mg-o"><input type="radio" name="mgAs" value="sub" checked><span><b>As a sub-category</b><small>“${esc(o.merge)}” becomes a sub-category of the category you pick — fewer buckets, the detail stays in sub-categories</small></span></label>
+        <label class="mg-o"><input type="radio" name="mgAs" value="same"><span><b>Combine at the same level</b><small>Everything joins the other category${ns ? ` and its ${ns} sub-categor${ns === 1 ? 'y moves' : 'ies move'} across as they are` : ''}</small></span></label></div></div>
+      <div id="mgSubBox"><label>Sub-category name</label><input class="in" id="cmS2" value="${esc(o.merge)}">
+        ${ns ? `<div class="mg-opts" style="margin-top:8px"><label class="mg-o"><input type="radio" name="mgFold" value="1" checked><span><b>Fold its ${ns} sub-categor${ns === 1 ? 'y' : 'ies'} in</b><small>${sc.subs.slice(0, 4).map(esc).join(', ')}${ns > 4 ? '…' : ''} all become this one sub-category</small></span></label>
+          <label class="mg-o"><input type="radio" name="mgFold" value="0"><span><b>Keep them as their own sub-categories</b><small>They sit next to it in the new category; only transactions with no sub-category get this name</small></span></label></div>` : ''}</div></div>` + foot('Merge'); }
+  else if (o.rsub) m.innerHTML = head(`Edit “${esc(o.rsub[1])}”`, `${histCount(o.rsub[0], o.rsub[1]).toLocaleString()} transactions in ${esc(o.rsub[0])}.`) + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" value="${esc(o.rsub[1])}"></div><div><label>Parent category</label><select class="in" id="cmT">${catOptions(o.rsub[0])}</select></div><div><label>Or merge into one of its sub-categories</label><select class="in" id="cmX"></select></div></div>` + foot('Apply to history');
   else if (o.nsub) m.innerHTML = head(`New sub-category in ${esc(o.nsub)}`) + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" placeholder="e.g. Piano lessons"></div></div>` + foot('Add');
   else m.innerHTML = head('New category', 'Shows up in budgets, imports and reports right away.') + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" placeholder="e.g. Kids activities"></div><div><label>Group</label><select class="in" id="cmG">${grpOptions({group: 'Variable Expense'})}</select></div><div><label>Sub-categories <span class="muted">(optional, comma-separated)</span></label><input class="in" id="cmS" placeholder="Soccer, Hockey, Camps"></div><div><label>Monthly budget</label><input class="in num" id="cmB" inputmode="decimal" placeholder="$0"></div></div>` + foot('Create category');
   openLayer('modal'); setTimeout(() => $('#cmN')?.focus(), 50);
+  const fillX = () => { const x = $('#cmX'), t = $('#cmT'); if (!x || !t || !o.rsub) return; const subs = (catOf(t.value)?.subs || []).filter(v => !(t.value === o.rsub[0] && v === o.rsub[1]));
+    x.innerHTML = `<option value="">— keep the name above —</option>` + subs.map(v => `<option>${esc(v)}</option>`).join(''); x.onchange = () => { if (x.value) $('#cmN').value = x.value; }; };
+  if (o.rsub) { fillX(); $('#cmT').onchange = fillX; }
+  $$('input[name=mgAs]', m).forEach(r => r.onchange = () => { const b = $('#mgSubBox'); if (b) b.style.display = r.value === 'sub' && r.checked ? '' : 'none'; });
   $('#cmGo').onclick = () => {
     const n = $('#cmN')?.value.trim();
     if (o.rename) { if (n && n !== o.rename && catOf(n)) return toast('A category with that name already exists'); if (n && n !== o.rename) { renameCat(o.rename, n); if (ST.excl.has(o.rename)) { ST.excl.delete(o.rename); ST.excl.add(n); } } { const [k, gn] = $('#cmG').value.split('|'); setCatGroup(catOf(n || o.rename), k, gn); } }
-    else if (o.merge) { const t = $('#cmT').value; if (!t) return; mergeCat(o.merge, t); }
+    else if (o.merge) { const t = $('#cmT').value; if (!t) return toast('Pick a category to merge into'); const as = $('input[name=mgAs]:checked')?.value;
+      if (as === 'sub') { const sn = $('#cmS2').value.trim(); if (!sn) return $('#cmS2').focus(); mergeCatAsSub(o.merge, t, sn, ($('input[name=mgFold]:checked')?.value ?? '1') === '1'); } else mergeCat(o.merge, t); }
     else if (o.rsub) { const t = $('#cmT').value; if (!n || !t) return; MC.openCat = t; renameSub(o.rsub[0], o.rsub[1], n, t); }
     else if (o.nsub) { if (!n) return; catOf(o.nsub).subs.push(n); MC.openCat = o.nsub; toast(`Added ${n}`); }
     else { if (!n || catOf(n)) return $('#cmN').focus(); const [g, gn] = $('#cmG').value.split('|'), b = +($('#cmB').value.replace(/[$,]/g, '')) || 0;
