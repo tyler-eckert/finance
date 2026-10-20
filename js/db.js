@@ -729,6 +729,15 @@ const DB = {
       Object.keys(MAP.sub).filter(k => k.startsWith(fromId + '|')).forEach(k => delete MAP.sub[k]);
     });
   },
+  promoteSub(cat, sub, nc) {
+    SYNC.queue(async () => {
+      const sid = MAP.sub[catId(cat) + '|' + sub];
+      if (!nc.id) { const row = must(await FDB.from('categories').insert({household_id: hh(), name: nc.name, kind: GROUP2KIND[nc.group] || 'variable', sort_order: (ST.cats.indexOf(nc) + 1) * 10}).select('id').single()); nc.id = row.id; MAP.cat[nc.name] = row.id; MAP.catName[row.id] = nc.name; }
+      if (sid) must(await FDB.rpc('move_subcategory', {p_sub: sid, p_to_category: nc.id, p_new_name: null}));
+      delete MAP.sub[catId(cat) + '|' + sub];
+      if (nc.id && typeof saveCatGroups === 'function' && CGS().of[nc.name]) { CGS().of[nc.id] = CGS().of[nc.name]; delete CGS().of[nc.name]; saveCatGroups(); }
+    });
+  },
   moveSub(cat, sub, toCat, newName) {
     SYNC.queue(async () => {
       const sid = MAP.sub[catId(cat) + '|' + sub]; if (!sid) return;
