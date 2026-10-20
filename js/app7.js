@@ -86,9 +86,9 @@ function applyLayout(page, el) {
     rs.onpointerdown = e => { e.preventDefault(); e.stopPropagation(); rs.setPointerCapture(e.pointerId);
       const grid = c.el.parentElement, gcs = getComputedStyle(grid), gap = parseFloat(gcs.columnGap) || 0, colW = (grid.clientWidth - gap * 11) / 12, left = c.el.getBoundingClientRect().left;
       const list = SIZES[dk], snap = n => list.reduce((b, x) => Math.abs(x - n) < Math.abs(b - n) ? x : b, list[0]);
-      let n = spanOf(c.el); const tag = c.el.querySelector('.lay-ctl .sz-l'); c.el.classList.add('lay-sizing');
+      let n = spanOf(c.el); const tag = c.el.querySelector('.lay-ctl .sz-l'); c.el.classList.add('lay-sizing'); document.body.classList.add('lay-dragging');
       rs.onpointermove = ev => { const w = ev.clientX - left; n = snap(Math.max(1, Math.min(12, Math.round((w + gap) / (colW + gap))))); c.el.style.gridColumn = c.el.dataset.pin && POS[c.k] ? `${Math.max(1, Math.min(13 - n, POS[c.k].c))} / span ${n}` : `span ${n}`; freeRows(c.el); if (tag) tag.textContent = SIZE_NAME(n); };
-      rs.onpointerup = rs.onpointercancel = () => { rs.onpointermove = rs.onpointerup = rs.onpointercancel = null; c.el.classList.remove('lay-sizing');
+      rs.onpointerup = rs.onpointercancel = () => { rs.onpointermove = rs.onpointerup = rs.onpointercancel = null; c.el.classList.remove('lay-sizing'); document.body.classList.remove('lay-dragging');
         const lay = pageLayout(page); ((lay.size ||= {})[dk] ||= {})[c.k] = n; render(); }; };
     rs.ondblclick = () => { const lay = pageLayout(page); if (lay.size?.[dk]) delete lay.size[dk][c.k]; render(); };
     // drag the bottom edge to make it taller or shorter: charts stretch, lists and tables get room (or scroll)
@@ -100,12 +100,12 @@ function applyLayout(page, el) {
       // snap targets: every 8px, plus the bottoms of the cards beside it and its natural height
       // the other cards in this row, at their own (unstretched) heights
       const near = pageCards(el).filter(x => x !== c.el && x.style.display !== 'none' && Math.abs(x.getBoundingClientRect().top - r0.top) < 40).map(x => { const a = x.style.alignSelf; x.style.alignSelf = 'start'; const h = x.getBoundingClientRect().height; x.style.alignSelf = a; return h; });
-      const mags = [...near, base]; let ex = e0, tgt = h0; c.el.classList.add('lay-sizing');
+      const mags = [...near, base]; let ex = e0, tgt = h0; c.el.classList.add('lay-sizing'); document.body.classList.add('lay-dragging');
       const tag = document.createElement('div'); tag.className = 'lay-hl'; c.el.appendChild(tag);
       rh.onpointermove = ev => { let t = Math.max(80, h0 + ev.clientY - y0), m = mags.find(x => Math.abs(x - t) <= 12);
         tgt = m != null ? Math.round(m) : Math.round(t / 8) * 8; ex = Math.round(tgt - base); c.el.style.height = tgt + 'px'; c.el.style.overflow = 'hidden'; freeRows(c.el, tgt);
         tag.textContent = m != null ? (Math.abs(m - base) < 1 ? 'Natural height' : 'Lined up with the next card') : (ex > 0 ? '+' : '') + ex + 'px'; };
-      rh.onpointerup = rh.onpointercancel = () => { rh.onpointermove = rh.onpointerup = rh.onpointercancel = null; c.el.classList.remove('lay-sizing'); c.el.style.overflow = ''; tag.remove();
+      rh.onpointerup = rh.onpointercancel = () => { rh.onpointermove = rh.onpointerup = rh.onpointercancel = null; c.el.classList.remove('lay-sizing'); document.body.classList.remove('lay-dragging'); c.el.style.overflow = ''; tag.remove();
         const lay = pageLayout(page); ((lay.tall ||= {})[dk] ||= {})[c.k] = ex; if (Math.abs(ex) < 4) delete lay.tall[dk][c.k]; render(); }; };
     rh.ondblclick = () => { const lay = pageLayout(page); if (lay.tall?.[dk]) delete lay.tall[dk][c.k]; render(); };
     ctl.onclick = e => e.stopPropagation();
@@ -331,12 +331,13 @@ function freeDrag(e, page, el, c, dk) {
     col = Math.max(1, Math.min(13 - n, Math.round(left / (colW + gap)) + 1)); row = Math.max(1, Math.round(top / FREE_ROW) + 1);
     Object.assign(ghost.style, {left: (col - 1) * (colW + gap) + 'px', top: (row - 1) * FREE_ROW + 'px', width: n * colW + (n - 1) * gap + 'px', height: c.el.offsetHeight + 'px'});
     // scroll the page when dragging near the top or bottom edge
-    if (ev.clientY > innerHeight - 40) scrollBy(0, 14); else if (ev.clientY < 60) scrollBy(0, -14); };
-  const move = ev => at(ev); at(e);
-  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); ghost.remove(); c.el.classList.remove('free-moving'); c.el.style.transform = '';
+    const vv = window.visualViewport, vTop = vv ? vv.offsetTop : 0, vBot = vv ? vv.offsetTop + vv.height : innerHeight;
+    if (ev.clientY > vBot - 70) scrollBy(0, 14); else if (ev.clientY < vTop + 80) scrollBy(0, -14); };
+  const move = ev => { ev.preventDefault(); at(ev); }; at(e); document.body.classList.add('lay-dragging');
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); document.body.classList.remove('lay-dragging'); ghost.remove(); c.el.classList.remove('free-moving'); c.el.style.transform = '';
     const lay = pageLayout(page), P = ((lay.pos ||= {})[dk] ||= {});
     P[c.k] = {c: col, r: row}; render(); };
-  addEventListener('pointermove', move); addEventListener('pointerup', up);
+  addEventListener('pointermove', move, {passive: false}); addEventListener('pointerup', up); addEventListener('pointercancel', up);
 }
 function fitTallCards(el) {
   pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart')) return;

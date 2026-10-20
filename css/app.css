@@ -850,3 +850,10 @@ body.lay-on .grid.free{
     repeating-linear-gradient(to bottom, color-mix(in srgb,var(--text-3) 6%,transparent) 0 1px, transparent 1px 8px),
     repeating-linear-gradient(to right, color-mix(in srgb,var(--s1) 7%,transparent) 0 var(--fcw,60px), transparent var(--fcw,60px) calc(var(--fcw,60px) + var(--fgap,12px)));
   border-radius:var(--r-lg);outline:1px dashed color-mix(in srgb,var(--s1) 35%,transparent);outline-offset:4px;min-height:60vh}
+
+/* touch: drag handles own the gesture (otherwise iOS scrolls the page and cancels the drag) */
+.lay-ctl .grip,.lay-rs,.lay-rh{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body.lay-dragging{overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none}
+/* while customizing on a phone, hide the floating tab bar so it (and Safari's glass toolbar) doesn't sit over the tiles and grid */
+@media (max-width:860px){body.lay-on .tabbar{display:none}body.lay-on .main{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
+  .lay-ctl .grip,.lay-ctl button{width:34px;height:34px}.lay-rs{width:22px;right:-2px}.lay-rh{height:22px;bottom:-2px}.lay-rs::after{left:9px}.lay-rh::after{top:9px}}
