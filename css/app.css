@@ -908,3 +908,5 @@ body.lay-dragging{overscroll-behavior:none;touch-action:none;-webkit-user-select
 .table.ar-t tr.subr td{font-size:calc(var(--td-fs) - .5px);color:var(--text-2)}
 .table.ar-t td.num{padding-left:8px;padding-right:8px}
 .bb .chev,.bb .chev-sp{width:18px;height:18px;flex:none}
+
+.ar-t .bcol{border-left:1px solid var(--border)}
