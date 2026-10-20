@@ -925,6 +925,7 @@ function renderActuals(pg, seg) {
     <div class="card c-4 kpi"><div class="label">Net</div><div class="val num ${sum(net) < 0 ? 'neg' : ''}">${money(sum(net))}</div><div class="delta">${mLabel(months[0])} – ${mLabel(months[nM - 1])} · ${nM} months</div></div>
     <div class="card c-12" style="padding:10px 0 4px"><div class="scroll-x"><table class="table bb ar-t">${h}</table></div></div>
   </div>`;
+  $$('#bSeg button', pg).forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });   // Month / YTD / Years / Actuals
   $('#arFrom').onchange = e => { AR.from = e.target.value; render(); };
   $('#arTo').onchange = e => { AR.to = e.target.value; render(); };
   $$('#arPre button').forEach(b => b.onclick = () => { AR.from = b.dataset.a; AR.to = b.dataset.b; render(); });
