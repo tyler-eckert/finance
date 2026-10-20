@@ -83,6 +83,9 @@ function niceTicks(min, max, n = 4) {
   for (let v = lo; v <= hi + step / 2; v += step) t.push(+v.toFixed(6));
   return t;
 }
+// a card made taller or shorter in Layout gives its charts the difference (split between them)
+function chartH(el, h) { const c = el.closest('.card'), ex = +(c?.dataset.extra || 0); if (!ex) return h;
+  const n = c.querySelectorAll('.chart').length || 1; return Math.max(120, Math.round(h + ex / n)); }
 function svgEl(el, h) {
   el.innerHTML = '';
   const w = Math.max(240, el.clientWidth);
@@ -95,7 +98,7 @@ const txt = (p, x, y, t, anchor = 'start', style = '') => { const e = add(p, 'te
 
 /* Line / area chart with optional percentile band, crosshair tooltip */
 function lineChart(el, o) {
-  const h = o.height || 240, [s, w] = svgEl(el, h);
+  const h = chartH(el, o.height || 240), [s, w] = svgEl(el, h);
   const P = {l: o.padL ?? 52, r: 14, t: 12, b: 26};
   const n = o.labels.length;
   const all = o.series.flatMap(x => x.values).concat(o.band ? o.band.lo.concat(o.band.hi) : []).filter(v => v != null);
@@ -150,7 +153,7 @@ function lineChart(el, o) {
 
 /* Vertical bars: grouped series, or single series with per-bar color */
 function barChart(el, o) {
-  const h = o.height || 220, [s, w] = svgEl(el, h);
+  const h = chartH(el, o.height || 220), [s, w] = svgEl(el, h);
   const P = {l: o.padL ?? 50, r: 8, t: 12, b: 26};
   const n = o.labels.length, k = o.series.length;
   const all = o.series.flatMap(x => x.values).filter(v => v != null);
@@ -212,7 +215,7 @@ function divergingBars(el, rows, o = {}) {
 
 /* Waterfall */
 function waterfall(el, steps, o = {}) {
-  const h = o.height || 240, [s, w] = svgEl(el, h);
+  const h = chartH(el, o.height || 240), [s, w] = svgEl(el, h);
   const P = {l: 50, r: 8, t: 18, b: 40};
   let run = 0; const bars = steps.map(st => { if (st.total) { const b = {...st, from: 0, to: st.v}; run = st.v; return b; } const b = {...st, from: run, to: run + st.v}; run += st.v; return b; });
   const vals = bars.flatMap(b => [b.from, b.to]);
@@ -299,7 +302,7 @@ function renderOverview(pg) {
   pg.innerHTML = `${chkN ? `<div class="banner" style="margin-bottom:14px">${icon('warn')}<span><b>${chkN} data check${chkN > 1 ? 's' : ''}</b> need${chkN > 1 ? '' : 's'} a look — some balances may be off, which would skew net worth.</span><button class="btn" style="height:30px;margin-left:auto" onclick="go('balances')">Review</button></div>` : ''}
   <div class="grid g-12">
     <div class="card hero c-6">
-      <div class="kpi"><div class="label">Net worth · ${mLabel(BS.months[L])}</div>
+      <div class="kpi"><div class="label hero-top"><span>Net worth · ${mLabel(BS.months[L])}</span><button class="link hero-link" onclick="go('plan')">Open plan →</button></div>
       <div class="val num">${money(NW)}</div>
       <div class="delta">${chip(nz((NW - nwYtd) / Math.abs(nwYtd)))} <span style="margin-left:6px">${short(NW - nwYtd)} YTD · ${short(NW - nw12)} past 12 mo</span></div></div>
       <div class="hero-grid">
@@ -308,13 +311,14 @@ function renderOverview(pg) {
         <div>Cash<b class="num">${short(BS.cash[L])}</b></div>
         <div>Retire-ready age<b class="num">${earliest(pvSc()) ?? '> 65'}</b></div>
       </div>
-      <div class="hero-plan"><span>Plan · ${esc(pvSc().name)}</span><b>${short(planAt(pvSc(), pvSc().p.retire, 'nw'))}</b> net worth at ${pvSc().p.retire} (median, ${PV.real ? "today's $" : 'future $'}) · <button class="link hero-link" onclick="go('plan')">Open plan →</button></div>
+      <div class="hero-plan" title="Plan · ${esc(pvSc().name)}: ${short(planAt(pvSc(), pvSc().p.retire, 'nw'))} net worth at ${pvSc().p.retire}"><span>Plan · ${esc(pvSc().name)}</span><b>${short(planAt(pvSc(), pvSc().p.retire, 'nw'))}</b> net worth at ${pvSc().p.retire} (median, ${PV.real ? "today's $" : 'future $'})</div>
     </div>
-    <div class="card c-3 kpi"><div class="label"><span class="ico">${icon('invest')}</span>Investments</div>
-      <div class="val num">${short(inv)}</div>
-      <div class="delta">${chip(nz((inv - investable(iDecPY) - BS.college[iDecPY]) / (investable(iDecPY) + BS.college[iDecPY])))} since Dec</div>
-      <div style="margin-top:14px">${spark(BS.months.slice(-24).map((m, k) => investable(L - 23 + k) + BS.college[L - 23 + k]), 'var(--s1)', 200, 40)}</div></div>
-    <div class="card c-3 kpi"><div class="label"><span class="ico">${icon('cash')}</span>${CY} cash flow</div>
+    ${['brokerage', 'retirement'].map(k => { const S = BS[k], v = S[L], d = S[iDecPY], lbl = k === 'brokerage' ? 'Brokerage' : 'Retirement';
+      return `<div class="card c-2 kpi"><div class="label"><span class="ico">${icon('invest')}</span>${lbl}</div>
+      <div class="val num">${short(v)}</div>
+      <div class="delta">${chip(nz((v - d) / Math.abs(d || 1)))} since Dec</div>
+      <div style="margin-top:14px">${spark(BS.months.slice(-24).map((m, j) => S[L - 23 + j] ?? 0), k === 'brokerage' ? 'var(--s1)' : 'var(--s2)', 200, 40)}</div></div>`; }).join('')}
+    <div class="card c-2 kpi"><div class="label"><span class="ico">${icon('cash')}</span>${CY} cash flow</div>
       <div class="val num">${short(ytdInc + ytdExp)}</div>
       <div class="delta">${exclLabel()} · ${ytdInc ? Math.round((ytdInc + ytdExp) / ytdInc * 100) : 0}% of income kept</div>
       <div style="margin-top:14px">${spark(CF.inc.map((v, i) => v - CF.exp[i]), 'var(--s2)', 200, 40)}</div></div>
@@ -322,7 +326,7 @@ function renderOverview(pg) {
     <div data-slot="glance"></div><div data-slot="notes"></div>
     <div class="card c-8">
       <div class="card-h"><div><h3>Net worth · actual & plan</h3><div class="sub">Month-end actuals, then the plan's projected range · ${PV.real ? "today's dollars (past values inflation-adjusted too)" : 'nominal dollars'}</div></div>
-        <div class="right"><div class="seg" id="nwSeg">${['1y', '3y', 'all'].map(k => `<button data-k="${k}" class="${k === nwRange ? 'on' : ''}">${k.toUpperCase()}</button>`).join('')}</div></div></div>
+        <div class="right" style="display:flex;gap:8px;align-items:center">${lblToggle()}<div class="seg" id="nwSeg">${[['1y', '±1Y'], ['3y', '±3Y'], ['5y', '±5Y'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${k === nwRange ? 'on' : ''}" title="${k === 'all' ? 'All history, plus the plan horizon below' : 'This many years back and ahead'}">${l}</button>`).join('')}</div></div></div>
       ${planControls('nw')}
       <div class="chart" id="nwChart"></div>${planLegend('Net worth')}
       ${planStats('nw')}
@@ -358,11 +362,12 @@ function renderOverview(pg) {
   wirePlanControls('nw');
   $$('#nwSeg button').forEach(b => b.onclick = () => { nwRange = b.dataset.k; $$('#nwSeg button').forEach(x => x.classList.toggle('on', x === b)); drawNW(); });
   const drawNW = () => {
-    const st = nwRange === '1y' ? L - 12 : nwRange === '3y' ? L - 36 : 0;
-    const labels = BS.months.slice(st), vals = BS.netWorth.slice(st);
-    const ev = [];
-    histPlanChart($('#nwChart'), {hLabels: labels, hVals: vals, kind: 'nw', name: 'Net worth', height: 280, events: ev});
+    const yrsBack = {'1y': 1, '3y': 3, '5y': 5}[nwRange], st = yrsBack ? Math.max(0, L - 12 * yrsBack) : 0;
+    const labels = BS.months.slice(st, L + 1), vals = BS.netWorth.slice(st, L + 1);
+    const flags = typeof dataChecks === 'function' ? dataChecks().list.filter(c => c.sev === 'bad' && /^(swing|rollup|rollupjump)\|/.test(c.id)).filter((c, i, a) => a.findIndex(x => x.m === c.m) === i) : [];
+    histPlanChart($('#nwChart'), {hLabels: labels, hVals: vals, kind: 'nw', name: 'Net worth', height: 280, events: [], futureMax: yrsBack ? 12 * yrsBack : null, flags});
   };
+  wireLblToggle(drawNW);
   const m = CF.inc, ex = CF.exp;
   CH.push(drawNW);
 }
@@ -529,3 +534,7 @@ function addExpense() {
     ST.planned.push({id: 'p' + Date.now(), name: n, due: $('#peM').value, amount: Math.abs(a), fund: $('#peF').value, notes: $('#peNo').value.trim(), sinking: $('#peS').checked, status: 'planned'});
     closeAll(); render(); toast(`Added ${n} · ${mLabel($('#peM').value)}`); };
 }
+
+/* chart labels on/off (milestone and check labels; the dots and tooltips stay) — saved with your preferences */
+const lblToggle = () => `<button class="btn lbl-tg ${UI.chartLabels !== false ? 'on' : ''}" style="height:32px" title="Show or hide the labels on the dots">${icon('tag')}<span>Labels</span></button>`;
+const wireLblToggle = draw => $$('.lbl-tg').forEach(b => b.onclick = () => { UI.chartLabels = UI.chartLabels === false; $$('.lbl-tg').forEach(x => x.classList.toggle('on', UI.chartLabels !== false)); SYNC.schedule(); CH.forEach(f => f()); });

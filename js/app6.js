@@ -43,8 +43,10 @@ function wirePlanControls(id) {
   $$(`#${id}R button`).forEach(b => b.onclick = () => { PV.real = b.dataset.r === '1'; render(); });
   const s = $(`#${id}S`); if (s) s.onchange = e => { PV.sc = e.target.value; render(); };
 }
-function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = []}) {
-  const sc = pvSc(), yrs = pvYears(sc), F = yrs ? planFuture(sc, yrs, kind) : {months: [], p25: [], p50: [], p75: []};
+function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [], futureMax = null, flags = []}) {
+  const sc = pvSc(), yrs = pvYears(sc); let F = yrs ? planFuture(sc, yrs, kind) : {months: [], p25: [], p50: [], p75: []};
+  if (futureMax != null && yrs) { const n = F.months.filter(m => ymDiff(LASTM, m) <= futureMax).length; F = {months: F.months.slice(0, n), p25: F.p25.slice(0, n), p50: F.p50.slice(0, n), p75: F.p75.slice(0, n)}; }
+  const showLbl = UI.chartLabels !== false;
   hVals = hVals.map((v, i) => v * pvDefl(sc, -(hLabels.length - 1 - i)) ** -1);
   const labels = hLabels.concat(F.months), nH = hLabels.length, last = hVals[nH - 1];
   const actual = hVals.concat(F.months.map(() => null));
@@ -54,9 +56,11 @@ function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [
   if (yrs) series.push({name: 'Plan median · ' + sc.name, values: med, color: 'var(--s1)', dash: '6 5', width: 2});
   const vl = events.slice(); if (yrs) { vl.push({i: nH - 1, label: 'Today'}); const ri = labels.indexOf(`${YNOW + sc.p.retire - ageNow}-${LASTM.slice(5)}`); if (ri > 0) vl.push({i: ri, label: 'Retire ' + sc.p.retire}); }
   const pe = yrs ? (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due > LASTM) : [];
-  const markers = pe.map((p, k) => { const i = labels.indexOf(p.due); return i < nH ? null : {i, s: 1, color: ['college_529', 'budget'].includes(p.fund) ? 'var(--text-3)' : 'var(--s5)', label: `${p.name} −${short(Math.abs(p.amount))}`, dy: (k % 2) * 13, r: 4.5}; }).filter(Boolean);
+  const markers = pe.map((p, k) => { const i = labels.indexOf(p.due); return i < nH ? null : {i, s: 1, color: ['college_529', 'budget'].includes(p.fund) ? 'var(--text-3)' : 'var(--s5)', label: showLbl ? `${p.name} −${short(Math.abs(p.amount))}` : null, dy: (k % 2) * 13, r: 4.5}; }).filter(Boolean);
+  // months a data check flagged (e.g. a partly entered account): red ring so a cliff isn't mistaken for a real drop
+  flags.forEach(f => { const i = hLabels.indexOf(f.m); if (i >= 0) markers.push({i, s: 0, color: 'var(--neg)', r: 5, ring: true, label: showLbl ? '⚠ check' : null}); });
   lineChart(el, {labels, series, band: yrs ? {lo, hi, color: 'var(--s1)', name: 'Middle half of outcomes'} : null, height, vlines: vl, markers,
-    tipExtra: i => pe.filter(p => p.due === labels[i]).map(p => tipRow('var(--s5)', p.name, '−' + money(Math.abs(p.amount)))).join(''), zero: kind !== 'nw' || true, xGap: 74,
+    tipExtra: i => pe.filter(p => p.due === labels[i]).map(p => tipRow('var(--s5)', p.name, '−' + money(Math.abs(p.amount)))).join('') + flags.filter(f => f.m === labels[i]).map(f => tipRow('var(--neg)', 'Data check', esc(f.t))).join(''), zero: kind !== 'nw' || true, xGap: 74,
     xFmt: (lb, i, e) => i % e === 0 ? (labels.length > 200 ? "'" + lb.slice(2, 4) : mShort(lb)) : null, tipTitle: (lb, i) => mLabel(lb) + (i >= nH ? ' · age ' + (ageNow + Math.round(ymDiff(CTX.TODAY.slice(0, 7), lb) / 12)) : '')});
 }
 function planLegend(name) {

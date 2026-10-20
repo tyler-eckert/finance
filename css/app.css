@@ -782,3 +782,71 @@ body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;ba
 .dt-btn{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--text-3);padding:4px;cursor:pointer;display:flex}.dt-btn svg{width:16px;height:16px}.dt-btn:hover{color:var(--text)}
 .dt-pick{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
 .btn:disabled{opacity:.45}
+
+.lbl-tg.on{background:color-mix(in srgb,var(--s1) 14%,var(--surface));border-color:color-mix(in srgb,var(--s1) 40%,var(--border));color:var(--s1)}
+.al-v{display:flex;flex-direction:column;align-items:flex-end}.al-other .al-top{padding:3px 0}
+
+.ar-t td[data-m]{cursor:pointer}.ar-t td[data-m]:hover{background:var(--surface-2)}.ar-t td.num{padding:5px 8px}
+
+/* tile size controls */
+.lay-ctl .sz{font-weight:700;font-size:15px;line-height:1;width:26px}.lay-ctl .sz-l{font-size:11px;font-weight:600;color:var(--text-2);min-width:30px;text-align:center;align-self:center}
+.lay-cmp{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;white-space:nowrap}
+/* compact view: tighter cards, one-line subtitles (full text on hover), no explainer boxes */
+body.compact .grid{gap:12px}
+body.compact .card{padding:14px 16px}
+body.compact .card-h{margin-bottom:8px}
+body.compact .card-h>div:first-child{min-width:0}
+body.compact .card-h .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.compact .kpi .val{font-size:22px;margin-top:4px}
+body.compact .hero .val{font-size:34px}
+body.compact .nw-fix,body.compact .hint.explain{display:none}
+body.compact .top{margin-bottom:14px}
+body.compact .toolbar{margin-bottom:12px}
+@media (max-width:860px){body.compact .card{padding:12px 13px;border-radius:16px}body.compact .grid{gap:10px}body.compact .kpi .val{font-size:19px}}
+
+/* drag-to-resize edge (Layout mode) */
+.lay-rs{display:none;position:absolute;top:12px;bottom:12px;right:0;width:10px;cursor:ew-resize;z-index:7;touch-action:none}
+.lay-rs::after{content:'';position:absolute;top:50%;left:3px;width:4px;height:44px;transform:translateY(-50%);border-radius:3px;background:var(--s1);opacity:.55}
+.lay-rs:hover::after,.lay-sizing .lay-rs::after{opacity:1}
+body.lay-on .lay-rs{display:block}
+.lay-sizing{outline:2px dashed var(--s1);outline-offset:3px}
+
+.lay-rh{display:none;position:absolute;left:12px;right:12px;bottom:0;height:10px;cursor:ns-resize;z-index:7;touch-action:none}
+.lay-rh::after{content:'';position:absolute;left:50%;top:3px;height:4px;width:44px;transform:translateX(-50%);border-radius:3px;background:var(--s1);opacity:.55}
+.lay-rh:hover::after,.lay-sizing .lay-rh::after{opacity:1}
+body.lay-on .lay-rh{display:block}
+.card.lay-tall-scroll{overflow-y:auto}
+
+.lay-hl{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:var(--s1);color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;z-index:8;pointer-events:none;white-space:nowrap}
+/* Admin → Tabs */
+.tb-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.tb-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;background:var(--surface)}
+.tb-row.off{opacity:.55}.tb-row.dragging{opacity:.4}.tb-row.lay-drop{border-color:var(--s1);box-shadow:0 0 0 2px color-mix(in srgb,var(--s1) 25%,transparent)}
+.tb-grip{cursor:grab}.tb-ico{display:flex;color:var(--text-2)}.tb-ico svg{width:16px;height:16px}.tb-n{font-weight:600;font-size:13px;flex:1;min-width:0}
+.tb-ctl{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}.tb-ctl [data-tgrp]{width:auto;padding:0 6px;font-size:11px;font-weight:600}
+.tb-bar{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-2);white-space:nowrap;margin:0 4px}
+@media (max-width:860px){.tb-cols{grid-template-columns:1fr}.tb-row{flex-wrap:wrap}.tb-ctl{width:100%}}
+body.lay-on .card.lay-tall-scroll{overflow:hidden}
+
+/* free placement */
+.grid.free,body.compact .grid.free{grid-auto-rows:8px;row-gap:0;grid-auto-flow:row dense;position:relative}
+.grid.free>.card{align-self:start}
+.free-ghost{position:absolute;border:2px dashed var(--s1);border-radius:var(--r-lg);background:color-mix(in srgb,var(--s1) 8%,transparent);pointer-events:none;z-index:1}
+.card.free-moving{z-index:20;opacity:.9;box-shadow:0 18px 40px rgba(0,0,0,.18);pointer-events:none;transition:none}
+
+.kpi svg{max-width:100%;height:auto}
+.c-2{grid-column:span 2}
+@media (max-width:1180px){.c-2{grid-column:span 4}}
+@media (max-width:860px){.c-2{grid-column:span 6}}
+
+/* hero: plan link up top, plan line always one line (so switching scenarios never changes the tile's height) */
+.hero-top{display:flex;align-items:center;gap:10px}.hero-top .hero-link{margin-left:auto;font-size:12px;font-weight:600;white-space:nowrap}
+.hero-plan{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Layout + Free placement: show the grid — 12 column bands, a faint line every 8px row, a stronger one every 40px */
+body.lay-on .grid.free{
+  background-image:
+    repeating-linear-gradient(to bottom, color-mix(in srgb,var(--s1) 22%,transparent) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(to bottom, color-mix(in srgb,var(--text-3) 6%,transparent) 0 1px, transparent 1px 8px),
+    repeating-linear-gradient(to right, color-mix(in srgb,var(--s1) 7%,transparent) 0 var(--fcw,60px), transparent var(--fcw,60px) calc(var(--fcw,60px) + var(--fgap,12px)));
+  border-radius:var(--r-lg);outline:1px dashed color-mix(in srgb,var(--s1) 35%,transparent);outline-offset:4px;min-height:60vh}

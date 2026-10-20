@@ -2,7 +2,7 @@
 const PAGES = [
   {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
   {k: 'review', n: 'Year in review', i: 'cal', g: 'Analyze', sub: () => 'Recap, goals, notes and the annual deck', r: renderReview},
-  {k: 'budget', n: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
+  {k: 'budget', n: 'Budget vs. actual', m: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
   {k: 'invest', n: 'Investments', i: 'invest', g: 'Analyze', sub: () => 'Brokerage, retirement, HSA and 529s', r: renderInvest},
   {k: 'cash', n: 'Cash plan', i: 'cal', g: 'Analyze', sub: () => 'Bills, subscriptions, income and what’s coming · next 12 weeks', r: renderCash},
   {k: 'vendors', n: 'Vendors', i: 'store', g: 'Analyze', sub: () => 'Where the money goes, by merchant', r: renderVendors},
@@ -13,11 +13,20 @@ const PAGES = [
   {k: 'taxes', n: 'Taxes', i: 'file', g: 'Manage', sub: () => 'Estimated payments, refunds and projections · Federal, Oklahoma, New Mexico', r: renderTaxes},
   {k: 'assets', n: 'Assets', i: 'house', g: 'Manage', sub: () => 'Home, vehicles and other assets · values over time', r: renderAssets},
   {k: 'lawn', n: 'Lawn care', i: 'leaf', g: 'Manage', sub: () => 'Invoices tied to the bank, service history and the year ahead', r: renderLawn},
-  {k: 'builder', n: 'Budget plan', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
+  {k: 'builder', n: 'Budget', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
   {k: 'cats', n: 'Categories', i: 'tag', g: 'Manage', sub: () => 'Create, rename, merge and recategorize history', r: renderCats},
   {k: 'admin', n: IS_OWNER ? 'Admin' : 'Settings', i: 'gear', g: 'Manage', sub: () => IS_OWNER ? 'People and permissions, table density and page layout' : 'Table density and page layout', r: renderAdmin},
 ];
-const TABS = ['overview', 'budget', 'tx', 'invest'];
+const TABS_DEF = ['overview', 'budget', 'tx', 'invest'];
+// tab order, visibility, section and the phone bar come from UI.tabs (Admin → Tabs); Admin itself can't be hidden
+const TABSET = () => (UI.tabs ||= {order: [], hidden: [], group: {}, bar: null});
+const tabGroup = p => TABSET().group?.[p.k] || p.g;
+const tabHidden = k => k !== 'admin' && (TABSET().hidden || []).includes(k);
+function navPages(g) { const o = TABSET().order || []; return PAGES.map((p, i) => ({p, i})).filter(x => (!g || tabGroup(x.p) === g))
+  .sort((a, b) => { const ia = o.indexOf(a.p.k), ib = o.indexOf(b.p.k); return (ia < 0 ? 1000 + a.i : ia) - (ib < 0 ? 1000 + b.i : ib); }).map(x => x.p); }
+function barKeys() { const want = (TABSET().bar || TABS_DEF).filter(k => PAGES.some(p => p.k === k) && !tabHidden(k)), vis = navPages().filter(p => !tabHidden(p.k) && p.k !== 'admin').map(p => p.k);
+  for (const k of vis) { if (want.length >= 4) break; if (!want.includes(k)) want.push(k); } return want.slice(0, 4); }
+let TABS = [];
 let CH = [], cur = 'overview';
 function render() {
   const p = PAGES.find(x => x.k === cur);
@@ -26,17 +35,23 @@ function render() {
   $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
   $('#pageTitle').textContent = p.n; $('#pageSub').textContent = p.sub();
   const y = scrollY; CH = []; p.r($('#p-' + cur)); applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
-  requestAnimationFrame(() => { CH.forEach(f => f()); });
-  if (render.keep) scrollTo({top: y}); render.keep = true;
+  const keep = render.keep;
+  requestAnimationFrame(() => { CH.forEach(f => f()); if (typeof fitTallCards === 'function') fitTallCards($('#p-' + cur)); if (keep && Math.abs(scrollY - y) > 2) scrollTo({top: y}); });   // free placement sizes tiles here, so restore the scroll after
+  if (keep) scrollTo({top: y}); render.keep = true;
 }
 function go(k) { cur = k; history.replaceState(null, '', '#' + k); closeAll(); render.keep = false; scrollTo({top: 0}); render(); }
-$('#nav').innerHTML = ['Analyze', 'Manage'].map((g, gi) => `${gi ? `<div class="nav-label">${g}</div>` : ''}` + PAGES.filter(p => p.g === g).map(p => `<button class="nav-btn" data-k="${p.k}">${icon(p.i)}${p.n}</button>`).join('')).join('');
-$('#tabbar').innerHTML = TABS.map(k => PAGES.find(p => p.k === k)).map(p => `<button data-k="${p.k}">${icon(p.i)}${p.m || (p.n === 'Investments' ? 'Invest' : p.n)}</button>`).join('') + `<button data-k="more">${icon('more')}More</button>`;
-$$('.nav-btn, .tabbar button').forEach(b => b.onclick = () => b.dataset.k === 'more' ? openMore() : go(b.dataset.k));
+function buildNav() {
+  TABS = barKeys();
+  $('#nav').innerHTML = ['Analyze', 'Manage'].map((g, gi) => { const list = navPages(g).filter(p => !tabHidden(p.k)); return list.length ? `${gi ? `<div class="nav-label">${g}</div>` : ''}` + list.map(p => `<button class="nav-btn" data-k="${p.k}">${icon(p.i)}${p.n}</button>`).join('') : ''; }).join('');
+  $('#tabbar').innerHTML = TABS.map(k => PAGES.find(p => p.k === k)).map(p => `<button data-k="${p.k}">${icon(p.i)}${p.m || (p.n === 'Investments' ? 'Invest' : p.n)}</button>`).join('') + `<button data-k="more">${icon('more')}More</button>`;
+  $$('.nav-btn, .tabbar button').forEach(b => { b.title = b.textContent.trim(); b.onclick = () => b.dataset.k === 'more' ? openMore() : go(b.dataset.k); });
+  $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
+}
+buildNav();
 function openMore() {
   const m = $('#modal'); m.classList.remove('wide'); m.classList.add('sheet');
   m.innerHTML = `<div class="dh"><h2 style="font-size:18px">More</h2><button class="x" onclick="closeAll()">${icon('close')}</button></div>
-  <div class="more-grid">${PAGES.filter(p => !TABS.includes(p.k)).map(p => `<button data-k="${p.k}"><span class="ico">${icon(p.i)}</span>${p.n}</button>`).join('')}</div>`;
+  <div class="more-grid">${navPages().filter(p => !TABS.includes(p.k) && !tabHidden(p.k)).map(p => `<button data-k="${p.k}"><span class="ico">${icon(p.i)}</span>${p.n}</button>`).join('')}</div>`;
   openLayer('modal'); $$('.more-grid button', m).forEach(b => b.onclick = () => go(b.dataset.k));
 }
 function openLayer(id) { $('#scrim').classList.add('on'); $('#' + id).classList.add('on'); }
@@ -55,13 +70,14 @@ function setTheme(t) { document.documentElement.dataset.theme = t; const tc = do
 $$('#themeToggle button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
 $('#themeMob').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 setTheme(CTX.prefs.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => CH.forEach(f => f()), 120); });
-cur = (location.hash || '#overview').slice(1); if (!PAGES.find(p => p.k === cur)) cur = 'overview';
+let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => { CH.forEach(f => f()); if (typeof packFree === 'function') requestAnimationFrame(() => packFree($('#p-' + cur))); }, 120); });
+cur = 'overview'; if (tabHidden('overview')) cur = navPages().find(p => !tabHidden(p.k))?.k || 'overview';   // always open on Overview
 render.keep = false; render();
 
 /* collapsible side menu (remembered on this device) */
 (() => { const KEY = 'fin.navMini', b = document.getElementById('sideCol'); if (!b) return;
   const set = on => { document.body.classList.toggle('nav-mini', on); b.title = on ? 'Expand the menu' : 'Collapse the menu'; try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {} };
-  let on = false; try { on = localStorage.getItem(KEY) === '1'; } catch (_) {}
-  set(on); b.onclick = () => { set(!document.body.classList.contains('nav-mini')); if (typeof render === 'function') render(); };
+  // saved with your profile too, so the website and the local preview match
+  let on = UI.navMini; if (on == null) { try { on = localStorage.getItem(KEY) === '1'; } catch (_) { on = false; } }
+  set(!!on); b.onclick = () => { const v = !document.body.classList.contains('nav-mini'); set(v); UI.navMini = v; SYNC.schedule(); if (typeof render === 'function') render(); };
   $$('.nav-btn').forEach(x => x.title = x.textContent.trim()); })();

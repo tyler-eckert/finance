@@ -36,6 +36,14 @@ function tagCards(page, el) {
   return pageCards(el).map(c => { let k = normKey(cardTitle(c)); seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) k += '-' + seen[k]; c.dataset.cid = k; return {el: c, k, t: cardTitle(c) || 'Untitled card'}; });
 }
 const pageLayout = page => (UI.layout[page] ||= {order: [], hidden: []});
+// tile sizes and compact view are kept separately for a phone-size screen and a computer-size one
+const devKey = () => innerWidth <= 860 ? 'phone' : 'desk';
+const SIZES = {desk: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12], phone: [4, 6, 12]};
+const SIZE_NAME = n => ({2: '⅙', 3: '¼', 4: '⅓', 5: '5/12', 6: '½', 7: '7/12', 8: '⅔', 9: '¾', 10: '⅚', 11: '11/12', 12: 'Full'})[n] || n + '/12';
+const isCompact = () => (UI.compact || {})[devKey()] !== false;   // on unless turned off for this kind of device
+function applyCompact() { document.body.classList.toggle('compact', isCompact()); }
+let DEV_NOW = devKey();
+addEventListener('resize', () => { const d = devKey(); if (d !== DEV_NOW) { DEV_NOW = d; applyCompact(); if (typeof render === 'function') render(); } });
 
 /* Apply the saved order / visibility after each render (called from render()) */
 function applyLayout(page, el) {
@@ -45,26 +53,70 @@ function applyLayout(page, el) {
   el.querySelector('.lay-banner')?.remove();
   if (LAYOUT_EDIT) {
     const b = document.createElement('div'); b.className = 'lay-banner';
-    b.innerHTML = `${icon('layout')}<span><b>Customizing this page.</b> Drag the handle to move a card, use the arrows on a phone, and the eye to hide it. Hidden cards stay faded here and disappear when you're done.</span><span style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
+    b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right or bottom edge (or use − / +) to resize it, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp" title="Tiles pack into any empty space, and you can drop a tile anywhere"><input type="checkbox" id="layFree" ${L.free?.[devKey()] ? 'checked' : ''}> Free placement</label><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
     el.prepend(b);
     $('#layDone').onclick = () => { LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved'); };
     $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); delete UI.layout[page]; render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
+    $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
+    $('#layCompact').onchange = e => { (UI.compact ||= {})[devKey()] = e.target.checked; applyCompact(); render(); };
   }
+  const dk = devKey(), SZ = L.size?.[dk] || {}, TL = L.tall?.[dk] || {}, FREE = !!L.free?.[dk], POS = L.pos?.[dk] || {};
+  const grids = [...new Set(cards.map(c => c.el.parentElement))]; grids.forEach(g => g.classList.toggle('free', FREE));
+  // effective order: the saved order, with any card it doesn't know yet (new or renamed) slotted in after the card before it on the page
+  const keys = cards.map(c => c.k), ORD = L.order.filter(k => keys.includes(k));
+  if (ORD.length) keys.forEach((k, i) => { if (ORD.includes(k)) return; const prev = keys.slice(0, i).reverse().find(x => ORD.includes(x)); ORD.splice(prev ? ORD.indexOf(prev) + 1 : 0, 0, k); });
   cards.forEach((c, i) => {
-    const oi = L.order.indexOf(c.k); c.el.style.order = oi < 0 ? 1000 + i : oi;
+    const oi = ORD.indexOf(c.k); c.el.style.order = oi < 0 ? 1000 + i : oi;
+    c.el.style.gridColumn = SZ[c.k] ? `span ${SZ[c.k]}` : ''; c.el.style.gridRow = ''; delete c.el.dataset.pin;
+    const fr = FREE_ROWS['p-' + page + '|' + c.k]; if (FREE && fr) c.el.style.gridRow = `span ${fr}`;   // last known height until it's re-measured
+    if (FREE && POS[c.k]) { const n = spanOf(c.el), col = Math.max(1, Math.min(13 - n, POS[c.k].c)); c.el.style.gridColumn = `${col} / span ${n}`; c.el.dataset.pin = POS[c.k].r; if (fr) c.el.style.gridRow = `${POS[c.k].r} / span ${fr}`; }
+    c.el.dataset.extra = TL[c.k] || ''; c.el.style.height = ''; c.el.style.minHeight = ''; c.el.classList.remove('lay-tall-scroll');
+    c.el.style.alignSelf = TL[c.k] ? 'start' : '';   // a card with its own height doesn't stretch to its row
     const hid = L.hidden.includes(c.k);
     c.el.classList.toggle('lay-hidden', hid && LAYOUT_EDIT);
     c.el.style.display = hid && !LAYOUT_EDIT ? 'none' : '';
     c.el.querySelector(':scope > .lay-ctl')?.remove();
     if (!LAYOUT_EDIT) { c.el.removeAttribute('draggable'); return; }
     const ctl = document.createElement('div'); ctl.className = 'lay-ctl';
-    ctl.innerHTML = `<button class="grip" title="Drag to move">${icon('grip')}</button><button data-mv="-1" title="Move earlier">${icon('up')}</button><button data-mv="1" title="Move later">${icon('down')}</button><button data-hd title="${hid ? 'Show' : 'Hide'}">${icon(hid ? 'eyeOff' : 'eye')}</button>`;
+    ctl.innerHTML = `<button class="grip" title="Drag to move">${icon('grip')}</button><button data-mv="-1" title="Move earlier">${icon('up')}</button><button data-mv="1" title="Move later">${icon('down')}</button><button data-sz="-1" title="Smaller" class="sz">−</button><span class="sz-l">${SIZE_NAME(spanOf(c.el))}</span><button data-sz="1" title="Larger" class="sz">+</button><button data-hd title="${hid ? 'Show' : 'Hide'}">${icon(hid ? 'eyeOff' : 'eye')}</button>`;
     c.el.appendChild(ctl);
+    // drag the right edge to resize: snaps to the 12-column grid (whole steps on a phone)
+    c.el.querySelector(':scope > .lay-rs')?.remove();
+    const rs = document.createElement('div'); rs.className = 'lay-rs'; rs.title = 'Drag to resize'; c.el.appendChild(rs);
+    rs.onpointerdown = e => { e.preventDefault(); e.stopPropagation(); rs.setPointerCapture(e.pointerId);
+      const grid = c.el.parentElement, gcs = getComputedStyle(grid), gap = parseFloat(gcs.columnGap) || 0, colW = (grid.clientWidth - gap * 11) / 12, left = c.el.getBoundingClientRect().left;
+      const list = SIZES[dk], snap = n => list.reduce((b, x) => Math.abs(x - n) < Math.abs(b - n) ? x : b, list[0]);
+      let n = spanOf(c.el); const tag = c.el.querySelector('.lay-ctl .sz-l'); c.el.classList.add('lay-sizing');
+      rs.onpointermove = ev => { const w = ev.clientX - left; n = snap(Math.max(1, Math.min(12, Math.round((w + gap) / (colW + gap))))); c.el.style.gridColumn = c.el.dataset.pin && POS[c.k] ? `${Math.max(1, Math.min(13 - n, POS[c.k].c))} / span ${n}` : `span ${n}`; freeRows(c.el); if (tag) tag.textContent = SIZE_NAME(n); };
+      rs.onpointerup = rs.onpointercancel = () => { rs.onpointermove = rs.onpointerup = rs.onpointercancel = null; c.el.classList.remove('lay-sizing');
+        const lay = pageLayout(page); ((lay.size ||= {})[dk] ||= {})[c.k] = n; render(); }; };
+    rs.ondblclick = () => { const lay = pageLayout(page); if (lay.size?.[dk]) delete lay.size[dk][c.k]; render(); };
+    // drag the bottom edge to make it taller or shorter: charts stretch, lists and tables get room (or scroll)
+    c.el.querySelector(':scope > .lay-rh')?.remove();
+    const rh = document.createElement('div'); rh.className = 'lay-rh'; rh.title = 'Drag to change the height · double-click to reset'; c.el.appendChild(rh);
+    rh.onpointerdown = e => { e.preventDefault(); e.stopPropagation(); rh.setPointerCapture(e.pointerId);
+      // measure the card's own height (not stretched to its row) so what you see while dragging is what you get
+      c.el.style.alignSelf = 'start'; const r0 = c.el.getBoundingClientRect(), h0 = r0.height, e0 = +(c.el.dataset.extra || 0), base = h0 - e0, y0 = e.clientY;
+      // snap targets: every 8px, plus the bottoms of the cards beside it and its natural height
+      // the other cards in this row, at their own (unstretched) heights
+      const near = pageCards(el).filter(x => x !== c.el && x.style.display !== 'none' && Math.abs(x.getBoundingClientRect().top - r0.top) < 40).map(x => { const a = x.style.alignSelf; x.style.alignSelf = 'start'; const h = x.getBoundingClientRect().height; x.style.alignSelf = a; return h; });
+      const mags = [...near, base]; let ex = e0, tgt = h0; c.el.classList.add('lay-sizing');
+      const tag = document.createElement('div'); tag.className = 'lay-hl'; c.el.appendChild(tag);
+      rh.onpointermove = ev => { let t = Math.max(80, h0 + ev.clientY - y0), m = mags.find(x => Math.abs(x - t) <= 12);
+        tgt = m != null ? Math.round(m) : Math.round(t / 8) * 8; ex = Math.round(tgt - base); c.el.style.height = tgt + 'px'; c.el.style.overflow = 'hidden'; freeRows(c.el, tgt);
+        tag.textContent = m != null ? (Math.abs(m - base) < 1 ? 'Natural height' : 'Lined up with the next card') : (ex > 0 ? '+' : '') + ex + 'px'; };
+      rh.onpointerup = rh.onpointercancel = () => { rh.onpointermove = rh.onpointerup = rh.onpointercancel = null; c.el.classList.remove('lay-sizing'); c.el.style.overflow = ''; tag.remove();
+        const lay = pageLayout(page); ((lay.tall ||= {})[dk] ||= {})[c.k] = ex; if (Math.abs(ex) < 4) delete lay.tall[dk][c.k]; render(); }; };
+    rh.ondblclick = () => { const lay = pageLayout(page); if (lay.tall?.[dk]) delete lay.tall[dk][c.k]; render(); };
     ctl.onclick = e => e.stopPropagation();
     $$('[data-mv]', ctl).forEach(b => b.onclick = () => moveCard(page, el, c.k, +b.dataset.mv));
+    $$('[data-sz]', ctl).forEach(b => b.onclick = () => { const list = SIZES[dk], now = spanOf(c.el);
+      const n = +b.dataset.sz > 0 ? (list.find(x => x > now) ?? list[list.length - 1]) : ([...list].reverse().find(x => x < now) ?? list[0]);
+      const lay = pageLayout(page); ((lay.size ||= {})[dk] ||= {})[c.k] = n; render(); });
     $('[data-hd]', ctl).onclick = () => { const H = pageLayout(page).hidden; H.includes(c.k) ? H.splice(H.indexOf(c.k), 1) : H.push(c.k); render(); };
     const grip = $('.grip', ctl);
-    grip.onmousedown = grip.ontouchstart = () => c.el.setAttribute('draggable', 'true');
+    if (FREE) { grip.title = 'Drag anywhere · double-click to un-pin'; grip.onpointerdown = e => freeDrag(e, page, el, c, dk); grip.ondblclick = () => { const lay = pageLayout(page); if (lay.pos?.[dk]) delete lay.pos[dk][c.k]; render(); }; }
+    else grip.onmousedown = grip.ontouchstart = () => c.el.setAttribute('draggable', 'true');
     c.el.ondragstart = e => { e.dataTransfer.setData('text/plain', c.k); e.dataTransfer.effectAllowed = 'move'; };
     c.el.ondragend = () => c.el.removeAttribute('draggable');
     c.el.ondragover = e => { e.preventDefault(); c.el.classList.add('lay-drop'); };
@@ -127,7 +179,7 @@ function renderAdmin(pg) {
       ${IS_OWNER ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn" id="hhDef">Save my display & layout as household default</button></div>` : ''}
       ${CTX.household.settings?.ui ? `<button class="link" id="useDef" style="margin-top:10px">Use the household default</button>` : ''}</div>
 
-    ${automationCard()}
+    ${tabsCard()}
     <div class="card c-12"><div class="card-h"><div><h3>Phone bottom bar</h3><div class="sub">How far the tab bar sits above the bottom edge of the screen · Auto follows the phone's safe area (home indicator)</div></div>
       <div class="right"><button class="btn ${UI.mobile?.tabBottom == null ? 'active-f' : ''}" id="tbAuto">Auto</button></div></div>
       <div class="ctrl"><div><label>Distance from the bottom<b id="tbV">${UI.mobile?.tabBottom == null ? 'Auto' : UI.mobile.tabBottom + 'px'}</b></label><input type="range" id="tbR" min="0" max="60" step="1" value="${UI.mobile?.tabBottom ?? 24}"></div></div>
@@ -140,6 +192,7 @@ function renderAdmin(pg) {
           ${cards.map((c, i) => `<div class="adm-card ${L.hidden.includes(c.k) ? 'off' : ''}"><span title="${esc(c.t)}">${esc(c.t)}</span><button class="mini-btn" data-pmv="${p.k}|${c.k}|-1" ${i ? '' : 'disabled style="opacity:.3"'}>${icon('up')}</button><button class="mini-btn" data-pmv="${p.k}|${c.k}|1" ${i < cards.length - 1 ? '' : 'disabled style="opacity:.3"'}>${icon('down')}</button><button class="mini-btn" data-phd="${p.k}|${c.k}" title="${L.hidden.includes(c.k) ? 'Show' : 'Hide'}">${icon(L.hidden.includes(c.k) ? 'eyeOff' : 'eye')}</button></div>`).join('') || '<p class="muted" style="font-size:12px">No cards</p>'}
           <div style="display:flex;gap:10px;margin-top:8px"><button class="link" data-pgo="${p.k}">Customize on page →</button>${UI.layout[p.k] ? `<button class="link" data-prs="${p.k}" style="margin-left:auto">Reset</button>` : ''}</div></div>`; }).join('')}</div>
       <p class="muted" style="font-size:11.5px;margin-top:10px">Cards that change with the page's selection (for example, the selected loan's detail) are listed under the name they had when this page last loaded.</p></div>
+    ${automationCard()}
   </div>`;
   // people
   $$('[data-role]', pg).forEach(s => s.onchange = async () => { const p = ADM.people.find(x => x.user_id === s.dataset.role), was = p.role;
@@ -152,6 +205,7 @@ function renderAdmin(pg) {
   if ($('#admAdd')) $('#admAdd').onclick = openAddPerson;
   // density
   const setD = (py, fs) => { UI.density = {py, fs}; applyDensity(); $('#dPyV').textContent = py + 'px'; $('#dFsV').textContent = fs + 'px'; SYNC.schedule(); };
+  wireTabsCard();
   $$('#densSeg button[data-d]').forEach(b => b.onclick = () => { const d = DENSITY.find(x => x.k === b.dataset.d); setD(d.py, d.fs); render(); });
   $('#dPy').oninput = e => setD(+e.target.value, UI.density.fs); $('#dFs').oninput = e => setD(UI.density.py, +e.target.value);
   $('#dPy').onchange = $('#dFs').onchange = () => render();
@@ -226,4 +280,102 @@ function openSetPassword(p) {
   $('#spGo').onclick = async () => { const pw = $('#spP').value; if (pw.length < 8) return toast('At least 8 characters');
     try { await adminCall({action: 'set_password', user_id: p.user_id, password: pw}); closeAll(); toast('Password updated'); }
     catch (e) { toast(e.missing ? 'Deploy the admin-users Edge Function to set passwords from here' : 'Couldn’t update: ' + e.message); } };
+}
+
+const spanOf = el => { const m = getComputedStyle(el).gridColumnEnd.match(/span (\d+)/) || getComputedStyle(el).gridColumnStart.match(/span (\d+)/); return m ? +m[1] : 12; };
+applyCompact();
+
+/* cards without charts: after the page draws, apply the extra height (taller = more room, shorter = scrolls) */
+/* free placement: the grid runs in 8px rows; each tile spans as many rows as it is tall, so short tiles leave no gaps,
+   later tiles fill any hole (dense), and a pinned tile sits exactly where you dropped it */
+const FREE_ROW = 8, FREE_ROWS = {};
+// one tile's row span from its current (or given) height — used live while resizing so the page reflows as you drag
+function freeRows(card, h) { const g = card.parentElement; if (!g?.classList.contains('free')) return;
+  const gap = parseFloat(getComputedStyle(g).columnGap) || 0; if (h == null) h = card.getBoundingClientRect().height;
+  card.dataset.rows = Math.max(1, Math.ceil((h + gap) / FREE_ROW)); freeLayout(g); }
+/* Every tile in a free grid has a saved spot (column, row). Tiles keep their column and order no matter what happens
+   to their contents; when one grows, only the tiles directly below it are pushed down (and come back up when it shrinks).
+   A tile without a saved spot (first time, or a new tile) gets the first open space and is saved there. */
+function freeLayout(g) {
+  const sec = g.closest('.page'), page = sec?.id.slice(2); if (!page) return;
+  { const gap = parseFloat(getComputedStyle(g).columnGap) || 0; g.style.setProperty('--fgap', gap + 'px'); g.style.setProperty('--fcw', ((g.clientWidth - gap * 11) / 12) + 'px'); }   // for the Layout grid guide
+  const dk = devKey(), lay = pageLayout(page), P = ((lay.pos ||= {})[dk] ||= {});
+  const cards = [...g.children].filter(c => c.classList.contains('card') && c.style.display !== 'none' && c.dataset.cid);
+  const box = c => ({c, k: c.dataset.cid, w: Math.min(12, spanOf(c)), h: +c.dataset.rows || 1});
+  const placed = [], put = (b, col, row) => { b.col = col; b.row = row; placed.push(b);
+    b.c.style.gridColumn = `${col} / span ${b.w}`; b.c.style.gridRow = `${row} / span ${b.h}`; b.c.dataset.pin = row; };
+  const floor = (col, w) => Math.max(1, ...placed.filter(p => col < p.col + p.w && p.col < col + w).map(p => p.row + p.h));
+  // 1) saved tiles, top to bottom: keep the column, push down only if something above now overlaps
+  const all = cards.map(box), saved = all.filter(b => P[b.k]).sort((a, b) => P[a.k].r - P[b.k].r || P[a.k].c - P[b.k].c);
+  saved.forEach(b => { const col = Math.max(1, Math.min(13 - b.w, P[b.k].c)); put(b, col, Math.max(P[b.k].r, floor(col, b.w))); });
+  // 2) new tiles: first open spot (lowest row, then leftmost), then remember it
+  let added = false;
+  all.filter(b => !P[b.k]).sort((a, b) => (+a.c.style.order || 0) - (+b.c.style.order || 0)).forEach(b => { let best = null;
+    for (let col = 1; col <= 13 - b.w; col++) { const row = floor(col, b.w); if (!best || row < best.row) best = {col, row}; }
+    put(b, best.col, best.row); P[b.k] = {c: best.col, r: best.row}; added = true; });
+  if (added && typeof SYNC !== 'undefined') SYNC.schedule();
+}
+function packFree(el) {
+  [...el.querySelectorAll('.grid.free')].forEach(g => { const gap = parseFloat(getComputedStyle(g).columnGap) || 0;
+    [...g.children].filter(c => c.classList.contains('card')).forEach(c => { const n = Math.max(1, Math.ceil((c.getBoundingClientRect().height + gap) / FREE_ROW)); c.dataset.rows = n; FREE_ROWS[el.id + '|' + c.dataset.cid] = n; });
+    freeLayout(g); });
+}
+function freeDrag(e, page, el, c, dk) {
+  e.preventDefault(); e.stopPropagation();
+  const g = c.el.parentElement, gr = g.getBoundingClientRect(), gap = parseFloat(getComputedStyle(g).columnGap) || 0, colW = (g.clientWidth - gap * 11) / 12, n = spanOf(c.el), rows = +c.el.dataset.rows || 1;
+  const r0 = c.el.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, sy0 = scrollY;
+  const ghost = document.createElement('div'); ghost.className = 'free-ghost'; g.appendChild(ghost);
+  c.el.classList.add('free-moving'); let col = 1, row = 1;
+  const at = ev => { const dx = ev.clientX - x0, dy = ev.clientY - y0 + (scrollY - sy0); c.el.style.transform = `translate(${dx}px,${dy}px)`;
+    const left = r0.left + dx - gr.left, top = r0.top + dy - (gr.top - (scrollY - sy0));
+    col = Math.max(1, Math.min(13 - n, Math.round(left / (colW + gap)) + 1)); row = Math.max(1, Math.round(top / FREE_ROW) + 1);
+    Object.assign(ghost.style, {left: (col - 1) * (colW + gap) + 'px', top: (row - 1) * FREE_ROW + 'px', width: n * colW + (n - 1) * gap + 'px', height: c.el.offsetHeight + 'px'});
+    // scroll the page when dragging near the top or bottom edge
+    if (ev.clientY > innerHeight - 40) scrollBy(0, 14); else if (ev.clientY < 60) scrollBy(0, -14); };
+  const move = ev => at(ev); at(e);
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); ghost.remove(); c.el.classList.remove('free-moving'); c.el.style.transform = '';
+    const lay = pageLayout(page), P = ((lay.pos ||= {})[dk] ||= {});
+    P[c.k] = {c: col, r: row}; render(); };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+}
+function fitTallCards(el) {
+  pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart')) return;
+    c.style.alignSelf = 'start'; const nat = c.getBoundingClientRect().height;   // stays 'start': its height is its own, not its row's
+    if (ex > 0) c.style.minHeight = (nat + ex) + 'px'; else { c.style.height = Math.max(90, nat + ex) + 'px'; c.classList.add('lay-tall-scroll'); } });
+  packFree(el);
+}
+
+/* ---------------- Admin → Tabs: show / hide, reorder, section, phone bar ---------------- */
+function tabsCard() {
+  const T = TABSET(), bar = barKeys();
+  const row = (p, list, i) => { const hid = tabHidden(p.k), lock = p.k === 'admin';
+    return `<div class="tb-row ${hid ? 'off' : ''}" draggable="true" data-tk="${p.k}"><button class="mini-btn tb-grip" title="Drag to reorder">${icon('grip')}</button>
+      <span class="tb-ico">${icon(p.i)}</span><span class="tb-n">${esc(p.n)}</span>
+      <span class="tb-ctl"><button class="mini-btn" data-tmv="-1" ${i === 0 ? 'disabled' : ''} title="Move up">${icon('up')}</button><button class="mini-btn" data-tmv="1" ${i === list.length - 1 ? 'disabled' : ''} title="Move down">${icon('down')}</button>
+      <button class="mini-btn" data-tgrp title="Move to ${tabGroup(p) === 'Analyze' ? 'Manage' : 'Analyze'}">${tabGroup(p) === 'Analyze' ? '↓ Manage' : '↑ Analyze'}</button>
+      <label class="tb-bar" title="Show on the phone's bottom bar (up to 4)"><input type="checkbox" data-tbar ${bar.includes(p.k) ? 'checked' : ''} ${hid || lock ? 'disabled' : ''}> Phone bar</label>
+      ${lock ? '<span class="chip" title="Admin always stays visible">Always on</span>' : `<button class="btn tb-vis" data-tvis style="height:28px">${icon(hid ? 'eyeOff' : 'eye')}<span>${hid ? 'Hidden' : 'Shown'}</span></button>`}</span></div>`; };
+  return `<div class="card c-12" id="tabsCard"><div class="card-h"><div><h3>Tabs</h3><div class="sub">Show, hide and reorder the pages in the menu · drag a row or use the arrows · saved to your profile</div></div>
+    <div class="right"><button class="btn" id="tbReset">Reset tabs</button></div></div>
+    <div class="tb-cols">${['Analyze', 'Manage'].map(g => { const list = navPages(g); return `<div><div class="nav-label" style="margin:0 0 6px">${g}</div><div class="tb-list" data-tg="${g}">${list.map((p, i) => row(p, list, i)).join('') || '<p class="muted">No tabs here.</p>'}</div></div>`; }).join('')}</div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">A hidden tab is only removed from the menu — its data and settings stay, and you can show it again here. The phone bar holds 4 tabs; the rest are under More.</p></div>`;
+}
+function wireTabsCard() {
+  const card = $('#tabsCard'); if (!card) return; const T = TABSET();
+  const save = () => { SYNC.schedule(); buildNav(); render(); };
+  const fullOrder = () => ['Analyze', 'Manage'].flatMap(g => navPages(g).map(p => p.k));
+  $$('.tb-row', card).forEach(r => { const k = r.dataset.tk, g = tabGroup(PAGES.find(p => p.k === k));
+    $$('[data-tmv]', r).forEach(b => b.onclick = () => { const list = navPages(g).map(p => p.k), i = list.indexOf(k), j = i + +b.dataset.tmv; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]];
+      T.order = ['Analyze', 'Manage'].flatMap(x => x === g ? list : navPages(x).map(p => p.k)); save(); });
+    $('[data-tgrp]', r).onclick = () => { (T.group ||= {})[k] = g === 'Analyze' ? 'Manage' : 'Analyze'; T.order = fullOrder(); save(); };
+    const v = $('[data-tvis]', r); if (v) v.onclick = () => { T.hidden ||= []; T.hidden.includes(k) ? T.hidden.splice(T.hidden.indexOf(k), 1) : T.hidden.push(k); if (T.bar) T.bar = T.bar.filter(x => !T.hidden.includes(x)); save(); };
+    $('[data-tbar]', r).onchange = e => { let b = barKeys().slice(); if (e.target.checked) { if (b.length >= 4) b = b.slice(0, 3); b.push(k); } else b = b.filter(x => x !== k); T.bar = b; save(); };
+    r.ondragstart = e => { e.dataTransfer.setData('text/plain', k); e.dataTransfer.effectAllowed = 'move'; r.classList.add('dragging'); };
+    r.ondragend = () => r.classList.remove('dragging');
+    r.ondragover = e => { e.preventDefault(); r.classList.add('lay-drop'); }; r.ondragleave = () => r.classList.remove('lay-drop');
+    r.ondrop = e => { e.preventDefault(); r.classList.remove('lay-drop'); const from = e.dataTransfer.getData('text/plain'); if (!from || from === k) return;
+      const after = e.clientY - r.getBoundingClientRect().top > r.offsetHeight / 2, list = fullOrder().filter(x => x !== from); list.splice(list.indexOf(k) + (after ? 1 : 0), 0, from);
+      (T.group ||= {})[from] = g; T.order = list; save(); };
+  });
+  $('#tbReset').onclick = () => { const was = clone(T); UI.tabs = {order: [], hidden: [], group: {}, bar: null}; save(); toast('Tabs reset', () => { UI.tabs = was; save(); }); };
 }
