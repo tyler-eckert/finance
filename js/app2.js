@@ -140,7 +140,8 @@ const cleanDesc = d => d.replace(/ (CHK|DEBIT CRD|CARD PUR).*$/i, '').trim();
    ===================================================================== */
 let bMonth = ASOF.m; const bOpen = new Set();
 function renderBudget(pg) {
-  const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['ytd', 'YTD'], ['years', 'Years'], ['actuals', 'Actuals']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  if (bMode === 'ytd') bMode = 'month';   // the Month view shows the month and the year to date side by side
+  const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['years', 'Years'], ['actuals', 'Actuals']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if (bMode === 'years') { renderYears(pg, seg); return; }
   if (bMode === 'actuals') { renderActuals(pg, seg); return; }
   const m0 = bMode === 'month' ? bMonth : 1, m1 = bMonth, y = ASOF.y;
@@ -150,8 +151,11 @@ function renderBudget(pg) {
   const tot = g => rows.filter(r => r.c.group === g).reduce((s, r) => ({b: s.b + r.b, a: s.a + r.a}), {b: 0, a: 0});
   const inc = tot('Income'), fx = tot('Fixed Expense'), vx = tot('Variable Expense');
   const exp = {b: fx.b + vx.b, a: fx.a + vx.a}, net = {b: inc.b + exp.b, a: inc.a + exp.a};
+  // year to date (Jan – selected month) for the KPI tiles
+  const AYk = actuals(y, 1, m1).A, ytdOf = g => ST.cats.filter(c => c.group === g && !ST.excl.has(c.name)).reduce((t, c) => ({b: t.b + budgetFor(y, c.name, 1, m1), a: t.a + (AYk[c.name] || 0)}), {b: 0, a: 0});
+  const yI = ytdOf('Income'), yF = ytdOf('Fixed Expense'), yV = ytdOf('Variable Expense'), yE = {b: yF.b + yV.b, a: yF.a + yV.a}, yN = {b: yI.b + yE.b, a: yI.a + yE.a};
   const unc = A['Uncategorized'] || 0, uncN = ST.tx.filter(t => !t.splits && !t.cat && t.d.slice(0, 7) >= `${y}-${String(m0).padStart(2, '0')}` && t.d.slice(0, 7) <= `${y}-${String(m1).padStart(2, '0')}`).length;
-  const kpi = (lbl, r, goodUp) => { const v = r.a - r.b; return `<div class="card c-4 kpi"><div class="label">${lbl}</div><div class="val num">${money(r.a)}</div><div class="delta">${chip(v, true, short(Math.abs(v)) + (v >= 0 ? (goodUp ? ' ahead' : ' under') : (goodUp ? ' behind' : ' over')))} <span class="muted" style="margin-left:6px">budget ${money(r.b)}</span></div></div>`; };
+  const kpi = (lbl, r, goodUp, cls = 'c-4') => { const v = r.a - r.b; return `<div class="card ${cls} kpi"><div class="label">${lbl}</div><div class="val num">${money(r.a)}</div><div class="delta">${chip(v, true, short(Math.abs(v)) + (v >= 0 ? (goodUp ? ' ahead' : ' under') : (goodUp ? ' behind' : ' over')))} <span class="muted" style="margin-left:6px">budget ${money(r.b)}</span></div></div>`; };
   const tax = rows.find(r => r.c.name === 'Tax')?.a || 0;
   const variance = rows.filter(r => r.c.group !== 'Income' && Math.abs(r.a - r.b) > 1).map(r => ({name: r.c.name, v: r.a - r.b, a: r.a, b: r.b})).sort((a, b) => a.v - b.v);
   const top = variance.length > 10 ? variance.slice(0, 6).concat(variance.slice(-4)) : variance;
@@ -161,7 +165,7 @@ function renderBudget(pg) {
     <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button><button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
   ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
   <div class="grid g-12">
-    ${kpi('Income', inc, true)}${kpi('Spending', exp, false)}${kpi('Net', net, true)}
+    ${kpi(MON[m1 - 1] + ' income', inc, true, 'c-2')}${kpi(MON[m1 - 1] + ' spending', exp, false, 'c-2')}${kpi(MON[m1 - 1] + ' net', net, true, 'c-2')}${kpi('Income · YTD', yI, true, 'c-2')}${kpi('Spending · YTD', yE, false, 'c-2')}${kpi('Net · YTD', yN, true, 'c-2')}
     <div class="card c-7"><div class="card-h"><div><h3>Biggest variances</h3><div class="sub">Green = under budget · red = over · click to drill in</div></div></div><div class="chart" id="varChart"></div></div>
     <div class="card c-5"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${bMode === 'month' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
     <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div></div>
@@ -899,19 +903,23 @@ function renderActuals(pg, seg) {
   const grpVals = g => M.map((_, i) => sum(cats.filter(c => c.group === g).map(c => M[i].A[c.name] || 0)));
   const inc = grpVals('Income'), ex = M.map((_, i) => grpVals('Fixed Expense')[i] + grpVals('Variable Expense')[i]), net = M.map((_, i) => inc[i] + ex[i]);
   const unc = M.map(r => r.A['Uncategorized'] || 0);
-  const nM = months.length, cellsOf = vals => vals.map((v, i) => `<td class="num${v > 0 ? ' pos' : ''}" data-m="${months[i]}">${f(v)}</td>`).join('') + `<td class="num b">${f(sum(vals))}</td><td class="num muted">${f(sum(vals) / nM)}</td>`;
-  let h = `<tr><th class="stick">Category</th>${months.map(m => `<th>${mShort(m)}</th>`).join('')}<th>Total</th><th>Avg / mo</th></tr>`; const HAS = [];
+  // budget for the same months as the range (sub-categories only where they're budgeted separately)
+  const budM = (c, sb) => { let t = 0, any = false; months.forEach(m => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); if (sb === undefined) { t += budgetFor(y, c, mo, mo) || 0; any = true; } else { const v = subBudgetFor(y, c, sb, mo, mo); if (v != null) { t += v; any = true; } } }); return any ? t : null; };
+  const bvCells = (a, b) => b == null ? '<td class="num muted bcol"></td><td class="num"></td>' : `<td class="num muted bcol">${f(b)}</td>${Math.abs(a - b) < .5 ? '<td class="num muted">—</td>' : `<td class="num ${a - b > 0 ? 'pos' : 'neg'}">${a - b > 0 ? '+' : '−'}${Math.round(Math.abs(a - b)).toLocaleString('en-US')}</td>`}`;
+  const nM = months.length, cellsOf = (vals, b) => vals.map((v, i) => `<td class="num${v > 0 ? ' pos' : ''}" data-m="${months[i]}">${f(v)}</td>`).join('') + `<td class="num b">${f(sum(vals))}</td><td class="num muted">${f(sum(vals) / nM)}</td>` + bvCells(sum(vals), b);
+  const grpBud = g => sum(cats.filter(c => c.group === g).map(c => budM(c.name) || 0));
+  let h = `<tr><th class="stick">Category</th>${months.map(m => `<th>${mShort(m)}</th>`).join('')}<th>Total</th><th>Avg / mo</th><th class="bcol" title="Budget for the same months as the range">Budget</th><th title="Actual minus budget · green = better than budget">Variance</th></tr>`; const HAS = [];
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
-    h += `<tr class="grp"><td class="stick" colspan="${nM + 3}">${g.l}</td></tr>`;
-    sectioned(g.k, cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="${nM + 3}">${esc(x.hdr)}</td></tr>`; return; } const c = x.c; const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
+    h += `<tr class="grp"><td class="stick" colspan="${nM + 5}">${g.l}</td></tr>`;
+    sectioned(g.k, cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="${nM + 5}">${esc(x.hdr)}</td></tr>`; return; } const c = x.c; const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
       const subs = subsOf(c.name).filter(sb => subVals(c.name, sb).some(x => Math.abs(x) >= .5)), has = subs.length > 1 || (subs.length === 1 && subs[0] !== ''), open = has && AR.open.has(c.name); if (has) HAS.push(c.name);
-      h += `<tr class="click" data-cat="${esc(c.name)}"><td class="stick"><span class="tw">${has ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellsOf(v)}</tr>`;
-      if (open) subs.sort((p, q) => sum(subVals(c.name, p)) - sum(subVals(c.name, q))).forEach(sb => { h += `<tr class="subr click" data-cat="${esc(c.name)}" data-sub="${esc(sb)}"><td class="stick"><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>${cellsOf(subVals(c.name, sb))}</tr>`; });
+      h += `<tr class="click" data-cat="${esc(c.name)}"><td class="stick"><span class="tw">${has ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellsOf(v, budM(c.name))}</tr>`;
+      if (open) subs.sort((p, q) => sum(subVals(c.name, p)) - sum(subVals(c.name, q))).forEach(sb => { h += `<tr class="subr click" data-cat="${esc(c.name)}" data-sub="${esc(sb)}"><td class="stick"><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>${cellsOf(subVals(c.name, sb), budM(c.name, sb))}</tr>`; });
     });
-    h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${cellsOf(grpVals(g.k))}</tr>`;
+    h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${cellsOf(grpVals(g.k), grpBud(g.k))}</tr>`;
   });
-  if (unc.some(x => Math.abs(x) >= .5)) h += `<tr class="excl"><td class="stick">Uncategorized</td>${cellsOf(unc)}</tr>`;
-  h += `<tr class="tot net"><td class="stick">Net${ST.excl.size ? ` <span class="muted" style="font-size:11px;font-weight:500">${exclLabel()}</span>` : ''}</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num b ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td class="num muted">${f(sum(net) / nM)}</td></tr>`;
+  if (unc.some(x => Math.abs(x) >= .5)) h += `<tr class="excl"><td class="stick">Uncategorized</td>${cellsOf(unc, null)}</tr>`;
+  h += `<tr class="tot net"><td class="stick">Net${ST.excl.size ? ` <span class="muted" style="font-size:11px;font-weight:500">${exclLabel()}</span>` : ''}</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num b ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td class="num muted">${f(sum(net) / nM)}</td>${bvCells(sum(net), grpBud('Income') + grpBud('Fixed Expense') + grpBud('Variable Expense'))}</tr>`;
   const opt = sel => allM.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${mLabel(m)}</option>`).join('');
   const toM = ymPlus(lastM, -1), PRE = [['12', 'Last 12 months', ymPlus(toM, -11), toM], ['ytd', `${CY} so far`, `${CY}-01`, toM], ['py', String(PY), `${PY}-01`, `${PY}-12`], ['24', 'Last 24 months', ymPlus(toM, -23), toM]];
   pg.innerHTML = `<div class="toolbar wrap">${seg}
@@ -934,9 +942,9 @@ function renderActuals(pg, seg) {
   // a cell opens that month's transactions (loaded months only)
   $$('.ar-t tr.click td[data-m]', pg).forEach(td => td.onclick = () => { const m = td.dataset.m, tr = td.parentElement; if (m < CTX.SINCE.slice(0, 7)) return toast('Older months come from the stored history — load older transactions on the Transactions page to drill in');
     const y = +m.slice(0, 4), mo = +m.slice(5, 7); if (y !== ASOF.y) { TXF.cat = tr.dataset.cat; TXF.sub = tr.dataset.sub ?? '*'; TXF.month = m; go('tx'); return; } openCatTx(tr.dataset.cat, tr.dataset.sub, mo, mo); });
-  $('#arCsv').onclick = () => { const rows = [['Category', 'Sub-category', ...months, 'Total']];
-    cats.forEach(c => { const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return; rows.push([c.name, '', ...v.map(x => x.toFixed(2)), sum(v).toFixed(2)]);
-      subsOf(c.name).forEach(sb => { const sv = subVals(c.name, sb); if (sv.some(x => Math.abs(x) >= .5)) rows.push([c.name, sb, ...sv.map(x => x.toFixed(2)), sum(sv).toFixed(2)]); }); });
+  $('#arCsv').onclick = () => { const rows = [['Category', 'Sub-category', ...months, 'Total', 'Budget', 'Variance']];
+    cats.forEach(c => { const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return; { const bb = budM(c.name); rows.push([c.name, '', ...v.map(x => x.toFixed(2)), sum(v).toFixed(2), bb == null ? '' : bb.toFixed(2), bb == null ? '' : (sum(v) - bb).toFixed(2)]); }
+      subsOf(c.name).forEach(sb => { const sv = subVals(c.name, sb); if (sv.some(x => Math.abs(x) >= .5)) { const bb = budM(c.name, sb); rows.push([c.name, sb, ...sv.map(x => x.toFixed(2)), sum(sv).toFixed(2), bb == null ? '' : bb.toFixed(2), bb == null ? '' : (sum(sv) - bb).toFixed(2)]); } }); });
     const csv = rows.map(r => r.map(x => /[",\n]/.test(x) ? `"${String(x).replace(/"/g, '""')}"` : x).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = `actuals-${months[0]}-to-${months[nM - 1]}.csv`; a.click(); };
 }
