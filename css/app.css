@@ -857,3 +857,13 @@ body.lay-dragging{overscroll-behavior:none;touch-action:none;-webkit-user-select
 /* while customizing on a phone, hide the floating tab bar so it (and Safari's glass toolbar) doesn't sit over the tiles and grid */
 @media (max-width:860px){body.lay-on .tabbar{display:none}body.lay-on .main{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
   .lay-ctl .grip,.lay-ctl button{width:34px;height:34px}.lay-rs{width:22px;right:-2px}.lay-rh{height:22px;bottom:-2px}.lay-rs::after{left:9px}.lay-rh::after{top:9px}}
+
+/* phones: a solid header pinned to the top. Safari's glass top bar blurs whatever scrolls under it;
+   with an opaque header there, it only ever sits over plain page colour, so nothing looks smeared */
+@media (max-width:860px){
+  .top{position:sticky;top:0;z-index:40;background:var(--bg);margin:-16px -16px 14px;padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 10px;transition:box-shadow .2s}
+  body.scrolled .top{box-shadow:0 1px 0 var(--border),0 6px 16px -10px rgba(0,0,0,.25)}
+  body.scrolled .top p{display:none}
+  body.scrolled .top h1{font-size:20px}
+  .top-shim{display:none}
+}
