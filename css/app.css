@@ -901,3 +901,10 @@ body.lay-dragging{overscroll-behavior:none;touch-action:none;-webkit-user-select
 .cg-cat{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12.5px;cursor:grab}.cg-cat span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cg-mv{height:26px;font-size:11px;max-width:120px;padding:0 6px}
 @media (max-width:860px){.cg-new{grid-template-columns:1fr}.cg-cols{grid-template-columns:1fr}}
+
+/* Actuals view: same row rules as Budget vs. actual */
+.table.ar-t tr.grp td{padding-top:calc(var(--td-py) * 2 + 4px);padding-bottom:max(2px,calc(var(--td-py) - 2px));height:auto}
+.table.ar-t tr.tot td{font-size:var(--td-fs);font-weight:700}
+.table.ar-t tr.subr td{font-size:calc(var(--td-fs) - .5px);color:var(--text-2)}
+.table.ar-t td.num{padding-left:8px;padding-right:8px}
+.bb .chev,.bb .chev-sp{width:18px;height:18px;flex:none}
