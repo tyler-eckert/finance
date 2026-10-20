@@ -26,6 +26,19 @@ const GROUPS = [
   {k: 'Variable Expense', l: 'Variable expenses'},
   {k: 'TTS', l: 'Transfers (not budgeted)'},
 ];
+/* ---- custom groups: your own headings (e.g. Kids, House) inside Income / Fixed / Variable.
+   A group belongs to one of those types, so totals, budgets and reports keep working; saved for the household ---- */
+const CGS = () => { const s = (CTX.settings.cat_groups ||= {list: [], of: {}}); s.list ||= []; s.of ||= {}; return s; };
+const cgOf = c => { const g = CGS().of[c.id] ?? CGS().of[c.name]; return g && CGS().list.some(x => x.name === g && x.kind === c.group) ? g : null; };
+function setCatGroup(c, kind, name) { c.group = kind; const of = CGS().of; delete of[c.name]; if (c.id) delete of[c.id]; if (name) of[c.id || c.name] = name; saveCatGroups(); }
+// one type's categories in order, with a heading before each custom group (categories not in a group come first)
+function sectioned(kind, cats) { const list = cats.filter(c => c.group === kind), out = list.filter(c => !cgOf(c)).map(c => ({c}));
+  CGS().list.filter(g => g.kind === kind).forEach(g => { const cs = list.filter(c => cgOf(c) === g.name); if (cs.length) out.push({hdr: g.name}, ...cs.map(c => ({c}))); });
+  return out; }
+let cgSaveT;
+function saveCatGroups() { if (!CTX.CAN_WRITE) return; clearTimeout(cgSaveT); cgSaveT = setTimeout(async () => { const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'cat_groups', p_value: CGS()});
+  if (error) toast('Couldn’t save groups: ' + error.message + (/changed from the app/.test(error.message) ? ' — run migration 1800' : '')); }, 400); }
+const grpOptions = c => GROUPS.filter(g => g.k !== 'TTS' || c?.group === 'TTS').map(g => `<optgroup label="${g.l}"><option value="${g.k}|" ${c && c.group === g.k && !cgOf(c) ? 'selected' : ''}>${g.l}</option>${CGS().list.filter(x => x.kind === g.k).map(x => `<option value="${g.k}|${esc(x.name)}" ${c && cgOf(c) === x.name ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('');
 const ST = {
   tx: D2.tx.map(t => ({...t})),
   cats: D2.cats.map(c => ({id: c.id, name: c.name, group: c.group, subs: [...(D2.subs[c.name] || [])]})),
@@ -171,7 +184,7 @@ function renderBudget(pg) {
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
     h += `<tr class="grp"><td colspan="${NC}">${g.l}</td></tr>`;
     const income = g.k === 'Income';
-    rows.filter(r => r.c.group === g.k).forEach(r => {
+    sectioned(g.k, rows.map(r => r.c)).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td colspan="${NC}">${esc(x.hdr)}</td></tr>`; return; } const r = rows.find(y => y.c === x.c);
       const c = r.c.name, rr = R(c); if (!rr.am && !rr.bm && !rr.ay && !rr.by) return;
       const subKeys = [...new Set(Object.keys(AY.S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1]))];
       const subs = [...new Set([...r.c.subs.filter(sb => subKeys.includes(sb) || subBudgetFor(y, c, sb, 1, m1) != null), ...subKeys])].filter(sb => Math.abs(AY.S[c + '|' + sb] || 0) >= .5 || subBudgetFor(y, c, sb, 1, m1) != null);
@@ -646,7 +659,7 @@ function renderBuilder(pg) {
   let h = `<tr><th class="stick">Category</th>${MON.map(m => `<th>${m}</th>`).join('')}<th>Total</th><th></th></tr>`;
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
     h += `<tr class="grp"><td class="stick" colspan="15">${g.l}</td></tr>`;
-    ST.cats.filter(c => c.group === g.k).forEach(c => {
+    sectioned(g.k, ST.cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="15">${esc(x.hdr)}</td></tr>`; return; } const c = x.c;
       const sbs = subBudgetRows(byYear, c.name), vals = rowVals(c.name), open = bbOpen.has(c.name);
       h += `<tr class="${sbs.length ? 'has-sub' : ''}"><td class="stick"><span class="tw">${c.subs.length ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellRow(vals, `data-c="${esc(c.name)}"`, sbs.length)}<td class="num b">${f(sum(vals))}</td><td><button class="mini-btn" data-menu="${esc(c.name)}">${icon('more')}</button></td></tr>`;
       if (open) c.subs.forEach(s => { const v = SB[c.name + '|' + s]; h += `<tr class="subr"><td class="stick"><span class="tw sub-name">${esc(s)}</span></td>${v ? cellRow(v, `data-c="${esc(c.name)}" data-s="${esc(s)}"`) : `<td colspan="12" style="text-align:left;padding-left:12px"><button class="link" data-addsub="${esc(c.name)}|${esc(s)}">+ Budget this sub-category separately</button></td>`}<td class="num">${v ? f(sum(v)) : ''}</td><td>${v ? `<button class="mini-btn" data-rmsub="${esc(c.name)}|${esc(s)}">${icon('close')}</button>` : ''}</td></tr>`; });
@@ -785,11 +798,11 @@ function renderCats(pg) {
   pg.innerHTML = `<div class="toolbar"><span class="muted" style="font-size:12.5px">Changes apply to every transaction since ${Y.years[0]}, your budgets, and future import matching</span><button class="btn primary" style="margin-left:auto" onclick="openCatModal()">${icon('plus')}<span>New category</span></button></div>
   <div class="grid g-12">
     <div class="card c-7"><div class="card-h"><div><h3>Categories</h3><div class="sub">${CAT_ORDER ? 'Drag a row or use the arrows · this order is used in budgets, reports and every category list' : `${ST.cats.length} categories · ${sum(ST.cats.map(c => c.subs.length))} sub-categories`}</div></div>
-      ${CTX.CAN_WRITE ? `<div class="right"><button class="btn ${CAT_ORDER ? 'primary' : ''}" id="catOrd">${CAT_ORDER ? 'Done' : icon('sort') + '<span>Reorder</span>'}</button></div>` : ''}</div>
-      ${CAT_ORDER ? catOrderList() : GROUPS.map(g => `<div class="ct-grp">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => `<details class="ct" ${c.name === MC.openCat ? 'open' : ''}><summary><span class="chev">${icon('chev', 2.4)}</span><b>${esc(c.name)}</b><span class="muted ct-n">${histCount(c.name).toLocaleString()} txns · ${short(Math.abs(ytd.A[c.name] || 0))} YTD</span>
+      ${CTX.CAN_WRITE ? `<div class="right" style="display:flex;gap:8px"><button class="btn" id="catGrp">${icon('layout')}<span>Groups</span></button><button class="btn ${CAT_ORDER ? 'primary' : ''}" id="catOrd">${CAT_ORDER ? 'Done' : icon('sort') + '<span>Reorder</span>'}</button></div>` : ''}</div>
+      ${CAT_ORDER ? catOrderList() : GROUPS.map(g => `<div class="ct-grp">${g.l}</div>` + sectioned(g.k, ST.cats).map(x => x.hdr ? `<div class="ct-sgrp">${esc(x.hdr)}</div>` : (c => `<details class="ct" ${c.name === MC.openCat ? 'open' : ''}><summary><span class="chev">${icon('chev', 2.4)}</span><b>${esc(c.name)}</b><span class="muted ct-n">${histCount(c.name).toLocaleString()} txns · ${short(Math.abs(ytd.A[c.name] || 0))} YTD</span>
         <span class="ct-act"><button class="mini-btn" title="Rename" data-ren="${esc(c.name)}">${icon('edit')}</button><button class="mini-btn" title="Merge into…" data-mrg="${esc(c.name)}">${icon('merge')}</button></span></summary>
         <div class="ct-subs">${c.subs.map(s => `<div class="ct-sub"><span>${esc(s)}</span><span class="muted ct-n">${histCount(c.name, s).toLocaleString()}</span><span class="ct-act"><button class="mini-btn" title="Rename / move" data-rsub="${esc(c.name)}|${esc(s)}">${icon('edit')}</button><button class="mini-btn" title="Remove" data-dsub="${esc(c.name)}|${esc(s)}">${icon('trash')}</button></span></div>`).join('')}
-        <button class="link" data-nsub="${esc(c.name)}">+ Add sub-category</button></div></details>`).join('')).join('')}
+        <button class="link" data-nsub="${esc(c.name)}">+ Add sub-category</button></div></details>`)(x.c)).join('')).join('')}
     </div>
     <div class="c-5" style="display:flex;flex-direction:column;gap:18px;min-width:0">
       <div class="card"><div class="card-h"><div><h3>Mass recategorize</h3><div class="sub">Find transactions across history, then move them</div></div></div>
@@ -826,6 +839,7 @@ function renderCats(pg) {
   $$('[data-dsub]', pg).forEach(b => b.onclick = () => { const [c, s] = b.dataset.dsub.split('|'); MC.openCat = c; renameSub(c, s, ''); render(); });
   $$('[data-nsub]', pg).forEach(b => b.onclick = () => openCatModal({nsub: b.dataset.nsub}));
   if ($('#catOrd')) $('#catOrd').onclick = () => { CAT_ORDER = !CAT_ORDER; render(); };
+  if ($('#catGrp')) $('#catGrp').onclick = openGroups;
   if (CAT_ORDER) wireCatOrder(pg);
   $$('details.ct', pg).forEach(d => d.ontoggle = () => { if (d.open) MC.openCat = $('b', d).textContent; });
 }
@@ -842,21 +856,21 @@ function openCatModal(o = {}) {
   const m = $('#modal'); m.classList.remove('wide');
   const head = (t, s) => `<div class="dh"><div><h2 style="font-size:20px">${t}</h2>${s ? `<p class="muted" style="font-size:12.5px">${s}</p>` : ''}</div><button class="x" onclick="closeAll()">${icon('close')}</button></div>`;
   const foot = l => `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="cmGo">${l}</button></div>`;
-  if (o.rename) m.innerHTML = head(`Rename “${esc(o.rename)}”`, `Updates ${histCount(o.rename).toLocaleString()} transactions, all budgets and import rules.`) + `<div class="form one"><div><label>New name</label><input class="in" id="cmN" value="${esc(o.rename)}"></div><div><label>Group</label><select class="in" id="cmG">${GROUPS.map(g => `<option value="${g.k}" ${g.k === groupOf(o.rename) ? 'selected' : ''}>${g.l}</option>`).join('')}</select></div></div>` + foot('Rename everywhere');
+  if (o.rename) m.innerHTML = head(`Rename “${esc(o.rename)}”`, `Updates ${histCount(o.rename).toLocaleString()} transactions, all budgets and import rules.`) + `<div class="form one"><div><label>New name</label><input class="in" id="cmN" value="${esc(o.rename)}"></div><div><label>Group</label><select class="in" id="cmG">${grpOptions(catOf(o.rename))}</select></div></div>` + foot('Rename everywhere');
   else if (o.merge) m.innerHTML = head(`Merge “${esc(o.merge)}”`, `Moves ${histCount(o.merge).toLocaleString()} transactions and its sub-categories, adds its budget to the target, then removes it.`) + `<div class="form one"><div><label>Merge into</label><select class="in" id="cmT">${catOptions('', {blank: 'Choose…'}).replace(`<option>${esc(o.merge)}</option>`, '')}</select></div></div>` + foot('Merge');
   else if (o.rsub) m.innerHTML = head(`Edit “${esc(o.rsub[1])}”`, `${histCount(o.rsub[0], o.rsub[1]).toLocaleString()} transactions in ${esc(o.rsub[0])}.`) + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" value="${esc(o.rsub[1])}"></div><div><label>Parent category</label><select class="in" id="cmT">${catOptions(o.rsub[0])}</select></div></div>` + foot('Apply to history');
   else if (o.nsub) m.innerHTML = head(`New sub-category in ${esc(o.nsub)}`) + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" placeholder="e.g. Piano lessons"></div></div>` + foot('Add');
-  else m.innerHTML = head('New category', 'Shows up in budgets, imports and reports right away.') + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" placeholder="e.g. Kids activities"></div><div><label>Group</label><select class="in" id="cmG">${GROUPS.filter(g => g.k !== 'TTS').map(g => `<option value="${g.k}" ${g.k === 'Variable Expense' ? 'selected' : ''}>${g.l}</option>`).join('')}</select></div><div><label>Sub-categories <span class="muted">(optional, comma-separated)</span></label><input class="in" id="cmS" placeholder="Soccer, Hockey, Camps"></div><div><label>Monthly budget</label><input class="in num" id="cmB" inputmode="decimal" placeholder="$0"></div></div>` + foot('Create category');
+  else m.innerHTML = head('New category', 'Shows up in budgets, imports and reports right away.') + `<div class="form one"><div><label>Name</label><input class="in" id="cmN" placeholder="e.g. Kids activities"></div><div><label>Group</label><select class="in" id="cmG">${grpOptions({group: 'Variable Expense'})}</select></div><div><label>Sub-categories <span class="muted">(optional, comma-separated)</span></label><input class="in" id="cmS" placeholder="Soccer, Hockey, Camps"></div><div><label>Monthly budget</label><input class="in num" id="cmB" inputmode="decimal" placeholder="$0"></div></div>` + foot('Create category');
   openLayer('modal'); setTimeout(() => $('#cmN')?.focus(), 50);
   $('#cmGo').onclick = () => {
     const n = $('#cmN')?.value.trim();
-    if (o.rename) { if (n && n !== o.rename && catOf(n)) return toast('A category with that name already exists'); if (n && n !== o.rename) { renameCat(o.rename, n); if (ST.excl.has(o.rename)) { ST.excl.delete(o.rename); ST.excl.add(n); } } catOf(n || o.rename).group = $('#cmG').value; }
+    if (o.rename) { if (n && n !== o.rename && catOf(n)) return toast('A category with that name already exists'); if (n && n !== o.rename) { renameCat(o.rename, n); if (ST.excl.has(o.rename)) { ST.excl.delete(o.rename); ST.excl.add(n); } } { const [k, gn] = $('#cmG').value.split('|'); setCatGroup(catOf(n || o.rename), k, gn); } }
     else if (o.merge) { const t = $('#cmT').value; if (!t) return; mergeCat(o.merge, t); }
     else if (o.rsub) { const t = $('#cmT').value; if (!n || !t) return; MC.openCat = t; renameSub(o.rsub[0], o.rsub[1], n, t); }
     else if (o.nsub) { if (!n) return; catOf(o.nsub).subs.push(n); MC.openCat = o.nsub; toast(`Added ${n}`); }
-    else { if (!n || catOf(n)) return $('#cmN').focus(); const g = $('#cmG').value, b = +($('#cmB').value.replace(/[$,]/g, '')) || 0;
+    else { if (!n || catOf(n)) return $('#cmN').focus(); const [g, gn] = $('#cmG').value.split('|'), b = +($('#cmB').value.replace(/[$,]/g, '')) || 0;
       ST.cats.push({name: n, group: g, subs: $('#cmS').value.split(',').map(s => s.trim()).filter(Boolean)});
-      for (const y in ST.budget) ST.budget[y][n] = Array(12).fill(g === 'Income' ? b : -b); MC.openCat = n; toast(`Created ${n}`); }
+      for (const y in ST.budget) ST.budget[y][n] = Array(12).fill(g === 'Income' ? b : -b); if (gn) setCatGroup(catOf(n), g, gn); MC.openCat = n; toast(`Created ${n}`); }
     closeAll(); render();
   };
 }
@@ -889,7 +903,7 @@ function renderActuals(pg, seg) {
   let h = `<tr><th class="stick">Category</th>${months.map(m => `<th>${mShort(m)}</th>`).join('')}<th>Total</th><th>Avg / mo</th></tr>`; const HAS = [];
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
     h += `<tr class="grp"><td class="stick" colspan="${nM + 3}">${g.l}</td></tr>`;
-    cats.filter(c => c.group === g.k).forEach(c => { const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
+    sectioned(g.k, cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="${nM + 3}">${esc(x.hdr)}</td></tr>`; return; } const c = x.c; const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
       const subs = subsOf(c.name).filter(sb => subVals(c.name, sb).some(x => Math.abs(x) >= .5)), has = subs.length > 1 || (subs.length === 1 && subs[0] !== ''), open = has && AR.open.has(c.name); if (has) HAS.push(c.name);
       h += `<tr class="click" data-cat="${esc(c.name)}"><td class="stick"><span class="tw">${has ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellsOf(v)}</tr>`;
       if (open) subs.sort((p, q) => sum(subVals(c.name, p)) - sum(subVals(c.name, q))).forEach(sb => { h += `<tr class="subr click" data-cat="${esc(c.name)}" data-sub="${esc(sb)}"><td class="stick"><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>${cellsOf(subVals(c.name, sb))}</tr>`; });
@@ -924,4 +938,32 @@ function renderActuals(pg, seg) {
       subsOf(c.name).forEach(sb => { const sv = subVals(c.name, sb); if (sv.some(x => Math.abs(x) >= .5)) rows.push([c.name, sb, ...sv.map(x => x.toFixed(2)), sum(sv).toFixed(2)]); }); });
     const csv = rows.map(r => r.map(x => /[",\n]/.test(x) ? `"${String(x).replace(/"/g, '""')}"` : x).join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = `actuals-${months[0]}-to-${months[nM - 1]}.csv`; a.click(); };
+}
+
+/* ---- Categories → Groups: create, rename, change type, delete, and pick which categories are in each ---- */
+function openGroups() {
+  const m = $('#modal'); m.classList.add('wide');
+  const types = GROUPS.filter(g => g.k !== 'TTS');
+  const draw = () => {
+    const L = CGS().list;
+    m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">Category groups</h2><p class="muted" style="font-size:12.5px">Your own headings inside Income, Fixed and Variable — they show on the Budget, Budget vs. actual and Categories pages. A category's type follows the group you put it in.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+      <div class="cg-new"><input class="in" id="cgN" placeholder="New group name, e.g. Kids"><select class="in" id="cgK">${types.map(g => `<option value="${g.k}" ${g.k === 'Variable Expense' ? 'selected' : ''}>${g.l}</option>`).join('')}</select><button class="btn primary" id="cgAdd">${icon('plus')}<span>Add group</span></button></div>
+      <div class="cg-cols">${types.map(t => `<div class="cg-col"><div class="ct-grp">${t.l}</div>
+        ${[{name: '', kind: t.k}, ...L.filter(g => g.kind === t.k)].map(g => { const cs = ST.cats.filter(c => c.group === t.k && (cgOf(c) || '') === g.name);
+          return `<div class="cg-box" data-gk="${t.k}" data-gn="${esc(g.name)}"><div class="cg-h">${g.name ? `<b>${esc(g.name)}</b><span class="muted">${cs.length}</span><button class="mini-btn" data-gren="${esc(g.name)}" title="Rename">${icon('edit')}</button><button class="mini-btn" data-gdel="${esc(g.name)}" title="Delete group (its categories stay)">${icon('trash')}</button>` : `<span class="muted">Not in a group</span><span class="muted">${cs.length}</span>`}</div>
+            <div class="cg-cats">${cs.map(c => `<div class="cg-cat" draggable="true" data-cc="${esc(c.name)}"><span>${esc(c.name)}</span><select class="in sel cg-mv" data-cmv="${esc(c.name)}" title="Move to group">${grpOptions(c)}</select></div>`).join('') || '<div class="muted" style="font-size:12px;padding:4px 2px">Drop categories here</div>'}</div></div>`; }).join('')}</div>`).join('')}</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn primary" onclick="closeAll()">Done</button></div>`;
+    $('#cgAdd').onclick = () => { const n = $('#cgN').value.trim(), k = $('#cgK').value; if (!n) return $('#cgN').focus(); if (L.some(g => g.name.toLowerCase() === n.toLowerCase()) || GROUPS.some(g => g.l.toLowerCase() === n.toLowerCase())) return toast('There’s already a group with that name'); L.push({name: n, kind: k}); saveCatGroups(); draw(); };
+    $('#cgN').onkeydown = e => { if (e.key === 'Enter') $('#cgAdd').click(); };
+    $$('[data-cmv]', m).forEach(sel => sel.onchange = () => { const [k, gn] = sel.value.split('|'); setCatGroup(catOf(sel.dataset.cmv), k, gn); draw(); render(); });
+    $$('[data-gren]', m).forEach(b => b.onclick = () => { const old = b.dataset.gren, n = prompt('Rename group', old)?.trim(); if (!n || n === old) return; if (L.some(g => g.name === n)) return toast('There’s already a group with that name');
+      L.find(g => g.name === old).name = n; const of = CGS().of; for (const k in of) if (of[k] === old) of[k] = n; saveCatGroups(); draw(); render(); });
+    $$('[data-gdel]', m).forEach(b => b.onclick = () => { const n = b.dataset.gdel, was = clone(CGS()); CGS().list = L.filter(g => g.name !== n); const of = CGS().of; for (const k in of) if (of[k] === n) delete of[k]; saveCatGroups(); draw(); render();
+      toast(`Deleted “${n}” — its categories stay where they were`, () => { CTX.settings.cat_groups = was; saveCatGroups(); draw(); render(); }); });
+    // drag a category onto another group box
+    $$('.cg-cat', m).forEach(el => el.ondragstart = e => e.dataTransfer.setData('text/plain', el.dataset.cc));
+    $$('.cg-box', m).forEach(box => { box.ondragover = e => { e.preventDefault(); box.classList.add('lay-drop'); }; box.ondragleave = () => box.classList.remove('lay-drop');
+      box.ondrop = e => { e.preventDefault(); box.classList.remove('lay-drop'); const c = catOf(e.dataTransfer.getData('text/plain')); if (!c) return; setCatGroup(c, box.dataset.gk, box.dataset.gn); draw(); render(); }; });
+  };
+  draw(); openLayer('modal');
 }
