@@ -324,13 +324,18 @@ function loanDecisionCard(act) {
    top vendors with a full-year ghost, and an "upcoming" tile for taxes + milestones
    ===================================================================== */
 function ovAssetsCard() {
-  const rows = ST.assets.filter(a => a.status === 'active').map(a => { const v = valueAtM(a, LASTM), ln = a.loan ? loanById(a.loan) : null, owe = ln ? loanBal(ln) : 0; return {n: a.name, v, owe, eq: v - owe, sub: ln ? ln.name : 'Owned outright'}; })
-    .concat(ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id) && loanBal(l) > .5).map(l => ({n: l.name, v: 0, owe: loanBal(l), eq: -loanBal(l), sub: 'Loan · nothing behind it'})))
+  // same numbers as net worth: each asset's last recorded value and its loan's balance for the latest balance month
+  const recVal = a => { const h = BS._avBy?.[a.id] || {}; const k = Object.keys(h).filter(m => m <= BS.months[L]).sort().pop(); return {v: k ? +h[k] : 0, m: k}; };
+  const lb = l => BS['loan:' + l.id]?.[L] ?? loanBal(l);
+  const rows = ST.assets.filter(a => a.status === 'active').map(a => { const r = recVal(a), ln = a.loan ? loanById(a.loan) : null, owe = ln ? lb(ln) : 0, est = valueAtM(a, LASTM);
+      return {n: a.name, v: r.v, owe, eq: r.v - owe, sub: (ln ? ln.name : 'Owned outright') + (r.m ? ` · valued ${mShort(r.m)}` : ''), est: Math.abs(est - r.v) > Math.max(1000, r.v * .02) ? est : null}; })
     .sort((a, b) => Math.max(b.v, b.owe) - Math.max(a.v, a.owe));
-  const mx = Math.max(1, ...rows.map(r => Math.max(r.v, r.owe))), TV = sum(rows.map(r => r.v)), TO = sum(rows.map(r => r.owe));
-  return `<div class="card c-4" id="ovAL"><div class="card-h"><div><h3>Assets & what we owe</h3><div class="sub">Worth ${short(TV)} · owe ${short(TO)} · equity ${short(TV - TO)}</div></div></div>
-    <div class="al-list">${rows.map(r => `<div class="al"><div class="al-top"><div style="min-width:0"><div class="nm">${esc(r.n)}</div><div class="ds">${esc(r.sub)}</div></div><div class="al-v num"><b class="${r.eq < 0 ? 'neg' : ''}">${r.eq < 0 ? '−' : ''}${short(Math.abs(r.eq))}</b><span class="muted">${r.v ? short(r.v) + ' value' : ''}${r.v && r.owe ? ' · ' : ''}${r.owe ? short(r.owe) + ' owed' : ''}</span></div></div>
-      <div class="al-bar"><i class="eq" style="width:${Math.max(0, r.v - r.owe) / mx * 100}%"></i><i class="ow" style="width:${Math.min(r.owe, r.v || r.owe) / mx * 100}%"></i></div></div>`).join('') || '<p class="muted">No assets or loans yet.</p>'}</div>
+  const other = ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id) && lb(l) > .5).map(l => ({n: l.name, owe: lb(l)})).sort((a, b) => b.owe - a.owe);
+  const mx = Math.max(1, ...rows.map(r => Math.max(r.v, r.owe)), ...other.map(o => o.owe)), TV = sum(rows.map(r => r.v)), TO = sum(rows.map(r => r.owe)), OO = sum(other.map(o => o.owe));
+  return `<div class="card c-4" id="ovAL"><div class="card-h"><div><h3>Assets & what we owe</h3><div class="sub">Worth ${short(TV)} · owe ${short(TO)} on them · <b>equity ${short(TV - TO)}</b>${OO ? ` · other loans ${short(OO)}` : ''}</div></div></div>
+    <div class="al-list">${rows.map(r => `<div class="al"><div class="al-top"><div style="min-width:0"><div class="nm">${esc(r.n)}</div><div class="ds">${esc(r.sub)}</div></div><div class="al-v num"><b class="${r.eq < 0 ? 'neg' : ''}">${r.eq < 0 ? '−' : ''}${short(Math.abs(r.eq))}</b><span class="muted">${r.v ? short(r.v) + ' value' : ''}${r.v && r.owe ? ' · ' : ''}${r.owe ? short(r.owe) + ' owed' : ''}</span>${r.est ? `<span class="muted" style="font-size:11px" title="The Assets page estimates today's value from its appreciation / depreciation rate; net worth uses the last recorded value until you record a new one">est. ${short(r.est)} today</span>` : ''}</div></div>
+      <div class="al-bar"><i class="eq" style="width:${Math.max(0, r.v - r.owe) / mx * 100}%"></i><i class="ow" style="width:${Math.min(r.owe, r.v || r.owe) / mx * 100}%"></i></div></div>`).join('') || '<p class="muted">No assets yet.</p>'}
+    ${other.length ? `<div class="al-other"><div class="ds" style="margin:8px 0 4px">Other loans · nothing behind them</div>${other.map(o => `<div class="al-top"><div class="nm">${esc(o.n)}</div><div class="al-v num"><b class="neg">−${short(o.owe)}</b></div></div>`).join('')}</div>` : ''}</div>
     <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Equity</span><span><i class="sw" style="background:var(--neg)"></i>Owed</span></div></div>`;
 }
 function ovBalanceCard() {
