@@ -15,7 +15,7 @@ const D3 = DATA3;
 const hasCat = n => ST.cats.some(c => c.name === n);
 ST.excl = new Set();   // always start unfiltered so nothing is missed by accident
 ST.exclSub = new Set();   // 'Category|Sub'
-const isExclP = p => ST.excl.has(p.cat || '') || ST.exclSub.has((p.cat || '') + '|' + (p.sub || ''));
+const isExclP = p => ST.excl.has(p.cat || 'Uncategorized') || ST.exclSub.has((p.cat || '') + '|' + (p.sub || ''));
 let FLT_OPEN = new Set();
 const FPRESETS = [
   {k: 'all', l: 'Everything', s: []},
@@ -44,17 +44,19 @@ function openFilter(e) {
   e && e.stopPropagation();
   const p = $('#fltPop'), r = $('#filterBtn').getBoundingClientRect();
   const draw = () => {
-    p.innerHTML = `<div class="flt-h"><b>Include in analysis</b><button class="link" id="fltClr">Reset</button></div>
+    p.innerHTML = `<div class="flt-h"><b>Include in analysis</b><span style="margin-left:auto;display:flex;gap:12px"><button class="link" id="fltAll">Select all</button><button class="link" id="fltNone">Deselect all</button></span></div>
       <div class="flt-presets">${FPRESETS.map(x => `<button data-p="${x.k}" class="${x.s.length === ST.excl.size && x.s.every(s => ST.excl.has(s)) ? 'on' : ''}">${x.l}</button>`).join('')}</div>
-      <div class="flt-list">${GROUPS.filter(g => g.k !== 'TTS').map(g => `<div class="flt-g">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => { const off = ST.excl.has(c.name), nSub = c.subs.filter(sb => ST.exclSub.has(c.name + '|' + sb)).length, op = FLT_OPEN.has(c.name);
+      <div class="flt-list">${GROUPS.filter(g => ST.cats.some(c => c.group === g.k)).map(g => `<div class="flt-g">${g.l}</div>` + ST.cats.filter(c => c.group === g.k).map(c => { const off = ST.excl.has(c.name), nSub = c.subs.filter(sb => ST.exclSub.has(c.name + '|' + sb)).length, op = FLT_OPEN.has(c.name);
         return `<div class="flt-c"><label><input type="checkbox" data-c="${esc(c.name)}" ${off ? '' : 'checked'}><span>${esc(c.name)}${nSub && !off ? ` <i class="muted" style="font-style:normal;font-size:11px">· ${nSub} sub off</i>` : ''}</span></label>${c.subs.length ? `<button class="flt-x ${op ? 'on' : ''}" data-cx="${esc(c.name)}" title="Sub-categories">${icon('chev', 2.4)}</button>` : ''}</div>`
-          + (op && c.subs.length ? `<div class="flt-subs">${c.subs.concat(['']).map(sb => `<label class="${off ? 'dis' : ''}"><input type="checkbox" data-cs="${esc(c.name + '|' + sb)}" ${off ? 'disabled' : ''} ${off || ST.exclSub.has(c.name + '|' + sb) ? '' : 'checked'}><span>${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></label>`).join('')}</div>` : ''); }).join('')).join('')}</div>
+          + (op && c.subs.length ? `<div class="flt-subs">${c.subs.concat(['']).map(sb => `<label class="${off ? 'dis' : ''}"><input type="checkbox" data-cs="${esc(c.name + '|' + sb)}" ${off ? 'disabled' : ''} ${off || ST.exclSub.has(c.name + '|' + sb) ? '' : 'checked'}><span>${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></label>`).join('')}</div>` : ''); }).join('')).join('')}<div class="flt-g">Other</div><div class="flt-c"><label><input type="checkbox" data-c="Uncategorized" ${ST.excl.has('Uncategorized') ? '' : 'checked'}><span>Uncategorized</span></label></div></div>
       <div class="muted" style="font-size:11.5px;padding:8px 4px 2px">Applies to Overview, Budget, Transactions and Vendors, including KPIs, charts, the waterfall and yearly totals. Open a category (›) to leave out just some of its sub-categories — that applies to transactions loaded since ${mLabel(CTX.SINCE.slice(0, 7))}. Transfers to savings are never counted.</div>`;
     $$('[data-p]', p).forEach(b => b.onclick = ev => { ev.stopPropagation(); ST.excl = new Set(FPRESETS.find(x => x.k === b.dataset.p).s); ST.exclSub.clear(); draw(); render(); });
     $$('input[data-c]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.excl.delete(cb.dataset.c) : ST.excl.add(cb.dataset.c); draw(); render(); });
     $$('input[data-cs]', p).forEach(cb => cb.onchange = ev => { ev.stopPropagation(); cb.checked ? ST.exclSub.delete(cb.dataset.cs) : ST.exclSub.add(cb.dataset.cs); draw(); render(); });
     $$('[data-cx]', p).forEach(b => b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); const k = b.dataset.cx; FLT_OPEN.has(k) ? FLT_OPEN.delete(k) : FLT_OPEN.add(k); draw(); });
-    $('#fltClr').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(); ST.exclSub.clear(); draw(); render(); };
+    $('#fltAll').onclick = ev => { ev.stopPropagation(); ST.excl = new Set(); ST.exclSub.clear(); draw(); render(); };
+    // start from nothing, then tick just the categories you want to look at
+    $('#fltNone').onclick = ev => { ev.stopPropagation(); ST.excl = new Set([...ST.cats.map(c => c.name), 'Uncategorized']); ST.exclSub.clear(); draw(); render(); };
   };
   draw();
   p.style.top = (r.bottom + 8) + 'px'; p.style.right = Math.max(8, innerWidth - r.right) + 'px';
