@@ -3,23 +3,28 @@ const PAGES = [
   {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
   {k: 'review', n: 'Year in review', i: 'cal', g: 'Analyze', sub: () => 'Recap, goals, notes and the annual deck', r: renderReview},
   {k: 'budget', n: 'Budget vs. actual', m: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
-  {k: 'invest', n: 'Investments', i: 'invest', g: 'Analyze', sub: () => 'Brokerage, retirement, HSA and 529s', r: renderInvest},
   {k: 'cash', n: 'Cash plan', i: 'cal', g: 'Analyze', sub: () => 'Bills, subscriptions, income and what’s coming · next 12 weeks', r: renderCash},
   {k: 'vendors', n: 'Vendors', i: 'store', g: 'Analyze', sub: () => 'Where the money goes, by merchant', r: renderVendors},
-  {k: 'plan', n: 'Plan', i: 'plan', g: 'Analyze', sub: () => 'Projections, future expenses and insights', r: renderPlan},
+  {k: 'plan', n: 'Plan & Investments', m: 'Plan', i: 'invest', g: 'Analyze', sub: () => 'Where the money is, where it’s heading, what comes out of it · retirement and college', r: renderPlan},
   {k: 'tx', n: 'Transactions', i: 'tx', g: 'Manage', m: 'Activity', sub: () => 'Search, categorize, split and bulk-edit', r: renderTx},
   {k: 'balances', n: 'Balances', i: 'wallet', g: 'Manage', sub: () => 'Month-end values for every account and asset', r: renderBalances},
-  {k: 'loans', n: 'Loans', i: 'bank', g: 'Manage', sub: () => 'Balances, payoff dates, amortization and what-ifs', r: renderLoans},
+  {k: 'loans', n: 'Assets & loans', m: 'Assets', i: 'house', g: 'Manage', sub: () => 'Home, vehicles and what you owe on them · values, payoff dates, amortization and what-ifs', r: renderProperty},
   {k: 'taxes', n: 'Taxes', i: 'file', g: 'Manage', sub: () => 'Estimated payments, refunds and projections · Federal, Oklahoma, New Mexico', r: renderTaxes},
-  {k: 'assets', n: 'Assets', i: 'house', g: 'Manage', sub: () => 'Home, vehicles and other assets · values over time', r: renderAssets},
+  {k: 'trust', n: 'Trust', i: 'shield', g: 'Manage', sub: () => TRUST()?.name ? esc(TRUST().name) + ' · quick reference' : 'Key points and key people · quick reference', r: renderTrust},
   {k: 'lawn', n: 'Lawn care', i: 'leaf', g: 'Manage', sub: () => 'Invoices tied to the bank, service history and the year ahead', r: renderLawn},
   {k: 'builder', n: 'Budget', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
   {k: 'cats', n: 'Categories', i: 'tag', g: 'Manage', sub: () => 'Create, rename, merge and recategorize history', r: renderCats},
   {k: 'admin', n: IS_OWNER ? 'Admin' : 'Settings', i: 'gear', g: 'Manage', sub: () => IS_OWNER ? 'People and permissions, table density and page layout' : 'Table density and page layout', r: renderAdmin},
 ];
-const TABS_DEF = ['overview', 'budget', 'tx', 'invest'];
+const TABS_DEF = ['overview', 'budget', 'tx', 'plan'];
 // tab order, visibility, section and the phone bar come from UI.tabs (Admin → Tabs); Admin itself can't be hidden
-const TABSET = () => { const dk = devKey(); UI.tabsBy ||= {}; return UI.tabsBy[dk] ||= clone(UI.tabs || {order: [], hidden: [], group: {}, bar: null}); };   // per device; starts from the shared setup
+const TABSET = () => { const dk = devKey(); UI.tabsBy ||= {}; const t = UI.tabsBy[dk] ||= clone(UI.tabs || {order: [], hidden: [], group: {}, bar: null}); tabMigrate(t); return t; };
+function tabMigrate(t) {   // merged tabs: Investments → Plan & Investments (v51), Assets → Assets & loans (v52)
+  const MV = [['invest', 'plan', '_m51'], ['assets', 'loans', '_m52']];
+  for (const [from, to, flag] of MV) { if (t[flag]) continue; t[flag] = 1;
+    const fx = a => { if (!a) return a; const i = a.indexOf(from); if (i < 0) return a; a = a.filter(k => k !== from); if (!a.includes(to)) a.splice(Math.min(i, a.length), 0, to); return a; };
+    t.order = fx(t.order); t.bar = fx(t.bar); if (t.hidden) t.hidden = t.hidden.filter(k => k !== from); }
+}
 const tabGroup = p => TABSET().group?.[p.k] || p.g;
 const tabHidden = k => k !== 'admin' && (TABSET().hidden || []).includes(k);
 function navPages(g) { const o = TABSET().order || []; return PAGES.map((p, i) => ({p, i})).filter(x => (!g || tabGroup(x.p) === g))
@@ -29,6 +34,8 @@ function barKeys() { const want = (TABSET().bar || TABS_DEF).filter(k => PAGES.s
 let TABS = [];
 let CH = [], cur = 'overview';
 function render() {
+  if (cur === 'invest') { cur = 'plan'; PLV = 'invest'; }
+  if (cur === 'assets') { cur = 'loans'; LS.view = 'assets'; }
   const p = PAGES.find(x => x.k === cur);
   if (!$('#p-' + cur)) { const sec = document.createElement('section'); sec.className = 'page'; sec.id = 'p-' + cur; ($('.page')?.parentNode || document.querySelector('main') || document.body).appendChild(sec); }   // an older cached index.html may not have the newest page
   $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + cur));

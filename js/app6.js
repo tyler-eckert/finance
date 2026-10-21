@@ -13,22 +13,30 @@ function valueAtM(a, m) { const lv = lastVal(a), yrs = Math.max(0, ymDiff(lastCh
   return a.method === 'appreciation' ? lv.v * Math.pow(1 + r, yrs) : a.method === 'depreciation' ? lv.v * Math.pow(1 - r, yrs) : lv.v; }
 const equityAt = m => sum(ST.assets.filter(a => a.status === 'active').map(a => valueAtM(a, m) - (a.loan && loanById(a.loan) ? loanBal(loanById(a.loan), m) : 0)));
 const otherLoansAt = m => sum(ST.loans.filter(l => l.status === 'active' && !ST.assets.some(a => a.status === 'active' && a.loan === l.id)).map(l => m <= NOW && !Object.keys(l.actual).length && m < l.start ? 0 : loanBal(l, m)));
+// 529s on the same draw plan as Investments → College (semester draws, per-child overrides); cached per plan
+let COLC = null;
 function collegeAt(m) {
-  return sum(DATA.kids.map(k => { const b0 = BS[k.key]?.[L] || 0, y18 = collegeYear(k), start = `${y18}-08`, r = .045 / 12;
-    const grow = n => b0 * Math.pow(1 + r, n) + DATA.assume.college529Monthly * ((Math.pow(1 + r, n) - 1) / r);
-    if (m < start) return grow(Math.max(0, ymDiff(LASTM, m)));
-    return grow(Math.max(0, ymDiff(LASTM, start))) * Math.max(0, 1 - ymDiff(start, m) / 48); }));
+  const key = JSON.stringify([CTX.settings?.college_plan || {}, DATA.kids, LASTM, DATA.assume.college529Monthly]);
+  if (!COLC || COLC.k !== key) COLC = {k: key, P: typeof colProject === 'function' ? DATA.kids.map(k => colProject({...k, y18: collegeYear(k)})) : []};
+  return sum(COLC.P.map(P => { if (m <= P.months[0]) return Math.max(0, P.val[P.months[0]]); const v = P.val[m] ?? P.val[P.months[P.months.length - 1]]; return Math.max(0, v || 0); }));
+}
+// a percentile path is yearly; spread it over the months and take each milestone out in its own month (not smeared across the year)
+function bandAt(arr, k, sc) {
+  if (k <= 0) return arr[0]; const t = Math.ceil(k / 12), f = (k - (t - 1) * 12) / 12; if (t >= arr.length) return arr[arr.length - 1];
+  const S = planSteps(), g = ageNow + t > sc.p.retire ? 1 / (1 - (sc.p.tax || 0)) : 1, Dt = (S.PE[t] || 0) * g;
+  const done = sum(S.draws.filter(d => d.t === t && d.k <= k).map(d => d.amt)) * g;
+  return Math.max(0, arr[t - 1] * (1 - f) + (arr[t] + Dt) * f - done);
 }
 /* future months + investable bands; kind = 'nw' adds cash, 529s, asset equity, other loans */
 function planFuture(sc, years, kind) {
   const B = planBands(sc), months = [], p25 = [], p50 = [], p75 = [];
   for (let k = 1; k <= years * 12; k++) {
-    const m = ymAdd(LASTM, k), add = kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : 0;
-    const d = pvDefl(sc, k); months.push(m); p25.push((interpA(B.a25, k) + add) / d); p50.push((interpA(B.a50, k) + add) / d); p75.push((interpA(B.a75, k) + add) / d);
+    const m = ymAdd(LASTM, k), add = kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : kind === 'all' ? collegeAt(m) : 0;
+    const d = pvDefl(sc, k); months.push(m); p25.push((bandAt(B.a25, k, sc) + add) / d); p50.push((bandAt(B.a50, k, sc) + add) / d); p75.push((bandAt(B.a75, k, sc) + add) / d);
   }
   return {months, p25, p50, p75};
 }
-function planAt(sc, age, kind) { const k = (age - ageNow) * 12; const B = planBands(sc), m = ymAdd(LASTM, k); return (interpA(B.a50, k) + (kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : 0)) / pvDefl(sc, k); }
+function planAt(sc, age, kind) { const k = (age - ageNow) * 12; const B = planBands(sc), m = ymAdd(LASTM, k); return (bandAt(B.a50, k, sc) + (kind === 'nw' ? BS.cash[L] + collegeAt(m) + equityAt(m) - otherLoansAt(m) : kind === 'all' ? collegeAt(m) : 0)) / pvDefl(sc, k); }
 function planVsActual(sc) { // investable, Dec of last year → latest month, expected path vs actual
   const n = ymDiff(`${PY}-12`, LASTM), start = investable(iDecPY), exp = start * Math.pow(1 + sc.p.ret, n / 12) + (contrib401 + sc.p.pre) * n / 12, act = investable(L);
   return {exp, act, diff: act - exp, n};
@@ -43,8 +51,8 @@ function wirePlanControls(id) {
   $$(`#${id}R button`).forEach(b => b.onclick = () => { PV.real = b.dataset.r === '1'; render(); });
   const s = $(`#${id}S`); if (s) s.onchange = e => { PV.sc = e.target.value; render(); };
 }
-function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [], futureMax = null, flags = []}) {
-  const sc = pvSc(), yrs = pvYears(sc); let F = yrs ? planFuture(sc, yrs, kind) : {months: [], p25: [], p50: [], p75: []};
+function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [], futureMax = null, flags = [], sc: scIn = null, years = null}) {
+  const sc = scIn || pvSc(), yrs = years ?? pvYears(sc); let F = yrs ? planFuture(sc, yrs, kind) : {months: [], p25: [], p50: [], p75: []};
   if (futureMax != null && yrs) { const n = F.months.filter(m => ymDiff(LASTM, m) <= futureMax).length; F = {months: F.months.slice(0, n), p25: F.p25.slice(0, n), p50: F.p50.slice(0, n), p75: F.p75.slice(0, n)}; }
   const showLbl = UI.chartLabels !== false;
   hVals = hVals.map((v, i) => v * pvDefl(sc, -(hLabels.length - 1 - i)) ** -1);
@@ -55,12 +63,14 @@ function histPlanChart(el, {hLabels, hVals, kind, name, height = 280, events = [
   const series = [{name: name + ' · actual', values: actual, color: 'var(--s1)', area: !yrs}];
   if (yrs) series.push({name: 'Plan median · ' + sc.name, values: med, color: 'var(--s1)', dash: '6 5', width: 2});
   const vl = events.slice(); if (yrs) { vl.push({i: nH - 1, label: 'Today'}); const ri = labels.indexOf(`${YNOW + sc.p.retire - ageNow}-${LASTM.slice(5)}`); if (ri > 0) vl.push({i: ri, label: 'Retire ' + sc.p.retire}); }
-  const pe = yrs ? (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due > LASTM) : [];
-  const markers = pe.map((p, k) => { const i = labels.indexOf(p.due); return i < nH ? null : {i, s: 1, color: ['college_529', 'budget'].includes(p.fund) ? 'var(--text-3)' : 'var(--s5)', label: showLbl ? `${p.name} −${short(Math.abs(p.amount))}` : null, dy: (k % 2) * 13, r: 4.5}; }).filter(Boolean);
+  const pe = yrs ? (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && p.due > LASTM && p.fund !== 'budget') : [];   // budget-funded ones never move this line
+  const inKind = p => fromSavings(p) || (p.fund === 'college_529' && (kind === 'all' || kind === 'nw'));   // only the ones that come out of this line
+  const markers = pe.map((p, k) => { const i = labels.indexOf(p.due); return i < nH ? null : {i, s: 1, color: inKind(p) ? 'var(--s5)' : 'var(--text-3)', label: showLbl ? `${p.name} −${short(Math.abs(p.amount))}` : null, dy: (k % 2) * 13, r: 4.5}; }).filter(Boolean);
+  if (yrs) DEBTS().forEach((d, k) => { const i = labels.indexOf(d.end); if (i >= nH) markers.push({i, s: 1, color: 'var(--s3)', r: 4, label: null}); });   // loan payoffs: dot only, details in the tooltip (labels piled up)
   // months a data check flagged (e.g. a partly entered account): red ring so a cliff isn't mistaken for a real drop
   flags.forEach(f => { const i = hLabels.indexOf(f.m); if (i >= 0) markers.push({i, s: 0, color: 'var(--neg)', r: 5, ring: true, label: showLbl ? '⚠ check' : null}); });
   lineChart(el, {labels, series, band: yrs ? {lo, hi, color: 'var(--s1)', name: 'Middle half of outcomes'} : null, height, vlines: vl, markers,
-    tipExtra: i => pe.filter(p => p.due === labels[i]).map(p => tipRow('var(--s5)', p.name, '−' + money(Math.abs(p.amount)))).join('') + flags.filter(f => f.m === labels[i]).map(f => tipRow('var(--neg)', 'Data check', esc(f.t))).join(''), zero: kind !== 'nw' || true, xGap: 74,
+    tipExtra: i => pe.filter(p => p.due === labels[i]).map(p => tipRow(inKind(p) ? 'var(--s5)' : 'var(--text-3)', p.name + (inKind(p) ? '' : ' (not from this)'), '−' + money(Math.abs(p.amount)))).join('') + (yrs ? DEBTS().filter(d => d.end === labels[i]).map(d => tipRow('var(--s3)', d.n + ' paid off', '+' + money(d.pmt) + '/mo')).join('') : '') + flags.filter(f => f.m === labels[i]).map(f => tipRow('var(--neg)', 'Data check', esc(f.t))).join(''), zero: kind !== 'nw' || true, xGap: 74,
     xFmt: (lb, i, e) => i % e === 0 ? (labels.length > 200 ? "'" + lb.slice(2, 4) : mShort(lb)) : null, tipTitle: (lb, i) => mLabel(lb) + (i >= nH ? ' · age ' + (ageNow + Math.round(ymDiff(CTX.TODAY.slice(0, 7), lb) / 12)) : '')});
 }
 function planLegend(name) {

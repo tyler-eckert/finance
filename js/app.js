@@ -16,6 +16,9 @@ const mLabel = ym => { const [y, m] = ym.split('-'); return MON[+m - 1] + ' ' + 
 const mShort = ym => { const [y, m] = ym.split('-'); return MON[+m - 1] + " '" + y.slice(2); };
 const chip = (v, goodWhenUp = true, txt) => `<span class="chip ${v === 0 ? '' : ((v > 0) === goodWhenUp ? 'pos' : 'neg')}">${v > 0 ? '▲' : v < 0 ? '▼' : ''} ${txt ?? pct(v)}</span>`;
 const I = {
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
   home: '<path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>',
   budget: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M8 14h3M8 17h6"/>',
   invest: '<path d="M4 19V5M4 19h16M8 15l4-4 3 3 5-6"/>',
@@ -316,11 +319,12 @@ function renderOverview(pg) {
     ${['brokerage', 'retirement'].map(k => { const S = BS[k], v = S[L], d = S[iDecPY], lbl = k === 'brokerage' ? 'Brokerage' : 'Retirement';
       return `<div class="card c-2 kpi"><div class="label"><span class="ico">${icon('invest')}</span>${lbl}</div>
       <div class="val num">${short(v)}</div>
-      <div class="delta">${chip(nz((v - d) / Math.abs(d || 1)))} since Dec</div>
+      <div class="delta">${chip(nz((v - d) / Math.abs(d || 1)))} <span class="num ${v - d >= 0 ? 'pos' : 'neg'}" style="margin-left:4px;font-weight:600">${v - d >= 0 ? '+' : '−'}${short(Math.abs(v - d))}</span> since Dec</div>
       <div style="margin-top:14px">${spark(BS.months.slice(-24).map((m, j) => S[L - 23 + j] ?? 0), k === 'brokerage' ? 'var(--s1)' : 'var(--s2)', 200, 40)}</div></div>`; }).join('')}
     <div class="card c-2 kpi"><div class="label"><span class="ico">${icon('cash')}</span>${CY} cash flow</div>
       <div class="val num">${short(ytdInc + ytdExp)}</div>
       <div class="delta">${exclLabel()} · ${ytdInc ? Math.round((ytdInc + ytdExp) / ytdInc * 100) : 0}% of income kept</div>
+      ${(() => { const P0 = cashflowByMonth(PY), pv = sum(P0.inc) - sum(P0.exp), cv = ytdInc + ytdExp, dd = cv - pv; return `<div class="delta cf-py">${PY} same months (Jan–${MON[ASOF.m - 1]}): <b class="num">${short(pv)}</b> <span class="num ${dd >= 0 ? 'pos' : 'neg'}">${dd >= 0 ? '+' : '−'}${short(Math.abs(dd))}</span></div>`; })()}
       <div style="margin-top:14px">${spark(CF.inc.map((v, i) => v - CF.exp[i]), 'var(--s2)', 200, 40)}</div></div>
 
     <div data-slot="glance"></div><div data-slot="notes"></div>
@@ -491,6 +495,7 @@ function pctl(paths, q) { const n = paths[0].length, out = []; for (let t = 0; t
 function renderPlan(pg) {
   pg.innerHTML = planSeg();
   if (PLV === 'retire') { renderRetirement(pg); wirePlanSeg(); return; }
+  if (PLV === 'simple' || PLV === 'invest') { const h = document.createElement('div'); pg.appendChild(h); (PLV === 'simple' ? renderPlanSimple : renderInvest)(h); wirePlanSeg(); return; }
   const host = document.createElement('div'); pg.appendChild(host); wirePlanSeg(); pg = host;
   const sliders = [
     ['retire', 'Retire at age', 45, 65, 1, v => v],

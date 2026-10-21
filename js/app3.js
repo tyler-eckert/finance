@@ -104,12 +104,15 @@ function loanPayoff(id) { const l = loanById(id); const r = l ? remaining(l) : [
 const pctRate = r => (r * 100).toFixed(r * 100 < 10 ? 2 : 1).replace(/\.?0+$/, '') + '%';
 
 /* ---------------- LOANS page ---------------- */
-const LS = {view: 'loans', sel: null, extra: 0, lump: 0, lumpM: ymAdd(NOW, 5), refiRate: 6, refiCost: 2, refiTerm: 30, open: new Set()};
+const LS = {view: 'assets', sel: null, extra: 0, lump: 0, lumpM: ymAdd(NOW, 5), refiRate: 6, refiCost: 2, refiTerm: 30, open: new Set()};
 const BLD = {P: 300000, rate: 6.5, years: 30, start: ymAdd(NOW, 1), extra: 0, lump: 0, lumpM: ymAdd(NOW, 10), cmp: true, rate2: 6.0, years2: 15};
 (() => { const m = ST.loans.find(l => l.status === 'active' && l.type === 'Mortgage' && l.rate != null && l.n); if (!m) return;
   Object.assign(BLD, {P: Math.round(loanBal(m)), rate: +(m.rate * 100).toFixed(3), years: Math.max(1, Math.ceil(remaining(m).length / 12)), rate2: Math.max(1, +(m.rate * 100 - .75).toFixed(2))}); })();
+// Assets & loans share one tab (v52): what you own, what you owe on it, and the schedule tools
+const propSeg = () => `<div class="seg" id="lnSeg">${[['assets', 'Assets'], ['loans', 'Loans'], ['builder', 'Schedule builder']].map(([k, l]) => `<button data-k="${k}" class="${LS.view === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+function renderProperty(pg) { if (LS.view === 'assets') { renderAssets(pg); wireLnSeg(); return; } renderLoans(pg); }
 function renderLoans(pg) {
-  const seg = `<div class="seg" id="lnSeg"><button data-k="loans" class="${LS.view === 'loans' ? 'on' : ''}">My loans</button><button data-k="builder" class="${LS.view === 'builder' ? 'on' : ''}">Schedule builder</button></div>`;
+  const seg = propSeg();
   const tb = `<div class="toolbar">${seg}<button class="btn primary" style="margin-left:auto" onclick="openLoanModal()">${icon('plus')}<span>Add loan</span></button></div>`;
   if (LS.view === 'builder') { renderAmortBuilder(pg, tb); wireLnSeg(); return; }
   const act = ST.loans.filter(l => l.status === 'active'), paid = ST.loans.filter(l => l.status === 'paid');
@@ -297,7 +300,7 @@ function renderAssets(pg) {
   const months = (() => { const st = AS.range === '1y' ? ymAdd(NOW, -12) : AS.range === '3y' ? ymAdd(NOW, -36) : ymAdd(NOW, -72); const o = []; for (let m = st; m <= NOW; m = ymAdd(m, 1)) o.push(m); return o; })();
   const list = AS.sold ? act.concat(sold) : act;
   const COLS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
-  pg.innerHTML = `<div class="toolbar wrap">
+  pg.innerHTML = `<div class="toolbar wrap">${propSeg()}
     <div class="seg" id="asR">${['1y', '3y', 'all'].map(k => `<button data-k="${k}" class="${AS.range === k ? 'on' : ''}">${k.toUpperCase()}</button>`).join('')}</div>
     <div class="seg" id="asM"><button data-k="value" class="${AS.mode === 'value' ? 'on' : ''}">Value</button><button data-k="equity" class="${AS.mode === 'equity' ? 'on' : ''}">Equity</button></div>
     <label class="tgl"><input type="checkbox" id="asS" ${AS.sold ? 'checked' : ''}> Include sold</label>

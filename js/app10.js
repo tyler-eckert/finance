@@ -114,11 +114,18 @@ function reviewTrends() {
     const b = typeof budgetFor === 'function' ? -budgetFor(CY, c, am + 1, 12) : 0; return ytd + (Math.abs(b) > .5 ? b : ytd / am * (12 - am)); };
   const yr = (c, y) => y === CY ? estCY(c) : actualY(c, y);
   const sign = c => catOf(c)?.group === 'Income' ? -1 : 1;
-  const T = RVS().trends || [{t: 'Mortgage', cats: ['Mortgage']}, {t: 'Groceries & Eating Out', cats: ['Groceries', 'Eating Out']}, {t: 'Vacations & Entertainment', cats: ['Vacation', 'Entertainment']}];
+  // the three big charts: the House and Food buckets (every category in them, summed) and Vacations & Entertainment; every category gets a small chart below
+  const T = RVS().trends?.length && RVS().trendsV === 2 ? RVS().trends : [{t: 'House', bucket: 'House'}, {t: 'Food', bucket: 'Food & Such'}, {t: 'Vacations & Entertainment', cats: ['Vacation', 'Entertainment']}];
   const all = ST.cats.filter(c => c.group !== 'TTS').map(c => ({c: c.name, g: c.group, v: years.map(y => yr(c.name, y) * sign(c.name))})).filter(r => r.v.some(v => Math.abs(v) >= 1));
-  const gOrder = {Income: 0, 'Fixed Expense': 1, 'Variable Expense': 2};
-  all.sort((a, b) => (gOrder[a.g] ?? 3) - (gOrder[b.g] ?? 3) || Math.max(...b.v) - Math.max(...a.v));
-  return {years, est: am < 12 ? CY : null, estThrough: am, all, charts: T.map(ch => ({t: ch.t, series: ch.cats.filter(c => catOf(c)).map(c => ({n: c, v: years.map(y => Math.max(0, yr(c, y)))}))})).filter(ch => ch.series.length)};
+  // small charts follow the Categories page order; skip Interest and anything that already has a big chart above
+  const big = new Set(T.flatMap(ch => [ch.t, ...(ch.cats || [])]).map(x => x.toLowerCase())), skip = n => big.has(n.toLowerCase()) || /^interest$/i.test(n) || (/^food$/i.test(n));
+  const ord = (() => { try { return GROUPS.flatMap(g => sectioned(g.k, ST.cats).filter(x => !x.hdr).map(c => c.name)); } catch (e) { return ST.cats.map(c => c.name); } })();
+  const oi = n => { const i = ord.indexOf(n); return i < 0 ? 1e4 : i; };
+  for (let i = all.length - 1; i >= 0; i--) if (skip(all[i].c)) all.splice(i, 1);
+  all.sort((a, b) => oi(a.c) - oi(b.c));
+  return {years, est: am < 12 ? CY : null, estThrough: am, all, charts: T.map(ch => { if (ch.bucket) { const cs = ST.cats.filter(c => c.group !== 'TTS' && c.group !== 'Income' && bucketOf(c.name) === ch.bucket).map(c => c.name);
+      return {t: ch.t, sub: cs.join(', '), series: cs.length ? [{n: ch.t, v: years.map(y => Math.max(0, sum(cs.map(c => yr(c, y)))))}] : []}; }
+    return {t: ch.t, sub: '', series: (ch.cats || []).filter(c => catOf(c)).map(c => ({n: c, v: years.map(y => Math.max(0, yr(c, y)))}))}; }).filter(ch => ch.series.length)};
 }
 function reviewInvesting() {
   const kids = DATA.kids.map(k => { const y18 = collegeYear(k); return {...k, y18, bal: BS[k.key]?.[L] || 0, yrsLeft: 0}; }); kids.forEach(k => k.cp = colProject(k));
@@ -126,8 +133,10 @@ function reviewInvesting() {
   const ages = Array.from({length: 23}, (_, i) => i);
   const kidSeries = kids.map(k => ({n: k.name, v: ages.map(a => { const m = `${Math.floor(born(k) + a)}-${String(Math.round(((born(k) + a) % 1) * 12) + 1).padStart(2, '0')}`; const j = BS.months.indexOf(m);
     if (j >= 0 && j <= L) return BS[k.key]?.[j] ?? null; return k.cp.val[m] ?? null; })}));
-  const sc = SCN[0], B = typeof planBands === 'function' ? planBands(sc) : null, nAges = Array.from({length: 96 - ageNow}, (_, t) => ageNow + t).filter(a => a <= 75);
-  return {kids, ages, kidSeries, nest: B ? {ages: nAges, v: nAges.map(a => B.a50[a - ageNow] ?? null), retire: sc.p.retire, spend: sc.p.spend} : null};
+  // same scenario, same dollars and the same month-by-month median (milestones in their month) as Plan & Investments
+  const sc = SCN.find(s => s.id === SCSEL) || SCN[0], B = typeof planBands === 'function' ? planBands(sc) : null, nAges = Array.from({length: 96 - ageNow}, (_, t) => ageNow + t).filter(a => a <= 75);
+  const atAge = a => { const k = (a - ageNow) * 12; return B ? bandAt(B.a50, k, sc) / (PV.real ? Math.pow(1 + sc.p.infl, k / 12) : 1) : null; };
+  return {kids, ages, kidSeries, nest: B ? {ages: nAges, v: nAges.map(atAge), retire: sc.p.retire, spend: sc.p.spend, name: sc.name, real: PV.real} : null};
 }
 
 /* ---------------- page ---------------- */
@@ -190,10 +199,10 @@ function renderReview(pg) {
       ${[['balance-cash', 'Cash', 'e.g. Keeping a few months of expenses on hand'], ['balance-invest', 'Investing', 'e.g. Maxing out the 401(k)'], ['balance-summary', 'Summary', 'e.g. Close to $300k net worth increase']].map(([r, l, ph]) => `<div class="rv-kp"><label>${l}</label>${noteBox('slide', r, y, ph, 3)}</div>`).join('')}</div>
 
     <div class="card c-6"><div class="card-h"><div><h3>College funds by age</h3><div class="sub">Actual, then projected with your draw plan</div></div></div><div class="chart" id="rvKids"></div>${kp('invest-529', 'e.g. Super-funded all accounts with another $1,000 in August')}</div>
-    <div class="card c-6"><div class="card-h"><div><h3>Nest egg by age</h3><div class="sub">Plan median · ${esc(SCN[0].name)} scenario</div></div></div><div class="chart" id="rvNest"></div>${kp('invest-nest', 'e.g. Retire at 55 drawing $225k/yr')}</div>
+    <div class="card c-6"><div class="card-h"><div><h3>Nest egg by age</h3><div class="sub">Plan median · ${esc((SCN.find(s => s.id === SCSEL) || SCN[0]).name)} · ${PV.real ? 'today’s $' : 'future $'} · same as Plan & Investments</div></div></div><div class="chart" id="rvNest"></div>${kp('invest-nest', 'e.g. Retire at 55 drawing $225k/yr')}</div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Annual trends</h3><div class="sub">Every year on record${TRD.est ? ` · ${TRD.est} is an estimate: Jan–${MON[TRD.estThrough - 1]} actual + the budget for the rest of the year (hatched)` : ''}</div></div></div>
-      <div class="rv-trends">${TRD.charts.map((c, i) => `<div><h4>${esc(c.t)}</h4><div class="chart" id="rvTr${i}"></div></div>`).join('')}</div>${kp('trends', 'e.g. Food has gotten very expensive')}
+      <div class="rv-trends">${TRD.charts.map((c, i) => `<div><h4>${esc(c.t)}</h4><div class="muted rv-tsub" title="${esc(c.sub || '')}">${esc(c.sub || (c.series || []).map(x => x.n).join(', ')) || '&nbsp;'}</div><div class="chart" id="rvTr${i}"></div></div>`).join('')}</div>${kp('trends', 'e.g. Food has gotten very expensive')}
       <h4 style="margin:18px 0 8px;font-size:13px">Every category</h4>
       <div class="rv-all">${TRD.all.map((r, i) => `<div class="rv-mini"><div class="rv-mh"><b>${esc(r.c)}</b><span class="muted num">${TRD.est ? TRD.est + ' est ' : ''}${short(r.v[r.v.length - 1])}</span></div><div class="chart" id="rvA${i}"></div></div>`).join('')}</div></div>
 
@@ -224,8 +233,8 @@ function renderReview(pg) {
       {name: 'Tax', v: -D.tax / 1000}, {name: 'Large wants', v: -D.want / 1000}, {name: 'Entertain­ment', v: -D.ent / 1000}, {name: 'Vacation', v: -D.vac / 1000}, {name: 'Theoretical spend', v: D.theo / 1000, total: true}, {name: 'Large needs', v: -D.need / 1000}, {name: 'Adjusted spend', v: D.adj / 1000, total: true}], {height: 260}),
     () => lineChart($('#rvKids'), {labels: I.ages, series: I.kidSeries.map((s, i) => ({name: s.n, values: s.v.map(v => v == null ? null : Math.max(0, v)), color: KID_COL[i % 5]})), height: 220, zero: true, xFmt: (lb, i) => i % 2 === 0 ? lb : null, tipTitle: a => 'Age ' + a}),
     () => I.nest && lineChart($('#rvNest'), {labels: I.nest.ages, series: [{name: 'Plan median', values: I.nest.v, color: 'var(--s1)', area: true}], height: 220, zero: true, vlines: [{i: I.nest.ages.indexOf(I.nest.retire), label: 'Retire ' + I.nest.retire}], xFmt: (lb, i) => i % 5 === 0 ? lb : null, tipTitle: a => 'Age ' + a}),
-    ...TR.charts.map((c, i) => () => barChart($(`#rvTr${i}`), {labels: TR.years.map(String), series: c.series.map((s, k) => ({name: s.n, values: s.v, color: ['var(--s1)', 'var(--s2)'][k % 2], hatchFn: j => TR.years[j] === TR.est})), height: 200, xGap: 34, tipExtra: j => TR.years[j] === TR.est ? tipRow(null, 'Estimate', `Jan–${MON[TR.estThrough - 1]} actual + budget`) : ''})),
-    () => TR.all.forEach((r, i) => { const el = $(`#rvA${i}`); if (el) barChart(el, {labels: TR.years.map(y => "'" + String(y).slice(2)), series: [{name: r.c, values: r.v, color: r.g === 'Income' ? 'var(--s2)' : 'var(--s1)', hatchFn: j => TR.years[j] === TR.est}], height: 110, xGap: 26, padL: 40, ticks: 2, tipTitle: (l, j) => String(TR.years[j]) + (TR.years[j] === TR.est ? ' (estimate)' : '')}); }));
+    ...TR.charts.map((c, i) => () => barChart($(`#rvTr${i}`), {labels: TR.years.map(String), series: c.series.map((s, k) => ({name: s.n, values: s.v, color: ['var(--s1)', 'var(--s2)'][k % 2], hatchFn: j => TR.years[j] === TR.est})), height: 240, xGap: 34, padL: 52, tipExtra: j => TR.years[j] === TR.est ? tipRow(null, 'Estimate', `Jan–${MON[TR.estThrough - 1]} actual + budget`) : ''})),
+    () => TR.all.forEach((r, i) => { const el = $(`#rvA${i}`); if (el) barChart(el, {labels: TR.years.map(y => "'" + String(y).slice(2)), series: [{name: r.c, values: r.v.map(v => Math.max(0, v)), color: r.g === 'Income' ? 'var(--s2)' : 'var(--s1)', hatchFn: j => TR.years[j] === TR.est}], height: 110, xGap: 26, padL: 48, ticks: 2, tipTitle: (l, j) => String(TR.years[j]) + (TR.years[j] === TR.est ? ' (estimate)' : '')}); }));
 }
 
 /* ---------------- PowerPoint export (PptxGenJS, loaded on demand) ---------------- */

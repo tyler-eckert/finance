@@ -1,13 +1,14 @@
 /* =====================================================================
    RETIREMENT SCENARIOS · WHEN CAN I RETIRE · INVESTMENT BENCHMARKS
    ===================================================================== */
-let PLV = 'retire';
-const planSeg = () => `<div class="toolbar"><div class="seg" id="plSeg"><button data-k="retire" class="${PLV === 'retire' ? 'on' : ''}">Retirement</button><button data-k="miles" class="${PLV === 'miles' ? 'on' : ''}">Milestones & insights</button></div></div>`;
+let PLV = 'simple';
+const PLV_OPTS = [['simple', 'Summary'], ['invest', 'Investment detail'], ['miles', 'Milestones & insights'], ['retire', 'Scenarios']];
+const planSeg = () => `<div class="toolbar"><div class="seg" id="plSeg">${PLV_OPTS.map(([k, l]) => `<button data-k="${k}" class="${PLV === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
 const wirePlanSeg = () => $$('#plSeg button').forEach(b => b.onclick = () => { PLV = b.dataset.k; render(); });
 
 /* ---------------- scenario engine ---------------- */
 const SC_COLORS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)'];
-const BASEP = {retire: DATA.assume.retireAge, spend: DATA.assume.annualExp, ret: DATA.assume.rate + .025, vol: .12, infl: .025, pre: -30000, ss: 0, ssAge: 67, health: 0, tax: 0, minerals: 1, mortgageDrop: true, crash: false};
+const BASEP = {retire: DATA.assume.retireAge, spend: DATA.assume.annualExp, ret: DATA.assume.rate + .025, vol: .12, infl: .025, pre: -30000, ss: 0, ssAge: 67, health: 0, tax: 0, minerals: 1, mortgageDrop: true, debtSave: true, crash: false};
 let SCN = (CTX.scenarios || []).slice().sort((a, b) => (b.is_base - a.is_base) || (a.sort_order - b.sort_order)).map(s => ({id: s.id, name: s.name, note: s.note || '', p: {...BASEP, ...(s.params || {})}, show: s.show_on_charts !== false}));
 if (!SCN.length) SCN = [{id: 's' + Date.now(), name: 'Base', note: 'Starting assumptions', p: {...BASEP}, show: true}];
 let SCSEL = SCN[0].id, SCCONF = CTX.prefs.conf ?? .85;
@@ -19,8 +20,26 @@ const mineralsAt = cal => minNet[cal] ?? minBase * Math.pow(1 + minDecl, cal - m
 // planned expenses & milestones (Plan → Milestones) come out of the portfolio in their year; 529-funded or already-in-budget ones don't
 const plannedFlows = () => { const o = {}; (ST.planned || []).filter(p => p.status !== 'done' && p.status !== 'cancelled' && !['college_529', 'budget'].includes(p.fund) && p.due >= CTX.ASOF_YM)
   .forEach(p => { const y = +p.due.slice(0, 4); o[y] = (o[y] || 0) + Math.abs(+p.amount || 0); }); return o; };
+/* ---- debts & milestones on the plan's own clock: step t = the 12 months after the latest balance ----
+   Each active loan stops costing its monthly P&I once it's paid off (on schedule, or early with a "Pay off <loan>" milestone).
+   Before retirement the freed payment goes to savings (debtSave); in retirement it lowers what you need (mortgageDrop). */
+const livePlan = p => p.status !== 'done' && p.status !== 'cancelled' && p.due >= CTX.ASOF_YM;
+const fromSavings = p => !['college_529', 'budget'].includes(p.fund);
+const payoffMile = l => (ST.planned || []).find(p => livePlan(p) && /^pay ?off\b/i.test(p.name) && p.name.toLowerCase().includes(String(l.name).toLowerCase()));
+const loanEndM = l => { const nat = loanPayoff(l.id), pm = payoffMile(l); return pm && pm.due < nat ? pm.due : nat; };
+const DEBTS = () => ST.loans.filter(l => l.status === 'active' && (+l.pmt || 0) > 0).map(l => { const pm = payoffMile(l), nat = loanPayoff(l.id); return {id: l.id, n: l.name, type: l.type, pmt: +l.pmt, nat, end: pm && pm.due < nat ? pm.due : nat, early: !!(pm && pm.due < nat)}; });
+const freedAt = (m, D = DEBTS()) => sum(D.filter(d => d.end < m).map(d => d.pmt));   // monthly P&I no longer owed in month m
+const stepsKey = () => JSON.stringify([(ST.planned || []).filter(livePlan).map(p => [p.name, p.due, p.amount, p.fund]), DEBTS().map(d => [d.pmt, d.end]), BS.months[L]]);
+const PSC = new Map();
+function planSteps(years = 95 - ageNow) {
+  const key = stepsKey() + years; if (PSC.has(key)) return PSC.get(key);
+  const D = DEBTS(), m0 = BS.months[L], free = [0], PE = {}, draws = [];
+  for (let t = 1; t <= years; t++) { let f = 0; for (let k = 1; k <= 12; k++) f += freedAt(ymAdd(m0, (t - 1) * 12 + k), D); free.push(f); }
+  (ST.planned || []).filter(p => livePlan(p) && fromSavings(p)).forEach(p => { const k = Math.max(1, ymDiff(m0, p.due)), t = Math.ceil(k / 12), amt = Math.abs(+p.amount || 0); PE[t] = (PE[t] || 0) + amt; draws.push({k, t, amt, p}); });
+  const out = {free, PE, draws, D}; PSC.set(key, out); return out;
+}
 function simP(p, sims = 400, keepPaths = true) {
-  const years = 95 - ageNow, paths = keepPaths ? [] : null, PE = plannedFlows(); let ok = 0;
+  const years = 95 - ageNow, paths = keepPaths ? [] : null, S = planSteps(years), PE = S.PE; let ok = 0;
   for (let s = 0; s < sims; s++) {
     const R = rng(9000 + s); let b = scnStart(); const path = keepPaths ? [b] : null;
     for (let t = 1; t <= years; t++) {
@@ -29,13 +48,13 @@ function simP(p, sims = 400, keepPaths = true) {
       let r = p.ret + p.vol * z; if (p.crash && age === p.retire) r = -.25;
       const mins = mineralsAt(cal) * p.minerals;
       let flow;
-      if (age < p.retire) flow = contrib401 + p.pre + (p.minerals - 1) * mineralsAt(cal);
+      if (age < p.retire) flow = contrib401 + p.pre + (p.minerals - 1) * mineralsAt(cal) + (p.debtSave !== false ? S.free[t] : 0);
       else {
-        const need = p.spend * inf + (age < 65 ? p.health * inf : 0) - (p.mortgageDrop && cal > MORT_END ? MORT_PI : 0);
+        const need = p.spend * inf + (age < 65 ? p.health * inf : 0) - (p.mortgageDrop ? S.free[t] : 0);
         const income = mins + (age >= p.ssAge ? p.ss * inf : 0), gap = need - income;
         flow = gap > 0 ? -gap / (1 - p.tax) : -gap;
       }
-      if (PE[cal]) flow -= age < p.retire ? PE[cal] : PE[cal] / (1 - p.tax);
+      if (PE[t]) flow -= age < p.retire ? PE[t] : PE[t] / (1 - p.tax);
       b = b > 0 ? b * (1 + r) + flow : 0;
       if (keepPaths) path.push(Math.max(0, b));
     }
@@ -44,7 +63,7 @@ function simP(p, sims = 400, keepPaths = true) {
   return {paths, prob: ok / sims, years};
 }
 const RUNC = new Map();
-const pkey = p => JSON.stringify(p) + JSON.stringify(plannedFlows());   // re-run when milestones change
+const pkey = p => JSON.stringify(p) + stepsKey();   // re-run when milestones change
 function scnRun(sc) { const k = 'r' + pkey(sc.p); if (!RUNC.has(k)) RUNC.set(k, simP(sc.p)); return RUNC.get(k); }
 function scnSweep(sc) {
   const k = 'w' + pkey({...sc.p, retire: 0}); if (RUNC.has(k)) return RUNC.get(k);
@@ -93,7 +112,8 @@ function renderRetirement(pg) {
       <div class="sc-list">${SCN.map((s, i) => `<div class="sc ${s.id === sel.id ? 'on' : ''}" data-s="${s.id}"><i class="sw" style="background:${SC_COLORS[i % 5]};width:10px;height:10px"></i><div class="sc-m"><div class="nm">${esc(s.name)}</div><div class="ds">${esc(s.note || '')}</div></div><button class="mini-btn" data-eye="${s.id}" title="Show on charts">${s.show ? '●' : '○'}</button></div>`).join('')}</div>
       <div class="sc-edit"><div class="form one" style="margin-bottom:12px"><div><label>Name</label><input class="in" id="scName" value="${esc(sel.name)}"></div></div>
         <div class="ctrl">${sliders.map(([k, l, mn, mx, st, f]) => `<div><label>${l}<b id="sv-${k}">${f(sel.p[k])}</b></label><input type="range" min="${mn}" max="${mx}" step="${st}" value="${sel.p[k]}" data-k="${k}"></div>`).join('')}</div>
-        ${MORT ? `<label class="tgl" style="margin-top:14px"><input type="checkbox" id="scMort" ${sel.p.mortgageDrop ? 'checked' : ''}> Spending drops by mortgage P&amp;I after ${MORT_END}</label>` : ''}
+        ${DEBTS().length ? `<label class="tgl" style="margin-top:14px"><input type="checkbox" id="scMort" ${sel.p.mortgageDrop ? 'checked' : ''}> In retirement, spending drops by each loan’s P&amp;I once it’s paid off</label>
+        <label class="tgl" style="margin-top:8px"><input type="checkbox" id="scDebt" ${sel.p.debtSave !== false ? 'checked' : ''}> Before retirement, freed loan payments go to savings</label>` : ''}
         <label class="tgl" style="margin-top:8px"><input type="checkbox" id="scCrash" ${sel.p.crash ? 'checked' : ''}> −25% market crash the year I retire</label>
         <div style="display:flex;gap:8px;margin-top:16px">${SCN.length > 1 ? `<button class="btn" id="scDel">${icon('trash')}<span>Delete</span></button>` : ''}<button class="btn" id="scDup" style="margin-left:auto">${icon('plus')}<span>Duplicate</span></button></div></div></div>
 
@@ -118,7 +138,8 @@ function renderRetirement(pg) {
   $$('[data-eye]', host).forEach(b => b.onclick = () => { const s = SCN.find(x => x.id === b.dataset.eye); s.show = !s.show; render(); });
   $('#scName').onchange = e => { const v = e.target.value.trim(); if (v && SCN.some(s => s !== sel && s.name === v)) return toast('Another scenario has that name'); sel.name = v || sel.name; render(); };
   $$('.sc-edit input[type=range]', host).forEach(inp => { inp.oninput = () => { const k = inp.dataset.k; $('#sv-' + k).textContent = sliders.find(s => s[0] === k)[5](+inp.value); }; inp.onchange = () => { sel.p[inp.dataset.k] = +inp.value; sel.note = 'Edited'; render(); }; });
-  if ($('#scMort')) $('#scMort').onchange = e => { sel.p.mortgageDrop = e.target.checked; render(); };
+  if ($('#scMort')) $('#scMort').onchange = e => { sel.p.mortgageDrop = e.target.checked; sel.note = 'Edited'; render(); };
+  if ($('#scDebt')) $('#scDebt').onchange = e => { sel.p.debtSave = e.target.checked; sel.note = 'Edited'; render(); };
   $('#scCrash').onchange = e => { sel.p.crash = e.target.checked; render(); };
   const dup = () => { if (SCN.length >= 5) return toast('Up to 5 scenarios'); let nm = sel.name + ' (copy)', k = 2; while (SCN.some(s => s.name === nm)) nm = sel.name + ' (copy ' + k++ + ')'; const n = {id: 's' + Date.now(), name: nm, note: 'Copy of ' + sel.name, p: {...sel.p}, show: true}; SCN.push(n); SCSEL = n.id; render(); };
   $('#scDup').onclick = dup; $('#scAdd').onclick = dup;
