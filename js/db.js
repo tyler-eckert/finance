@@ -475,6 +475,17 @@ async function subId(cat, sub) {
   const row = must(await FDB.from('subcategories').upsert({household_id: hh(), category_id: cid, name: sub}, {onConflict: 'category_id,name'}).select('id').single());
   MAP.sub[k] = row.id; MAP.subName[row.id] = {cat, name: sub, cid}; return row.id;
 }
+// invoice lines carry their own category / sub-category; keep them pointing at the right place when categories are merged or moved
+// after a merge / move on the server, re-read the sub-categories of the categories involved so saves use the right ids
+async function refreshSubs(catIds) { const ids = [...new Set(catIds.filter(Boolean))]; if (!ids.length) return;
+  for (const k of Object.keys(MAP.sub)) if (ids.includes(k.split('|')[0])) delete MAP.sub[k];
+  const {data} = await FDB.from('subcategories').select('id, category_id, name').in('category_id', ids);
+  (data || []).forEach(r => { MAP.sub[r.category_id + '|' + r.name] = r.id; MAP.subName[r.id] = {cat: MAP.catName[r.category_id], name: r.name, cid: r.category_id}; }); }
+async function invLinesOf(catIdV, subIdV) { try { let q = FDB.from('invoice_lines').select('id, subcategory_id').eq('household_id', hh()).eq('category_id', catIdV); if (subIdV) q = q.eq('subcategory_id', subIdV);
+  const {data, error} = await q; if (error) return []; return data.map(r => ({id: r.id, sub: MAP.subName[r.subcategory_id]?.name || ''})); } catch (_) { return []; } }
+async function relinkInvLines(lines, to) { for (const l of lines) { const [cat, sub] = to(l.sub); const cid = MAP.cat[cat] || ST.cats.find(c => c.name === cat)?.id; if (!cid) continue;
+    const sid = sub ? await subId(cat, sub) : null; await FDB.from('invoice_lines').update({category_id: cid, subcategory_id: sid}).eq('id', l.id); }
+  if (lines.length && typeof lawnReloadInvoices === 'function') { try { await lawnReloadInvoices(); } catch (_) {} } }
 const chunks = (a, n) => { const o = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
 
 const WRITERS = {
@@ -717,33 +728,38 @@ const DB = {
     }));
   },
   undoChange(logId) { SYNC.queue(async () => { must(await FDB.rpc('undo_change', {p_log_id: logId})); }); },
-  mergeCategory(fromId, intoId) { SYNC.queue(async () => { must(await FDB.rpc('merge_category', {p_from: fromId, p_into: intoId})); SYNC.sig.cats.delete(fromId); }); },
+  mergeCategory(fromId, intoId) { SYNC.queue(async () => { const into = MAP.catName[intoId], L = await invLinesOf(fromId); must(await FDB.rpc('merge_category', {p_from: fromId, p_into: intoId})); SYNC.sig.cats.delete(fromId); await refreshSubs([fromId, intoId]); await relinkInvLines(L, sb => [into, sb || null]); }); },
   // merge a whole category into another one as a sub-category of it (fold: its own sub-categories collapse into that one too)
   mergeAsSub(fromId, fromName, intoId, intoName, subName, fold) {
     SYNC.queue(async () => {
-      const sid = await subId(intoName, subName), q = t => FDB.from(t).update({category_id: intoId, subcategory_id: sid}).eq('household_id', hh()).eq('category_id', fromId).is('subcategory_id', null);
+      const L = await invLinesOf(fromId), sid = await subId(intoName, subName), q = t => FDB.from(t).update({category_id: intoId, subcategory_id: sid}).eq('household_id', hh()).eq('category_id', fromId).is('subcategory_id', null);
       must(await q('transactions')); must(await q('transaction_splits')); must(await q('match_rules'));
       if (fold) { const subs = must(await FDB.from('subcategories').select('id').eq('category_id', fromId));
         for (const r of subs) must(await FDB.rpc('move_subcategory', {p_sub: r.id, p_to_category: intoId, p_new_name: subName})); }
       must(await FDB.rpc('merge_category', {p_from: fromId, p_into: intoId})); SYNC.sig.cats.delete(fromId);
-      Object.keys(MAP.sub).filter(k => k.startsWith(fromId + '|')).forEach(k => delete MAP.sub[k]);
+      await refreshSubs([fromId, intoId]);
+      await relinkInvLines(L, sb => [intoName, fold || !sb ? subName : sb]);
     });
   },
   promoteSub(cat, sub, nc) {
     SYNC.queue(async () => {
       const sid = MAP.sub[catId(cat) + '|' + sub];
       if (!nc.id) { const row = must(await FDB.from('categories').insert({household_id: hh(), name: nc.name, kind: GROUP2KIND[nc.group] || 'variable', sort_order: (ST.cats.indexOf(nc) + 1) * 10}).select('id').single()); nc.id = row.id; MAP.cat[nc.name] = row.id; MAP.catName[row.id] = nc.name; }
+      const L = sid ? await invLinesOf(catId(cat), sid) : [];
       if (sid) must(await FDB.rpc('move_subcategory', {p_sub: sid, p_to_category: nc.id, p_new_name: null}));
-      delete MAP.sub[catId(cat) + '|' + sub];
+      await refreshSubs([catId(cat), nc.id]);
+      await relinkInvLines(L, () => [nc.name, null]);
       if (nc.id && typeof saveCatGroups === 'function' && CGS().of[nc.name]) { CGS().of[nc.id] = CGS().of[nc.name]; delete CGS().of[nc.name]; saveCatGroups(); }
     });
   },
   moveSub(cat, sub, toCat, newName) {
     SYNC.queue(async () => {
-      const sid = MAP.sub[catId(cat) + '|' + sub]; if (!sid) return;
+      const sid = MAP.sub[catId(cat) + '|' + sub]; if (!sid) return; const L = await invLinesOf(catId(cat), sid);
       must(await FDB.rpc('move_subcategory', {p_sub: sid, p_to_category: catId(toCat), p_new_name: newName || null}));
       delete MAP.sub[catId(cat) + '|' + sub];
       if (newName && toCat === cat) { MAP.sub[catId(cat) + '|' + newName] = sid; }
+      await refreshSubs([catId(cat), catId(toCat)]);
+      await relinkInvLines(L, () => [toCat, newName || null]);
     });
   },
   async importTx(rows, acctName, fileName, fixes = [], delIds = []) {
