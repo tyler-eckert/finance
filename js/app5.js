@@ -20,7 +20,10 @@ const yrRef = (y, j) => -sum(TX.ledger.filter(l => l.ty === y && l.j === j && l.
 // paycheck withholding this year (from the latest pay stub) — the IRS treats it as paid evenly through the year
 TX.wh = Object.fromEntries(JK.map(j => { const t = D4.taxYears[CY]?.[j]; return [j, {ytd: t?.withholding_ytd != null ? +t.withholding_ytd : null, asof: t?.withholding_asof || null}]; }));
 const whFull = j => { const w = TX.wh[j]; if (!w?.ytd) return 0; const d = w.asof || TODAY, f = Math.max(1 / 12, (+d.slice(5, 7) - 1 + +d.slice(8, 10) / 31) / 12); return w.ytd / Math.min(1, f); };
-JK.forEach(j => { const t = D4.taxYears[PY]?.[j]; TX.prior[j] = t?.liability != null ? +t.liability : yrPaid(PY, j) - yrRef(PY, j); TX.credit[j] = +(t?.overpayment_applied_next || 0); });
+// an overpayment left with the government counts toward next year's tax, not this year's: liability = paid − refunded − applied forward
+JK.forEach(j => { const t = D4.taxYears[PY]?.[j]; TX.credit[j] = +(t?.overpayment_applied_next || 0); TX.prior[j] = t?.liability != null ? +t.liability : yrPaid(PY, j) - yrRef(PY, j) - TX.credit[j]; TX.priorAuto = TX.priorAuto || {}; TX.priorAuto[j] = t?.liability == null; });
+const fwdOf = (y, j) => y === PY ? +TX.credit[j] || 0 : +(D4.taxYears[y]?.[j]?.overpayment_applied_next || 0);   // applied from year y's return to y + 1
+const yrNet = (y, j) => yrPaid(y, j) - yrRef(y, j) - fwdOf(y, j) + fwdOf(y - 1, j);
 const rateOf = ys => Object.fromEntries(JK.map(j => { const inc = sum(ys.map(y => D4.years[y]?.inc || 0)); return [j, inc ? sum(ys.map(y => D4.years[y]?.[j] || 0)) / inc : 0]; }));
 const RATE_PRESETS = {[PY]: () => rateOf([PY]), [PY - 1]: () => rateOf([PY - 1]), 'avg': () => rateOf([PY - 1, PY])};
 const RATE_LABELS = [[String(PY), PY + ' actual'], [String(PY - 1), (PY - 1) + ' actual'], ['avg', (PY - 1) + '–' + String(PY).slice(2) + ' blend']];
@@ -49,12 +52,26 @@ function taxProjection(y = CY) {
 }
 function ymdPlus(d, n) { const t = new Date(d + 'T12:00:00'); t.setDate(t.getDate() + n); return t.toISOString().slice(0, 10); }
 const fmtD = d => MON[+d.slice(5, 7) - 1] + ' ' + (+d.slice(8, 10)) + ', ' + d.slice(0, 4);
+// bank transactions that look like income-tax payments or refunds: anything tagged Tax (or a split line tagged Tax), plus
+// IRS / Oklahoma Tax Commission / NM Taxation & Revenue payments wherever they're categorized. Tax prep, property and sales tax are left out.
+const TAX_JUR_RE = [['FED', /\bfed(eral)?\b|\birs\b|usataxpymt|us treas|eftps/i], ['OK', /oklahoma|\bok\b|okla|\botc\b|ok tax|oktap/i], ['NM', /new mexico|\bnm\b|trd pmnt|tax_rev_pit|nm tax|taxation & rev/i]];
+const taxJurOf = (...s) => { for (const x of s) { if (!x) continue; for (const [j, re] of TAX_JUR_RE) if (re.test(x)) return j; } return null; };
+const TAX_SKIP = /prep|property|ad valorem|sales|cpa|software|turbo/i;
 function bankTaxTx() {
-  return ST.tx.filter(t => t.cat === 'Tax' && /Federal|Oklahoma|New Mexico/.test(t.sub || '')).map(t => {
-    const j = /Federal/.test(t.sub) ? 'FED' : /Oklahoma/.test(t.sub) ? 'OK' : 'NM';
-    const m = TX.ledger.find(l => l.j === j && Math.abs(Math.abs(l.amt) - Math.abs(t.amt)) < .01 && Math.abs(new Date(l.d) - new Date(t.d)) < 6 * 864e5);
-    return {t, j, m};
+  const isTaxCat = c => /^tax(es)?$|income tax/i.test(c || '');
+  const out = [];
+  ST.tx.forEach(t => {
+    const lines = t.splits?.length ? t.splits.map(s => ({cat: s.cat, sub: s.sub, amt: s.amt})) : [{cat: t.cat, sub: t.sub, amt: t.amt}];
+    lines.forEach((ln, k) => {
+      const byDesc = /usataxpymt|\birs\b|oklahomataxpmts|ok tax|otc - tax|tax_rev_pit|trd pmnt|nm tax/i.test(t.desc || '');
+      if (!(isTaxCat(ln.cat) || byDesc) || TAX_SKIP.test(ln.sub || '')) return;
+      const j = taxJurOf(ln.sub, t.desc, t.note), id = t.splits?.length ? `${t.id}#${k}` : t.id;
+      const m = j && TX.ledger.find(l => l.j === j && Math.abs(Math.abs(l.amt) - Math.abs(ln.amt)) < .01 && Math.abs(new Date(l.d) - new Date(t.d)) < 6 * 864e5);
+      const any = !j && TX.ledger.find(l => Math.abs(Math.abs(l.amt) - Math.abs(ln.amt)) < .01 && Math.abs(new Date(l.d) - new Date(t.d)) < 6 * 864e5);
+      out.push({t: {...t, id, amt: ln.amt}, j, m: m || any});
+    });
   });
+  return out;
 }
 
 function renderTaxes(pg) {
@@ -63,13 +80,13 @@ function renderTaxes(pg) {
   const isProj = y === CY;
   const med = (() => { const t = years.filter(v => v !== CY).map(v => sum(JK.map(j => yrPaid(v, j)))).sort((a, b) => a - b); return t[Math.floor(t.length / 2)] || 0; })();
   const outl = years.filter(v => v !== CY && med && sum(JK.map(j => yrPaid(v, j))) > 4 * med);
-  const tot = j => isProj ? P.j[j].proj : yrPaid(y, j) - yrRef(y, j);
+  const tot = j => isProj ? P.j[j].proj : yrNet(y, j);
   const inc = (isProj ? P.total : D4.years[y]?.inc) || 1;
   const bank = bankTaxTx(), unmatched = bank.filter(b => !b.m);
   const nextQ = QDUE(CY).find(q => q.d > TODAY) || QDUE(CY + 1).find(q => q.d > TODAY) || QDUE(CY + 1)[3];
   const catchUp = j => { const p = P.j[j]; return Math.max(0, p.req - p.paid); };
   pg.innerHTML = `<div class="toolbar wrap"><div class="seg" id="tySeg">${years.map(v => `<button data-y="${v}" class="${v === y ? 'on' : ''}">${v}${v === CY ? ' · projected' : ''}</button>`).join('')}</div>
-    <button class="btn" style="margin-left:auto" onclick="openTaxEntry({type:'Refund'})">${icon('plus')}<span>Record refund</span></button><button class="btn primary" onclick="openTaxEntry()">${icon('plus')}<span>Record payment</span></button></div>
+    <button class="btn" style="margin-left:auto" onclick="openTaxEntry({type:'Carry'})" title="Part of a refund you left with the IRS or a state, applied to this year">${icon('plus')}<span>Balance from ${PY}</span></button><button class="btn" onclick="openTaxEntry({type:'Refund'})">${icon('plus')}<span>Record refund</span></button><button class="btn primary" onclick="openTaxEntry()">${icon('plus')}<span>Record payment</span></button></div>
   <div class="grid g-12">
     <div class="card c-3 kpi"><div class="label">${isProj ? 'Projected tax · ' + CY : 'Total paid · ' + y}</div><div class="val num">${short(sum(JK.map(tot)))}</div><div class="delta">${(sum(JK.map(tot)) / inc * 100).toFixed(1)}% of ${short(inc)} est. income${isProj ? '' : sum(JK.map(j => yrRef(y, j))) ? ` · ${money(sum(JK.map(j => yrRef(y, j))), 2)} refunded` : ''}</div></div>
     ${JK.map(j => `<div class="card c-3 kpi"><div class="label"><i class="sw" style="background:${JUR[j].c};width:10px;height:10px"></i>${JUR[j].n}</div><div class="val num">${short(tot(j))}</div><div class="delta">${isProj ? `paid ${short(P.j[j].paid)} of ${short(P.j[j].req)} safe harbor` : `${(tot(j) / inc * 100).toFixed(1)}% effective${yrRef(y, j) ? ' · refund ' + money(yrRef(y, j), 2) : ''}`}</div></div>`).join('')}
@@ -93,7 +110,12 @@ function renderTaxes(pg) {
     <div class="card c-5"><div class="card-h"><div><h3>Safe-harbor inputs</h3><div class="sub">From your ${PY} returns · edit when filed</div></div></div>
       <div class="form">${JK.map(j => `<div><label>${JUR[j].n} ${PY} tax</label><div class="amt-in"><span>$</span><input class="in num" data-prior="${j}" value="${Math.round(TX.prior[j]).toLocaleString()}"></div></div><div><label>Overpayment applied to ${CY}</label><div class="amt-in"><span>$</span><input class="in num" data-cred="${j}" value="${TX.credit[j] ? Math.round(TX.credit[j]).toLocaleString() : ''}" placeholder="0"></div></div>`).join('')}</div>
       <label class="tgl" style="margin-top:12px"><input type="checkbox" id="hiAGI" ${TX.highAGI ? 'checked' : ''}> ${PY} AGI over $150k (federal 110% rule)</label>
-      <p class="muted" style="font-size:11.5px;margin-top:10px">${PY} tax defaults to what you paid, net of refunds. If you overpaid, enter the actual liability from the return.</p>
+      <div class="scroll-x" style="margin-top:14px"><table class="table cmp tx-settle"><tr><th>${PY} return</th>${JK.map(j => `<th>${JUR[j].n}</th>`).join('')}</tr>
+        <tr><td>Paid for ${PY}</td>${JK.map(j => `<td>${money(yrPaid(PY, j))}</td>`).join('')}</tr>
+        <tr><td>Refunded</td>${JK.map(j => `<td>${yrRef(PY, j) ? '−' + money(yrRef(PY, j)) : '<span class="muted">—</span>'}</td>`).join('')}</tr>
+        <tr><td>Left for ${CY}</td>${JK.map(j => `<td>${TX.credit[j] ? '−' + money(TX.credit[j]) : '<span class="muted">—</span>'}</td>`).join('')}</tr>
+        <tr class="tot"><td>${PY} tax</td>${JK.map(j => `<td>${money(TX.prior[j])}</td>`).join('')}</tr></table></div>
+      <p class="muted" style="font-size:11.5px;margin-top:10px">If you left part of a refund with the government, enter it as the overpayment applied to ${CY}: it counts as paid on every ${CY} quarter (and in the ${CY} total), and comes out of what ${PY} cost. ${PY} tax defaults to paid − refunded − applied; type the liability from the return to override it.</p>
       <div class="budget-link"><div><b>Budget</b><div class="muted" style="font-size:12px">${CY} budget has ${money(-sum(ST.budget[CY]?.Tax || []))} of tax payments.</div></div>${CTX.CAN_WRITE ? `<button class="btn" id="txBud">Plan Jan ’${String(CY + 1).slice(2)} catch-up + Apr ’${String(CY + 1).slice(2)} balance</button>` : ''}</div></div>` : ''}
 
     <div class="card c-${isProj ? 12 : 8}"><div class="card-h"><div><h3>Payments by tax year</h3><div class="sub">${isProj ? 'Faded bar = ' + CY + ' projected liability' : 'Paid, net of refunds'}</div></div><div class="right">${outl.length ? `<label class="tgl"><input type="checkbox" id="inc23" ${TX.inc23 ? 'checked' : ''}> Include ${outl.join(', ')} (outlier)</label>` : ''}</div></div>
@@ -109,7 +131,9 @@ function renderTaxes(pg) {
       <div class="card"><div class="card-h"><div><h3>Upcoming deadlines</h3><div class="sub">Calendar-year filer</div></div></div>
         <div class="tl">${[...QDUE(CY).map(q => ({d: q.d, n: `${q.q} ${CY} estimates`, a: null})), {d: `${CY + 1}-04-15`, n: `File ${CY} returns · pay balance · Q1 ${CY + 1} estimates`, a: sum(JK.map(j => P.j[j].balance)), s: 'Projected balance above safe harbor'}, {d: `${CY + 1}-06-15`, n: `Q2 ${CY + 1} estimates`, a: null}, {d: `${CY + 1}-09-15`, n: `Q3 ${CY + 1} estimates`, a: null}].filter(e => e.d >= TODAY).map((e, i) => i === 0 && !e.a ? {...e, a: sum(JK.map(catchUp)), s: 'Catch-up to safe harbor'} : e).slice(0, 4).map(e => `<div class="ev"><div class="when">${fmtD(e.d)}</div><div class="row"><div><div class="nm" style="font-weight:600">${e.n}</div>${e.s ? `<div class="muted" style="font-size:12px">${e.s}</div>` : ''}</div><div class="amt num">${e.a ? money(e.a) : ''}</div></div></div>`).join('')}</div></div>
       <div class="card"><div class="card-h"><div><h3>From your bank</h3><div class="sub">Tax-tagged transactions not yet in the ledger</div></div></div>
-        ${unmatched.length ? `<div class="list">${unmatched.map(b => `<div class="li"><div style="min-width:0"><div class="nm ell" style="font-size:13px">${esc(cleanDesc(b.t.desc))}</div><div class="ds">${fmtDate(b.t.d)}, ${b.t.d.slice(0, 4)} · ${JUR[b.j].n}</div></div><div class="amt num">${money(b.t.amt, 2)}</div><button class="btn" style="height:30px;margin-left:8px" data-addbank="${b.t.id}">Add</button></div>`).join('')}</div>` : '<p class="muted" style="font-size:12.5px">Everything tagged Tax is in the ledger.</p>'}</div>
+        ${unmatched.length ? `<div class="list">${unmatched.map(b => `<div class="li"><div style="min-width:0"><div class="nm ell" style="font-size:13px">${esc(cleanDesc(b.t.desc))}</div><div class="ds">${fmtDate(b.t.d)}, ${b.t.d.slice(0, 4)} · ${b.j ? JUR[b.j].n : '<span class="neg">pick a jurisdiction</span>'}${b.t.sub ? ' · ' + esc(b.t.sub) : ''}</div></div><div class="amt num">${money(b.t.amt, 2)}</div>
+          <select class="in sel sm" data-bj="${b.t.id}" style="height:30px;margin-left:8px;width:auto">${b.j ? '' : '<option value="">—</option>'}${JK.map(j => `<option value="${j}" ${b.j === j ? 'selected' : ''}>${j === 'FED' ? 'Fed' : j}</option>`).join('')}</select><button class="btn" style="height:30px;margin-left:6px" data-addbank="${b.t.id}">Add</button></div>`).join('')}</div>` : '<p class="muted" style="font-size:12.5px">Everything tagged Tax is in the ledger.</p>'}
+        <p class="muted" style="font-size:11.5px;margin-top:8px">${bank.length} tax payment${bank.length === 1 ? '' : 's'} found in ${ST.tx.length ? `transactions back to ${fmtD(ST.tx.reduce((a, t) => t.d < a ? t.d : a, ST.tx[0].d))}` : 'no transactions'} · ${bank.length - unmatched.length} already in the ledger. Picks up category Tax (sub-category Federal / Oklahoma / New Mexico, or the bank description) plus IRS, OTC and NM TRD payments anywhere.</p></div>
     </div>
   </div>`;
   $$('#tySeg button').forEach(b => b.onclick = () => { TX.year = +b.dataset.y; render(); });
@@ -118,27 +142,27 @@ function renderTaxes(pg) {
   const num = v => +String(v).replace(/[$,%\s]/g, '') || 0;
   $$('[data-r]').forEach(i => i.onchange = () => { TX.rates[i.dataset.r] = num(i.value) / 100; TX.preset = 'custom'; render(); });
   $$('[data-pre]').forEach(b => b.onclick = () => { TX.preset = b.dataset.pre; TX.rates = RATE_PRESETS[b.dataset.pre](); render(); });
-  $$('[data-prior]').forEach(i => i.onchange = () => { TX.prior[i.dataset.prior] = num(i.value); render(); });
+  $$('[data-prior]').forEach(i => i.onchange = () => { TX.prior[i.dataset.prior] = num(i.value); if (TX.priorAuto) TX.priorAuto[i.dataset.prior] = false; render(); });
   $$('[data-wh]').forEach(i => i.onchange = () => { const v = String(i.value).replace(/[$,\s]/g, ''); TX.wh[i.dataset.wh].ytd = v === '' ? null : +v; if (!TX.wh[i.dataset.wh].asof) TX.wh[i.dataset.wh].asof = TODAY; render(); });
   $$('[data-wha]').forEach(i => i.onchange = () => { TX.wh[i.dataset.wha].asof = i.value || null; render(); });
-  $$('[data-cred]').forEach(i => i.onchange = () => { TX.credit[i.dataset.cred] = num(i.value); render(); });
+  $$('[data-cred]').forEach(i => i.onchange = () => { const j = i.dataset.cred, was = +TX.credit[j] || 0; TX.credit[j] = num(i.value); if (TX.priorAuto?.[j]) TX.prior[j] -= TX.credit[j] - was; render(); });
   if ($('#hiAGI')) $('#hiAGI').onchange = e => { TX.highAGI = e.target.checked; render(); };
   if ($('#txBud')) $('#txBud').onclick = () => { const NY = CY + 1; if (!ST.budget[NY]) createBudget(NY, 'copy'); const t = (ST.budget[NY].Tax ||= Array(12).fill(0)), was = t.slice(); t[0] = -Math.round(sum(JK.map(catchUp))); t[3] = -Math.round(sum(JK.map(j => P.j[j].balance))); render(); toast(`${NY} budget: Tax ${money(t[0])} in Jan, ${money(t[3])} in Apr`, () => { ST.budget[NY].Tax = was; render(); }); };
-  $$('[data-addbank]').forEach(b => b.onclick = () => { const x = bank.find(z => z.t.id === b.dataset.addbank); openTaxEntry({d: x.t.d, j: x.j, amt: Math.abs(x.t.amt), type: x.t.amt > 0 ? 'Refund' : 'Estimate', ty: +x.t.d.slice(0, 4) - (x.t.d.slice(5, 7) <= '04' ? 1 : 0), src: 'Bank'}); });
+  $$('[data-addbank]').forEach(b => b.onclick = () => { const x = bank.find(z => z.t.id === b.dataset.addbank), jj = $(`[data-bj="${x.t.id}"]`)?.value || x.j; if (!jj) return toast('Pick the jurisdiction first'); openTaxEntry({d: x.t.d, j: jj, amt: Math.abs(x.t.amt), type: x.t.amt > 0 ? 'Refund' : 'Estimate', ty: +x.t.d.slice(0, 4) - (x.t.d.slice(5, 7) <= '04' ? 1 : 0), src: 'Bank'}); });
   CH.push(() => {
     const ys = years.filter(v => TX.inc23 || !outl.includes(v));
-    barChart($('#txChart'), {labels: ys.map(v => v === CY ? CY + ' proj.' : String(v)), series: JK.map(j => ({name: JUR[j].n, color: JUR[j].c, values: ys.map(v => v === CY ? P.j[j].proj : yrPaid(v, j) - yrRef(v, j)), hatchFn: i => ys[i] === CY})), height: 240, xGap: 60,
+    barChart($('#txChart'), {labels: ys.map(v => v === CY ? CY + ' proj.' : String(v)), series: JK.map(j => ({name: JUR[j].n, color: JUR[j].c, values: ys.map(v => v === CY ? P.j[j].proj : yrNet(v, j)), hatchFn: i => ys[i] === CY})), height: 240, xGap: 60,
       tipExtra: i => ys[i] === CY ? tipRow(null, 'Paid so far', money(sum(JK.map(j => P.j[j].paid)))) : tipRow(null, 'Est. income', short(D4.years[ys[i]]?.inc || 0))});
   });
 }
 function openTaxEntry(pre = {}) {
   const m = $('#modal'); m.classList.remove('wide');
   const isRef = pre.type === 'Refund';
-  m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${isRef ? 'Record refund' : 'Record tax payment'}</h2><p class="muted" style="font-size:12.5px">${pre.src === 'Bank' ? 'Prefilled from your bank transaction' : 'Estimated payment, extension, balance due or refund'}</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+  m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">${isRef ? 'Record refund' : pre.type === 'Carry' ? `Balance left from ${PY}` : 'Record tax payment'}</h2><p class="muted" style="font-size:12.5px">${pre.src === 'Bank' ? 'Prefilled from your bank transaction' : 'Estimated payment, extension, balance due or refund'}</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
   <div class="form">
     <div><label>Jurisdiction</label><select class="in" id="teJ">${JK.map(j => `<option value="${j}" ${pre.j === j ? 'selected' : ''}>${JUR[j].n}</option>`).join('')}</select></div>
     <div><label>Tax year</label><select class="in" id="teY">${[CY + 1, CY, CY - 1, CY - 2, CY - 3].map(v => `<option ${v === (pre.ty || CY) ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-    <div><label>Type</label><select class="in" id="teT">${['Q1 estimate', 'Q2 estimate', 'Q3 estimate', 'Q4 estimate', 'Extension payment', 'Balance due', 'Refund'].map(t => `<option ${(isRef && t === 'Refund') || (!isRef && pre.type === 'Estimate' && t === 'Q4 estimate') ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+    <div><label>Type</label><select class="in" id="teT">${['Q1 estimate', 'Q2 estimate', 'Q3 estimate', 'Q4 estimate', 'Extension payment', 'Balance due', 'Refund', `Overpayment left from ${PY} return`].map(t => `<option ${(isRef && t === 'Refund') || (!isRef && pre.type === 'Estimate' && t === 'Q4 estimate') || (pre.type === 'Carry' && /^Overpayment/.test(t)) ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
     <div><label>Date</label><input class="in" type="date" id="teD" value="${pre.d || TODAY}"></div>
     <div><label>Amount</label><div class="amt-in"><span>$</span><input class="in num" id="teA" value="${pre.amt ? pre.amt.toLocaleString('en-US', {minimumFractionDigits: 2}) : ''}"></div></div>
     <div><label>Method</label><select class="in" id="teM">${['Direct Pay', 'EFTPS', 'E-File', 'OkTAP', 'NM TAP', 'Check', 'Card', 'Direct deposit'].map(t => `<option>${t}</option>`).join('')}</select></div>
@@ -147,6 +171,7 @@ function openTaxEntry(pre = {}) {
   <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="teGo">Save</button></div>`;
   openLayer('modal');
   $('#teGo').onclick = () => { const a = +$('#teA').value.replace(/[$,]/g, ''); if (!a) return $('#teA').focus(); const t = $('#teT').value, ref = t === 'Refund', jj = $('#teJ').value;
+    if (/^Overpayment left/.test(t)) { const was = +TX.credit[jj] || 0; TX.credit[jj] = a; if (TX.priorAuto?.[jj]) TX.prior[jj] -= a - was; closeAll(); render(); toast(`${JUR[jj].n}: ${money(a, 2)} from the ${PY} return counts toward ${CY}`); return; }
     TX.ledger.push({id: 'tl' + Date.now(), d: $('#teD').value, ty: +$('#teY').value, j: $('#teJ').value, status: 'Actual', type: ref ? 'Refund' : /estimate/.test(t) ? 'Estimate' : t, q: /estimate/.test(t) ? t.slice(0, 2) : '', method: $('#teM').value, amt: ref ? -a : a, conf: $('#teC').value ? '••' + $('#teC').value.replace(/\s/g, '').slice(-4) : '', note: '', src: pre.src || 'Manual'});
     closeAll(); render(); toast(`${ref ? 'Refund' : 'Payment'} recorded · ${JUR[jj].n} ${money(a, 2)}`); };
 }

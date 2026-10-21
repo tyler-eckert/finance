@@ -54,6 +54,11 @@ addEventListener('resize', () => { const d = devKey(); if (d !== DEV_NOW) { DEV_
 /* Apply the saved order / visibility after each render (called from render()) */
 function applyLayout(page, el) {
   if (page === 'admin') return;
+  // Free placement: tiles that a page stacks in a side column (e.g. Taxes → Upcoming deadlines + From your bank) become tiles of their own
+  if (UI.layout[page]?.free?.[devKey()]) [...el.querySelectorAll('.grid')].filter(g => !g.closest('.card')).forEach(g => [...g.children].forEach(w => {
+    if (w.classList.contains('card') || !w.children.length || ![...w.children].every(x => x.classList.contains('card'))) return;
+    const span = [...w.classList].find(k => /^c-\d+$/.test(k));
+    [...w.children].forEach(x => { if (span && ![...x.classList].some(k => /^c-\d+$/.test(k))) x.classList.add(span); g.insertBefore(x, w); }); w.remove(); }));
   const cards = tagCards(page, el), L = UI.layout[page] || {order: [], hidden: []};
   document.body.classList.toggle('lay-on', LAYOUT_EDIT);
   el.querySelector('.lay-banner')?.remove();
@@ -302,23 +307,27 @@ function freeRows(card, h) { const g = card.parentElement; if (!g?.classList.con
 /* Every tile in a free grid has a saved spot (column, row). Tiles keep their column and order no matter what happens
    to their contents; when one grows, only the tiles directly below it are pushed down (and come back up when it shrinks).
    A tile without a saved spot (first time, or a new tile) gets the first open space and is saved there. */
+// where saved tiles end up: top to bottom by saved row, each keeps its column and is pushed down only by tiles placed before it
+function planFree(boxes, P) { const placed = [], out = {};
+  const floor = (col, w) => Math.max(1, ...placed.filter(p => col < p.col + p.w && p.col < col + w).map(p => p.row + p.h));
+  boxes.filter(b => P[b.k]).sort((a, b) => P[a.k].r - P[b.k].r || P[a.k].c - P[b.k].c).forEach(b => { const col = Math.max(1, Math.min(13 - b.w, P[b.k].c)), row = Math.max(P[b.k].r, floor(col, b.w)); placed.push({...b, col, row}); out[b.k] = {col, row}; });
+  return {out, floor, placed}; }
 function freeLayout(g) {
   const sec = g.closest('.page'), page = sec?.id.slice(2); if (!page) return;
   { const gap = parseFloat(getComputedStyle(g).columnGap) || 0; g.style.setProperty('--fgap', gap + 'px'); g.style.setProperty('--fcw', ((g.clientWidth - gap * 11) / 12) + 'px'); }   // for the Layout grid guide
   const dk = devKey(), lay = pageLayout(page), P = ((lay.pos ||= {})[dk] ||= {});
-  const cards = [...g.children].filter(c => c.classList.contains('card') && c.style.display !== 'none' && c.dataset.cid);
-  const box = c => ({c, k: c.dataset.cid, w: Math.min(12, spanOf(c)), h: +c.dataset.rows || 1});
-  const placed = [], put = (b, col, row) => { b.col = col; b.row = row; placed.push(b);
-    b.c.style.gridColumn = `${col} / span ${b.w}`; b.c.style.gridRow = `${row} / span ${b.h}`; b.c.dataset.pin = row; };
-  const floor = (col, w) => Math.max(1, ...placed.filter(p => col < p.col + p.w && p.col < col + w).map(p => p.row + p.h));
+  // every tile in the grid takes part; ones the layout doesn't track (e.g. the loan picker cards) are placed in open space each time but not saved
+  const cards = [...g.children].filter(c => c.classList.contains('card') && c.style.display !== 'none');
+  const box = (c, i) => ({c, k: c.dataset.cid || '~' + i, w: Math.min(12, spanOf(c)), h: +c.dataset.rows || 1});
+  const put = (b, col, row) => { b.c.style.gridColumn = `${col} / span ${b.w}`; b.c.style.gridRow = `${row} / span ${b.h}`; b.c.dataset.pin = row; };
   // 1) saved tiles, top to bottom: keep the column, push down only if something above now overlaps
-  const all = cards.map(box), saved = all.filter(b => P[b.k]).sort((a, b) => P[a.k].r - P[b.k].r || P[a.k].c - P[b.k].c);
-  saved.forEach(b => { const col = Math.max(1, Math.min(13 - b.w, P[b.k].c)); put(b, col, Math.max(P[b.k].r, floor(col, b.w))); });
+  const all = cards.map(box), plan = planFree(all, P), placed = plan.placed, floor = plan.floor;
+  all.filter(b => P[b.k]).forEach(b => put(b, plan.out[b.k].col, plan.out[b.k].row));
   // 2) new tiles: first open spot (lowest row, then leftmost), then remember it
   let added = false;
   all.filter(b => !P[b.k]).sort((a, b) => (+a.c.style.order || 0) - (+b.c.style.order || 0)).forEach(b => { let best = null;
     for (let col = 1; col <= 13 - b.w; col++) { const row = floor(col, b.w); if (!best || row < best.row) best = {col, row}; }
-    put(b, best.col, best.row); P[b.k] = {c: best.col, r: best.row}; added = true; });
+    put(b, best.col, best.row); placed.push({...b, col: best.col, row: best.row}); if (b.k[0] !== '~') { P[b.k] = {c: best.col, r: best.row}; added = true; } });
   if (added && typeof SYNC !== 'undefined') SYNC.schedule();
 }
 function packFree(el) {
@@ -328,22 +337,35 @@ function packFree(el) {
 }
 function freeDrag(e, page, el, c, dk) {
   e.preventDefault(); e.stopPropagation();
-  const g = c.el.parentElement, gr = g.getBoundingClientRect(), gap = parseFloat(getComputedStyle(g).columnGap) || 0, colW = (g.clientWidth - gap * 11) / 12, n = spanOf(c.el), rows = +c.el.dataset.rows || 1;
+  const g = c.el.parentElement, gr = g.getBoundingClientRect(), gap = parseFloat(getComputedStyle(g).columnGap) || 0, colW = (g.clientWidth - gap * 11) / 12, n = spanOf(c.el);
   const r0 = c.el.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, sy0 = scrollY;
+  // positions in page coordinates, so scrolling while dragging never shifts anything
+  const cardX0 = r0.left - gr.left, cardY0 = r0.top - gr.top;   // card's spot inside the grid at the start
   const ghost = document.createElement('div'); ghost.className = 'free-ghost'; g.appendChild(ghost);
-  c.el.classList.add('free-moving'); let col = 1, row = 1;
-  const at = ev => { const dx = ev.clientX - x0, dy = ev.clientY - y0 + (scrollY - sy0); c.el.style.transform = `translate(${dx}px,${dy}px)`;
-    const left = r0.left + dx - gr.left, top = r0.top + dy - (gr.top - (scrollY - sy0));
-    col = Math.max(1, Math.min(13 - n, Math.round(left / (colW + gap)) + 1)); row = Math.max(1, Math.round(top / FREE_ROW) + 1);
-    Object.assign(ghost.style, {left: (col - 1) * (colW + gap) + 'px', top: (row - 1) * FREE_ROW + 'px', width: n * colW + (n - 1) * gap + 'px', height: c.el.offsetHeight + 'px'});
-    // scroll the page when dragging near the top or bottom edge
-    const vv = window.visualViewport, vTop = vv ? vv.offsetTop : 0, vBot = vv ? vv.offsetTop + vv.height : innerHeight;
-    if (ev.clientY > vBot - 70) scrollBy(0, 14); else if (ev.clientY < vTop + 80) scrollBy(0, -14); };
-  const move = ev => { ev.preventDefault(); at(ev); }; at(e); document.body.classList.add('lay-dragging');
-  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); document.body.classList.remove('lay-dragging'); ghost.remove(); c.el.classList.remove('free-moving'); c.el.style.transform = '';
+  c.el.classList.add('free-moving'); document.body.classList.add('lay-dragging');
+  let col = 1, row = 1, wantRow = 1, last = e, raf = 0;
+  const boxes = [...g.children].filter(x => x.classList.contains('card') && x.style.display !== 'none' && x.dataset.cid).map(x => ({k: x.dataset.cid, w: Math.min(12, spanOf(x)), h: +x.dataset.rows || 1}));
+  const place = () => { const dx = last.clientX - x0, dy = last.clientY - y0 + (scrollY - sy0);
+    col = Math.max(1, Math.min(13 - n, Math.round((cardX0 + dx) / (colW + gap)) + 1)); row = Math.max(1, Math.round((cardY0 + dy) / FREE_ROW) + 1);
+    const gx = (col - 1) * (colW + gap), want = row; wantRow = want;
+    // the tile snaps to the grid under the pointer
+    c.el.style.transform = `translate(${gx - cardX0}px,${(want - 1) * FREE_ROW - cardY0}px)`;
+    // where it will really land: a tile that starts above it in the same columns pushes it down (same rule as the layout) — the outline shows that spot
+    { const P2 = {...(pageLayout(page).pos?.[dk] || {}), [c.k]: {c: col, r: want}}; row = planFree(boxes, P2).out[c.k]?.row ?? want; }
+    const gy = (row - 1) * FREE_ROW; ghost.classList.toggle('pushed', row !== want);
+    Object.assign(ghost.style, {left: gx + 'px', top: gy + 'px', width: n * colW + (n - 1) * gap + 'px', height: c.el.offsetHeight + 'px'}); };
+  // keep scrolling while the pointer rests near the top or bottom edge
+  const edge = () => { raf = 0; const vv = window.visualViewport, vTop = vv ? vv.offsetTop : 0, vBot = vv ? vv.offsetTop + vv.height : innerHeight;
+    const dy = last.clientY > vBot - 60 ? 12 : last.clientY < vTop + 50 && scrollY > 0 ? -12 : 0;
+    if (dy) { scrollBy(0, dy); place(); raf = requestAnimationFrame(edge); } };
+  const move = ev => { ev.preventDefault(); last = ev; place(); if (!raf) raf = requestAnimationFrame(edge); };
+  const onScroll = () => place();
+  place();
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); removeEventListener('scroll', onScroll);
+    cancelAnimationFrame(raf); document.body.classList.remove('lay-dragging'); ghost.remove(); c.el.classList.remove('free-moving'); c.el.style.transform = '';
     const lay = pageLayout(page), P = ((lay.pos ||= {})[dk] ||= {});
-    P[c.k] = {c: col, r: row}; render(); };
-  addEventListener('pointermove', move, {passive: false}); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+    P[c.k] = {c: col, r: wantRow}; render(); };   // save the spot you pointed at; the layout pushes it down exactly as the outline showed
+  addEventListener('pointermove', move, {passive: false}); addEventListener('pointerup', up); addEventListener('pointercancel', up); addEventListener('scroll', onScroll, {passive: true});
 }
 function fitTallCards(el) {
   pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart')) return;

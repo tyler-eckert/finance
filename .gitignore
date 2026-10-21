@@ -1,0 +1,16 @@
+# Personal data — never commit
+seed/
+private/
+*.xlsm
+*.xlsx
+*.csv
+.env
+.env.*
+supabase/.temp/
+.DS_Store
+__pycache__/
+
+# Estate planning documents — never commit
+Trust Docs/
+*.pdf
+trust_summary*.json

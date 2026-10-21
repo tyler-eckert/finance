@@ -410,15 +410,14 @@ function flowCard() {
       <div class="mini"><div class="l">Market gain</div><div class="v num ${F.T.gain >= 0 ? 'pos' : 'neg'}">${sg(F.T.gain)}</div></div>
       <div class="mini"><div class="l">Ending</div><div class="v num">${short(F.T.end)}</div></div>
       <div class="mini"><div class="l">Return · time-weighted</div><div class="v num ${F.T.ret >= 0 ? 'pos' : 'neg'}">${pct(F.T.ret)}</div></div></div>
-    <div class="chart" id="flowChart"></div><div class="legend"><span><i class="sw" style="background:var(--s2)"></i>Net deposits</span><span><i class="sw" style="background:var(--s1)"></i>Market gain</span></div>
-    <div class="scroll-x" style="margin-top:10px"><table class="table cmp"><tr><th>Account</th><th>Starting</th><th>Net deposits</th><th>Market gain</th><th>Ending</th><th>Return</th><th>Split from</th></tr>
+    <div class="scroll-x" style="margin-top:4px"><table class="table cmp"><tr><th>Account</th><th>Starting</th><th>Net deposits</th><th>Market gain</th><th>Ending</th><th>Return</th><th>Split from</th></tr>
     ${F.accts.map(a => `<tr><td class="nowrap">${esc(a.n)}</td><td>${short(a.start)}</td><td>${sg(a.dep)}</td><td class="${a.gain >= 0 ? 'pos' : 'neg'}">${sg(a.gain)}</td><td>${short(a.end)}</td><td class="${a.ret >= 0 ? 'pos' : 'neg'}">${pct(a.ret)}</td><td>${src(a)}${a.nInf ? ` <span class="chip" title="Months where the balance jumped more than 15% with no activity entered — counted as money moved in or out">${a.nInf} jump${a.nInf > 1 ? 's' : ''} as deposits</span>` : ''}</td></tr>`).join('')}
     <tr class="tot"><td>Total</td><td>${short(F.T.start)}</td><td>${sg(F.T.dep)}</td><td>${sg(F.T.gain)}</td><td>${short(F.T.end)}</td><td>${pct(F.T.ret)}</td><td></td></tr></table></div>
     <p class="muted" style="font-size:11.5px;margin-top:8px">Statements = months entered with Full activity on Balances. Estimated uses your plan settings (${short(F.contribMo)}/mo 401(k) incl. match, ${short(F.mo529)}/mo per 529). Balances only = no deposit data, so the change counts as gain — except a jump of more than 15% in one month, which is treated as money moved in or out. Enter Full activity on Balances for an exact split. Return is time-weighted, so deposits and withdrawals don’t distort it.</p></div>`;
 }
 function drawFlows() {
-  const el = $('#flowChart'); if (!el) return;
   $$('#flowR button').forEach(b => b.onclick = () => { FLOW_R = b.dataset.k; render(); });
+  const el = $('#flowChart'); if (!el) return;   // the chart was dropped from the card (v52); tiles and table stay
   const F = flowSplit();
   barChart(el, {labels: F.monthly.map(r => r.m), series: [{name: 'Net deposits', values: F.monthly.map(r => r.dep), color: 'var(--s2)'}, {name: 'Market gain', values: F.monthly.map(r => r.gain), colorFn: v => v >= 0 ? 'var(--s1)' : 'var(--neg)'}],
     height: 240, xGap: 56, xFmt: mShort, tipTitle: mLabel, tipFmt: v => (v >= 0 ? '+' : '−') + money(Math.abs(v)),
