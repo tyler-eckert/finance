@@ -62,10 +62,10 @@ function openMore() {
   openLayer('modal'); $$('.more-grid button', m).forEach(b => b.onclick = () => go(b.dataset.k));
 }
 function openLayer(id) { $('#scrim').classList.add('on'); $('#' + id).classList.add('on'); }
-function closeAll() { $('#scrim').classList.remove('on'); $('#drawer').classList.remove('on'); const m = $('#modal'); m.classList.remove('on'); setTimeout(() => { if (!m.classList.contains('on')) m.classList.remove('wide', 'sheet'); }, 220); hideTip(); }
+function closeAll() { $('#scrim').classList.remove('on'); $('#drawer').classList.remove('on'); setTimeout(() => { if (!$('#drawer').classList.contains('on')) $('#drawer').classList.remove('wide-d'); }, 300); const m = $('#modal'); m.classList.remove('on'); setTimeout(() => { if (!m.classList.contains('on')) m.classList.remove('wide', 'sheet'); }, 220); hideTip(); }
 $('#scrim').onclick = closeAll; addEventListener('keydown', e => e.key === 'Escape' && closeAll());
 $('#importBtn').onclick = openImport;
-$('#layoutBtn').onclick = () => { LAYOUT_EDIT = !LAYOUT_EDIT; render(); };
+$('#layoutBtn').onclick = () => { if (LAYOUT_EDIT) layLock(cur, $('#p-' + cur)); LAYOUT_EDIT = !LAYOUT_EDIT; render(); };
 if (!CTX.CAN_WRITE) $('#importBtn').style.display = 'none';
 (() => { const e = CTX.email || '', nm = e.split('@')[0].split(/[._-]/).filter(Boolean), av = $('.avatar');
   av.textContent = ((nm[0]?.[0] || '') + (nm[1]?.[0] || nm[0]?.[1] || '')).toUpperCase() || '·'; av.title = e; av.style.cursor = 'pointer';

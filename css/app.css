@@ -1004,3 +1004,7 @@ ol.tr-ul{padding-left:20px}
 .qc-ok{font-size:12.5px;padding:6px 0}
 .btn.sm{height:30px;padding:0 12px;font-size:12.5px}
 @media (max-width:860px){.qc-row{flex-direction:column;align-items:stretch}.qc-act{justify-content:flex-start}}
+.yt-c{cursor:pointer}.yt-c:hover{color:var(--brand-500);text-decoration:underline;text-underline-offset:2px}
+/* locked tiles (v62): fixed height outside Layout; anything extra scrolls inside the tile */
+.card.lay-locked{overflow:auto;scrollbar-gutter:stable}
+.card.lay-locked .card-h .right{flex-wrap:nowrap}
