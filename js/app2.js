@@ -284,6 +284,7 @@ function renderTx(pg) {
     ${TXF.vendor ? `<button class="chip pos" id="txVend" title="Clear vendor filter">${esc(TXF.vendor)} ✕</button>` : ''}
     ${TXF.cat !== '*' ? `<button class="chip pos" id="txCatClr" title="Clear category filter">${esc(TXF.cat || 'Uncategorized')}${TXF.sub !== '*' ? ' · ' + esc(TXF.sub === '__none' ? 'no sub-category' : TXF.sub) : ''} ✕</button>` : ''}
     <label class="tgl"><input type="checkbox" id="txUnc" ${TXF.unc ? 'checked' : ''}> Uncategorized</label>
+    ${CTX.CAN_WRITE && typeof openCleanup === 'function' ? (n => `<button class="btn" id="txQC" style="margin-left:auto" title="Find look-alike vendors, messy names, uncategorized and inconsistently filed transactions">${icon('wand')}<span>Clean up</span>${n ? `<span class="badge-n">${n}</span>` : ''}</button>`)(qcCount()) : ''}
   </div>
   ${exclBanner()}
   <div class="card" style="padding-top:8px">
@@ -301,6 +302,7 @@ function renderTx(pg) {
     ${list.length > TXF.lim ? `<div style="text-align:center;padding:14px"><button class="btn" id="txMore">Show ${Math.min(150, list.length - TXF.lim)} more</button></div>` : ''}
   </div>`;
   const re = () => { TXF.lim = 150; render(); };
+  if ($('#txQC')) $('#txQC').onclick = () => openCleanup();
   let qt; $('#txQ').oninput = e => { TXF.q = e.target.value; clearTimeout(qt); qt = setTimeout(() => { const pos = e.target.selectionStart; re(); const n = $('#txQ'); n.focus(); n.setSelectionRange(pos, pos); }, 250); };
   $('#txAcct').onchange = e => { TXF.acct = e.target.value; re(); };
   $('#txMonth').onchange = e => { TXF.month = e.target.value; re(); };
@@ -340,6 +342,8 @@ function openTxEdit(id) {
     <div><label>Category</label><select class="in" id="eCat">${catOptions(t.cat)}</select></div>
     <div><label>Sub-category</label><select class="in" id="eSub">${subOptions(t.cat, t.sub)}</select></div>
   </div>`}
+  <div class="form" style="margin-top:12px"><div style="grid-column:1/-1"><label>Vendor <span class="muted" style="font-weight:500">· renames every “${esc(vendorKey(t.desc) || '')}” transaction · pick an existing name to merge</span></label>
+    <input class="in" id="eVen" list="eVenL" value="${esc(vName(t.desc))}"><datalist id="eVenL">${[...new Set(ST.valias.map(a => a.name).concat(ST.tx.slice(0, 3000).map(x => vName(x.desc))))].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist></div></div>
   <div class="form" style="margin-top:12px"><div style="grid-column:1/-1"><label>Note</label><input class="in" id="eNote" value="${esc(t.note || '')}" placeholder="Add a note"></div></div>
   ${m.how !== 'new' ? `<div class="hint">${icon('wand')}<span>History suggests <b>${esc(m.cat)}${m.sub ? ' · ' + esc(m.sub) : ''}</b> ${confTag(m)} based on ${hist || m.n} past matches.</span></div>` : ''}
   ${same.length && !t.splits ? `<label class="tgl" style="margin-top:12px"><input type="checkbox" id="eAll"> Also apply to ${same.length} other “${esc(k)}” transactions</label>` : ''}
@@ -352,6 +356,11 @@ function openTxEdit(id) {
   $('#eSave').onclick = () => {
     flushSubs();
     t.note = $('#eNote').value;
+    // vendor: an alias on this description's vendor key, so it renames the vendor everywhere (and on future imports)
+    const vn = $('#eVen').value.trim(), was = vName(t.desc), vk = vendorKey(t.desc);
+    if (vn && vk && vn !== was) { const before = ST.valias.map(a => ({...a})), hit = VALIAS_FOR(vk), pat = hit ? hit.pattern : vk, ex = ST.valias.find(a => a.pattern === pat);
+      if (ex) ex.name = vn; else ST.valias.push({pattern: pat, name: vn}); setAliases(ST.valias);
+      setTimeout(() => toast(`Vendor: ${was} → ${vn}`, () => { ST.valias = before; setAliases(ST.valias); render(); }), 50); }
     if (!t.splits) {
       const c = $('#eCat').value, s = $('#eSub').value === '__new' ? '' : $('#eSub').value;
       const ids = [t.id].concat($('#eAll')?.checked ? same.map(x => x.id) : []);

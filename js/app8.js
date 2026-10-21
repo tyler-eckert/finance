@@ -11,7 +11,7 @@ const vName = desc => vendorName(vendorKey(desc));
 /* =====================================================================
    VENDORS
    ===================================================================== */
-const VS = {q: '', dir: 'out', xfer: false, lim: 80, sort: 'l12', cat: '*', sub: '*'};
+const VS = {q: '', dir: 'out', xfer: false, lim: 80, sort: 'l12', cat: '*', sub: '*', collapsed: false, tog: new Set(), subOpen: new Set()};
 function vendorStats() {   // name → {months: {ym: amt}, n12, last, cats, keys}
   const since = CTX.SINCE.slice(0, 7), out = {};
   const put = (name, k, m, amt, n, cat, d, sub) => {
@@ -22,6 +22,9 @@ function vendorStats() {   // name → {months: {ym: amt}, n12, last, cats, keys
     if (VS.dir === 'out' ? amt >= 0 : amt <= 0) return;
     const v = out[name] ||= {name, months: {}, cats: {}, keys: new Set(), n: {}, last: ''};
     v.months[m] = (v.months[m] || 0) + Math.abs(amt); v.n[m] = (v.n[m] || 0) + n; v.cats[cat || 'Uncategorized'] = (v.cats[cat || 'Uncategorized'] || 0) + Math.abs(amt);
+    // per category › sub-category, so a vendor that spans several shows up under each with just its share (older summary rows have no sub-category)
+    const ck = (cat || 'Uncategorized') + '|' + (sub === undefined ? '\u0000' : sub || ''), cs = (v.cs ||= {})[ck] ||= {cat: cat || 'Uncategorized', sub: sub === undefined ? null : sub || '', months: {}, n: {}};
+    cs.months[m] = (cs.months[m] || 0) + Math.abs(amt); cs.n[m] = (cs.n[m] || 0) + n;
     if (k) v.keys.add(k); if (d && d > v.last) v.last = d; else if (!d && m + '-28' > v.last) v.last = v.last || m + '-15';
   };
   (D2.vendorMonthly || []).forEach(r => { if (r.m < since) put(vendorName(r.k), r.k, r.m, r.amt, r.n, r.cat, null); });
@@ -41,6 +44,8 @@ function renderVendors(pg) {
   pg.innerHTML = `<div class="toolbar wrap">
     <div class="search">${icon('search')}<input class="in" id="vQ" placeholder="Search vendors or categories" value="${esc(VS.q)}"></div>
     <div class="seg" id="vDir"><button data-d="out" class="${VS.dir === 'out' ? 'on' : ''}">Spending</button><button data-d="in" class="${VS.dir === 'in' ? 'on' : ''}">Income</button></div>
+    <select class="in sel" id="vCat" style="width:auto;max-width:200px"><option value="*">All categories</option>${ST.cats.filter(c => c.group !== 'TTS' || VS.xfer).map(c => `<option ${VS.cat === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+    ${VS.cat !== '*' ? `<select class="in sel" id="vSub" style="width:auto;max-width:200px"><option value="*">All sub-categories</option>${(catOf(VS.cat)?.subs || []).map(x => typeof x === 'string' ? x : x.name).map(n => `<option ${VS.sub === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="__none" ${VS.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>` : ''}
     <label class="tgl"><input type="checkbox" id="vX" ${VS.xfer ? 'checked' : ''}> Include transfers</label></div>
   ${exclBanner()}
   <div class="grid g-12">
@@ -48,18 +53,49 @@ function renderVendors(pg) {
     <div class="card c-4 kpi"><div class="label">Top vendor</div><div class="val num" style="font-size:22px">${top ? esc(top.name) : '—'}</div><div class="delta">${top ? short(top.l12) + ' · ' + top.c12 + ' transactions' : ''}</div></div>
     <div class="card c-4 kpi"><div class="label">Top 10 share</div><div class="val num">${tot ? Math.round(top10 / tot * 100) : 0}%</div><div class="delta">of the last 12 months</div></div>
     <div class="card c-12"><div class="card-h"><div><h3>Vendors</h3><div class="sub">Grouped from bank descriptions · tap one for history, or to rename or merge it${ST.excl.size ? ` · ${exclLabel()}` : ''}${VS.cat !== '*' ? ` · only ${esc(VS.cat || 'Uncategorized')}${VS.sub !== '*' ? ' · ' + esc(VS.sub === '__none' ? 'no sub-category' : VS.sub) : ''} spending${VS.sub !== '*' ? ` (sub-categories go back to ${mLabel(CTX.SINCE.slice(0, 7))})` : ''}` : ''}</div></div></div>
-      <div class="scroll-x"><table class="table vt"><tr>${th('name', 'Vendor')}<th class="hide-sm">Category</th>${th('l12', 'Last 12 mo')}<th class="hide-sm">Prior 12 mo</th>${th('chg', 'Change')}${th('n', 'Txns')}<th class="hide-sm">Trend</th></tr>
-      ${rows.slice(0, VS.lim).map(v => { const d = v.l12 - v.p12; return `<tr class="click" data-v="${esc(v.name)}"><td><div class="nm">${esc(v.name)}</div><div class="ds muted mob-only-inline" style="font-size:11px">${esc(v.cat)}</div></td><td class="hide-sm muted">${esc(v.cat)}</td><td><b>${money(v.l12)}</b></td><td class="hide-sm muted">${money(v.p12)}</td>
-        <td class="${!v.p12 ? 'muted' : (d > 0) === (VS.dir === 'out') ? 'neg' : 'pos'}">${!v.p12 ? 'new' : (d >= 0 ? '+' : '−') + short(Math.abs(d))}</td><td>${v.c12}</td><td class="hide-sm" style="width:110px">${spark(m12.map(m => v.months[m] || 0), 'var(--s2)', 96, 24, false)}</td></tr>`; }).join('')}</table></div>
-      ${rows.length > VS.lim ? `<div style="text-align:center;padding:12px"><button class="btn" id="vMore">Show ${Math.min(80, rows.length - VS.lim)} more</button></div>` : ''}</div>
+      ${vendorTree(rows, m12, p12)}
+      ${rows.length > VS.lim ? `<div style="text-align:center;padding:12px"><button class="btn" id="vMore">Show ${Math.min(80, rows.length - VS.lim)} more vendors</button></div>` : ''}</div>
   </div>`;
   let qt; $('#vQ').oninput = e => { VS.q = e.target.value; clearTimeout(qt); qt = setTimeout(() => { const p = e.target.selectionStart; render(); const n = $('#vQ'); n.focus(); n.setSelectionRange(p, p); }, 250); };
   $$('#vDir button').forEach(b => b.onclick = () => { VS.dir = b.dataset.d; render(); });
 
   $('#vX').onchange = e => { VS.xfer = e.target.checked; render(); };
+  $('#vCat').onchange = e => { VS.cat = e.target.value; VS.sub = '*'; render(); };
+  if ($('#vSub')) $('#vSub').onchange = e => { VS.sub = e.target.value; render(); };
+  $$('[data-vt]', pg).forEach(el => el.onclick = e => { e.stopPropagation(); const k = el.dataset.vt; VS.tog.has(k) ? VS.tog.delete(k) : VS.tog.add(k); render(); });
+  $$('[data-vs]', pg).forEach(tr => tr.onclick = () => { const k = tr.dataset.vs; VS.subOpen.has(k) ? VS.subOpen.delete(k) : VS.subOpen.add(k); render(); });
+  if ($('#vtAll')) $('#vtAll').onclick = () => { VS.collapsed = !VS.collapsed; VS.tog.clear(); render(); };
+  if ($('#vtSubs')) $('#vtSubs').onclick = () => { const ks = [...pg.querySelectorAll('[data-vs]')].map(x => x.dataset.vs), all = ks.length && ks.every(k => VS.subOpen.has(k)); ks.forEach(k => all ? VS.subOpen.delete(k) : VS.subOpen.add(k)); render(); };
   $$('.srt', pg).forEach(b => b.onclick = e => { e.stopPropagation(); VS.sort = b.dataset.s; render(); });
   if ($('#vMore')) $('#vMore').onclick = () => { VS.lim += 80; render(); };
   $$('tr[data-v]', pg).forEach(tr => tr.onclick = () => openVendor(tr.dataset.v));
+}
+// Vendor › Category › Sub-category. Vendors show their categories by default (collapse with the caret, or all at once);
+// a category with sub-categories opens on click. Sorted by the column you pick — last 12 months, high to low, by default.
+function vendorTree(rows, m12, p12) {
+  const sumM = (o, ms) => sum(ms.map(m => o[m] || 0)), out = VS.dir === 'out';
+  const srt = a => a.sort((x, y) => VS.sort === 'chg' ? Math.abs(y.l12 - y.p12) - Math.abs(x.l12 - x.p12) : VS.sort === 'n' ? y.n - x.n : VS.sort === 'name' ? x.name.localeCompare(y.name) : y.l12 - x.l12 || y.p12 - x.p12);
+  const node = (name, cs) => { const o = {name, l12: 0, p12: 0, n: 0, spark: m12.map(() => 0)}; cs.forEach(c => { o.l12 += sumM(c.months, m12); o.p12 += sumM(c.months, p12); o.n += sumM(c.n, m12); m12.forEach((m, i) => o.spark[i] += c.months[m] || 0); }); return o; };
+  const chg = x => `<td class="${!x.p12 ? 'muted' : (x.l12 - x.p12 > 0) === out ? 'neg' : 'pos'}">${!x.p12 ? (x.l12 ? 'new' : '—') : (x.l12 - x.p12 >= 0 ? '+' : '−') + short(Math.abs(x.l12 - x.p12))}</td>`;
+  const cells = (x, lvl) => `<td>${lvl ? money(x.l12) : `<b>${money(x.l12)}</b>`}</td><td class="hide-sm muted">${money(x.p12)}</td>${chg(x)}<td>${x.n || ''}</td><td class="hide-sm" style="width:110px">${spark(x.spark, lvl ? 'var(--text-3)' : 'var(--s2)', 96, lvl ? 18 : 24, false)}</td>`;
+  const body = rows.slice(0, VS.lim).map(v => {
+    const cs = Object.values(v.cs || {}), byCat = {}; cs.forEach(c => (byCat[c.cat] ||= []).push(c));
+    const cats = srt(Object.entries(byCat).map(([c, list]) => ({...node(c, list), list}))).filter(c => c.l12 || c.p12);
+    const open = VS.collapsed ? VS.tog.has(v.name) : !VS.tog.has(v.name), tot = v.l12 || 1;
+    let h = `<tr class="click vt-v" data-v="${esc(v.name)}"><td><span class="vg-c" data-vt="${esc(v.name)}" title="${open ? 'Hide' : 'Show'} categories">${cats.length ? (open ? '▾' : '▸') : ''}</span><b class="nm">${esc(v.name)}</b>${cats.length > 1 ? ` <span class="chip vt-n">${cats.length} categories</span>` : ''}</td>${cells({...v, n: v.c12, spark: m12.map(m => v.months[m] || 0)}, 0)}</tr>`;
+    if (!open) return h;
+    cats.forEach(c => {
+      const subs = srt(Object.values(c.list.reduce((o, x) => { const k = x.sub === null ? '(older history)' : x.sub || 'No sub-category'; (o[k] ||= []).push(x); return o; }, {})).map(list => node(list[0].sub === null ? '(older history)' : list[0].sub || 'No sub-category', list))).filter(x => x.l12 || x.p12);
+      const real = subs.filter(x => x.name !== '(older history)'), canOpen = real.length > 1 || (real[0] && real[0].name !== 'No sub-category');
+      const sk = v.name + '|' + c.name, so = VS.subOpen.has(sk);
+      h += `<tr class="vt-c ${canOpen ? 'click' : ''}" ${canOpen ? `data-vs="${esc(sk)}"` : ''}><td style="padding-left:24px"><span class="vg-c">${canOpen ? (so ? '▾' : '▸') : ''}</span>${esc(c.name)}${v.l12 ? ` <span class="muted" style="font-size:11.5px">· ${Math.round(c.l12 / tot * 100)}%</span>` : ''}</td>${cells(c, 1)}</tr>`;
+      if (canOpen && so) h += subs.map(x => `<tr class="vt-s"><td style="padding-left:58px">${esc(x.name)}</td>${cells(x, 2)}</tr>`).join('');
+    });
+    return h; }).join('');
+  const th = (k, l) => `<th><button class="link srt ${VS.sort === k ? 'on' : ''}" data-s="${k}">${l}</button></th>`;
+  return `<div class="vt-tools"><button class="link" id="vtAll">${VS.collapsed ? 'Show all categories' : 'Vendors only'}</button><button class="link" id="vtSubs">Open / close sub-categories</button></div>
+    <div class="scroll-x"><table class="table vt vtree"><tr>${th('name', 'Vendor › category › sub-category')}${th('l12', 'Last 12 mo')}<th class="hide-sm">Prior 12 mo</th>${th('chg', 'Change')}${th('n', 'Txns')}<th class="hide-sm">Trend</th></tr>${body}</table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Tap a vendor for its history, or to rename or merge it · tap a category to see its sub-categories. Split transactions count toward each of their categories. “Older history” is spending before ${mLabel(CTX.SINCE.slice(0, 7))}, stored by category only.</p>`;
 }
 function openVendor(name) {
   const S = vendorStats(), v = S[name]; if (!v) return;
@@ -76,7 +112,8 @@ function openVendor(name) {
       <div class="mini"><div class="l">Last seen</div><div class="v num" style="font-size:16px">${v.last ? fmtDate(v.last) + ', ' + v.last.slice(0, 4) : '—'}</div></div></div>
     <h4 class="h4">Last 24 months</h4><div class="chart" id="vChart"></div>
     <h4 class="h4" style="margin-top:16px">By year · last 5 years</h4><div class="chart" id="vYr"></div>
-    <h4 class="h4" style="margin-top:16px">Categories</h4>${cats.map(([c, a]) => `<div class="ex-row"><span>${esc(c)}</span><b>${money(a)} <span class="muted" style="font-weight:500">${Math.round(a / cTot * 100)}%</span></b></div>`).join('')}
+    <h4 class="h4" style="margin-top:16px">Categories · all history</h4>${cats.map(([c, a]) => { const subs = Object.values(v.cs || {}).filter(x => x.cat === c && x.sub !== null).map(x => [x.sub || 'No sub-category', sum(Object.values(x.months))]).filter(x => x[1] > .5).sort((p, q) => q[1] - p[1]);
+      return `<div class="ex-row"><span>${esc(c)}</span><b>${money(a)} <span class="muted" style="font-weight:500">${Math.round(a / cTot * 100)}%</span></b></div>${subs.length > 1 || (subs[0] && subs[0][0] !== 'No sub-category') ? subs.map(([n, x]) => `<div class="ex-row vd-sub"><span>› ${esc(n)}</span><b class="muted" style="font-weight:500">${money(x)}</b></div>`).join('') : ''}`; }).join('')}
     ${CTX.CAN_WRITE ? `<h4 class="h4" style="margin-top:16px">Rename or merge</h4><div class="form" style="grid-template-columns:1fr auto"><div><input class="in" id="vRen" list="vNames" value="${esc(name)}"><datalist id="vNames">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist></div><button class="btn primary" id="vRenGo">Save</button></div>
       <p class="muted" style="font-size:11.5px;margin-top:6px">Pick an existing vendor to merge into it. Applies to all history and future imports. Raw keys: ${[...v.keys].slice(0, 6).map(esc).join(', ')}${v.keys.size > 6 ? '…' : ''}</p>` : ''}
     <h4 class="h4" style="margin-top:16px">Recent transactions</h4><div class="list" id="vList">${txs.map(t => txLi(t)).join('') || '<p class="muted">None in the loaded history.</p>'}</div>
