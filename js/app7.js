@@ -33,7 +33,7 @@ const normKey = t => t.toLowerCase().replace(/[’'$€%]/g, '').replace(MONTHS_
 const pageCards = el => [...el.querySelectorAll('.card')].filter(c => !c.parentElement.closest('.card') && !c.classList.contains('loan-card'));
 function tagCards(page, el) {
   const seen = {};
-  return pageCards(el).map(c => { let k = normKey(cardTitle(c)); seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) k += '-' + seen[k]; c.dataset.cid = k; return {el: c, k, t: cardTitle(c) || 'Untitled card'}; });
+  return pageCards(el).map(c => { let k = c.dataset.lk || normKey(cardTitle(c));   /* data-lk: fixed key for tiles whose title changes */ seen[k] = (seen[k] || 0) + 1; if (seen[k] > 1) k += '-' + seen[k]; c.dataset.cid = k; return {el: c, k, t: cardTitle(c) || 'Untitled card'}; });
 }
 const pageLayout = page => (UI.layout[page] ||= {order: [], hidden: []});
 // card order and hidden cards are kept per device (phone / computer); older saved layouts without them fall back to the shared list
@@ -41,7 +41,13 @@ const LGET = (L, key) => (L?.[key + 'By']?.[devKey()] ?? L?.[key] ?? []);
 const LDK = (page, key) => { const L = pageLayout(page), dk = devKey(); L[key + 'By'] ||= {}; if (!L[key + 'By'][dk]) L[key + 'By'][dk] = (L[key] || []).slice(); return L[key + 'By'][dk]; };
 const setOrder = (page, list) => { LDK(page, 'order'); pageLayout(page).orderBy[devKey()] = list; };
 function resetPageDev(page) { const L = UI.layout[page]; if (!L) return; const dk = devKey();
-  (L.orderBy ||= {})[dk] = []; (L.hiddenBy ||= {})[dk] = []; ['size', 'tall', 'free', 'pos'].forEach(k => { if (L[k]) delete L[k][dk]; }); }
+  (L.orderBy ||= {})[dk] = []; (L.hiddenBy ||= {})[dk] = []; ['size', 'tall', 'free', 'pos', 'lock'].forEach(k => { if (L[k]) delete L[k][dk]; }); }
+/* Locked tiles: when Layout closes, every tile's height on the page is saved (per device). Outside Layout a tile keeps that
+   height whatever its contents do (a filter, a longer list, a wrapped header), so nothing around it moves; extra content scrolls
+   inside the tile. Open Layout to resize — closing it locks the new sizes. */
+function layLock(page, el) { if (!el) return; const dk = devKey(), L = pageLayout(page), K = ((L.lock ||= {})[dk] = {});
+  pageCards(el).forEach(c => { if (!c.dataset.cid || c.style.display === 'none' || c.classList.contains('lay-hidden')) return; const h = Math.round(c.getBoundingClientRect().height); if (h > 20) K[c.dataset.cid] = h; });
+  if (typeof SYNC !== 'undefined') SYNC.schedule(); }
 // tile sizes and compact view are kept separately for a phone-size screen and a computer-size one
 const devKey = () => innerWidth <= 860 ? 'phone' : 'desk';
 const SIZES = {desk: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12], phone: [4, 6, 12]};
@@ -66,7 +72,7 @@ function applyLayout(page, el) {
     const b = document.createElement('div'); b.className = 'lay-banner';
     b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right or bottom edge (or use − / +) to resize it, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp" title="Tiles pack into any empty space, and you can drop a tile anywhere"><input type="checkbox" id="layFree" ${L.free?.[devKey()] ? 'checked' : ''}> Free placement</label><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
     el.prepend(b);
-    $('#layDone').onclick = () => { LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved'); };
+    $('#layDone').onclick = () => { layLock(page, el); LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved · tiles locked at these sizes'); };
     $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); resetPageDev(page); render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
     $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
     $('#layCompact').onchange = e => { (UI.compact ||= {})[devKey()] = e.target.checked; applyCompact(); render(); };
@@ -83,6 +89,8 @@ function applyLayout(page, el) {
     if (FREE && POS[c.k]) { const n = spanOf(c.el), col = Math.max(1, Math.min(13 - n, POS[c.k].c)); c.el.style.gridColumn = `${col} / span ${n}`; c.el.dataset.pin = POS[c.k].r; if (fr) c.el.style.gridRow = `${POS[c.k].r} / span ${fr}`; }
     c.el.dataset.extra = TL[c.k] || ''; c.el.style.height = ''; c.el.style.minHeight = ''; c.el.classList.remove('lay-tall-scroll');
     c.el.style.alignSelf = TL[c.k] ? 'start' : '';   // a card with its own height doesn't stretch to its row
+    const LKH = !LAYOUT_EDIT && L.lock?.[dk]?.[c.k]; c.el.classList.toggle('lay-locked', !!LKH);
+    if (LKH) { c.el.style.height = LKH + 'px'; c.el.style.alignSelf = 'start'; }
     const hid = LGET(L, 'hidden').includes(c.k);
     c.el.classList.toggle('lay-hidden', hid && LAYOUT_EDIT);
     c.el.style.display = hid && !LAYOUT_EDIT ? 'none' : '';
@@ -368,7 +376,7 @@ function freeDrag(e, page, el, c, dk) {
   addEventListener('pointermove', move, {passive: false}); addEventListener('pointerup', up); addEventListener('pointercancel', up); addEventListener('scroll', onScroll, {passive: true});
 }
 function fitTallCards(el) {
-  pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart')) return;
+  pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart') || c.classList.contains('lay-locked')) return;
     c.style.alignSelf = 'start'; const nat = c.getBoundingClientRect().height;   // stays 'start': its height is its own, not its row's
     if (ex > 0) c.style.minHeight = (nat + ex) + 'px'; else { c.style.height = Math.max(90, nat + ex) + 'px'; c.classList.add('lay-tall-scroll'); } });
   packFree(el);

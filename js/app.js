@@ -226,12 +226,11 @@ function waterfall(el, steps, o = {}) {
   const Yp = v => P.t + (1 - (v - y0) / (y1 - y0)) * (h - P.t - P.b);
   ticks.forEach(t => { add(s, 'line', {x1: P.l, x2: w - P.r, y1: Yp(t), y2: Yp(t)}, 'stroke:var(--grid)'); txt(s, P.l - 8, Yp(t) + 4, short(t), 'end'); });
   add(s, 'line', {x1: P.l, x2: w - P.r, y1: Yp(0), y2: Yp(0)}, 'stroke:var(--border-strong)');
-  const slot = (w - P.l - P.r) / bars.length, bw = Math.min(46, slot * .62);
+  const slot = (w - P.l - P.r) / bars.length, bw = Math.min(110, slot * .82);
   bars.forEach((b, i) => {
     const x = P.l + slot * i + (slot - bw) / 2, top = Yp(Math.max(b.from, b.to)), bot = Yp(Math.min(b.from, b.to));
     const col = b.total ? (b.v >= 0 ? 'var(--brand-700)' : 'var(--neg)') : b.v >= 0 ? 'var(--pos)' : 'var(--neutral)';
-    add(s, 'rect', {x, y: top, width: bw, height: Math.max(2, bot - top), rx: 4}, `fill:${col}${b.total ? '' : ''}`);
-    if (i < bars.length - 1) add(s, 'line', {x1: x + bw, x2: x + slot, y1: Yp(b.to), y2: Yp(b.to)}, 'stroke:var(--text-3);stroke-dasharray:2 3');
+    add(s, 'rect', {x, y: top, width: bw, height: Math.max(2, bot - top), rx: 0}, `fill:${col}${b.total ? '' : ''}`);
     txt(s, x + bw / 2, top - 6, short(b.v), 'middle', 'fill:var(--text);font-weight:600');
     const words = b.name.split(' '); txt(s, x + bw / 2, h - 22, words[0], 'middle'); if (words[1]) txt(s, x + bw / 2, h - 9, words.slice(1).join(' '), 'middle');
   });
@@ -380,6 +379,30 @@ function renderOverview(pg) {
 /* ================= page: budget ================= */
 let bMode = 'month';
 const YOPEN = new Set();
+const YCH = {cat: '', sub: ''};   // Years chart only: '' = all spending
+// a year's transactions for a category (and sub-category: null = all, '__none' = none); split lines count on their own
+function openYearTx(cat, sub, year) {
+  const yrs = Y.years.map(String).slice(-8), y = String(year || yrs[yrs.length - 1]);
+  const hit = p => (p.cat || '') === cat && (sub == null || (sub === '__none' ? !p.sub : (p.sub || '') === sub));
+  const list = []; ST.tx.forEach(t => { if (t.d.slice(0, 4) !== y) return; pieces(t).forEach(p => { if (hit(p)) list.push({t, amt: p.amt}); }); });
+  list.sort((a, b) => a.amt - b.amt);
+  const partial = `${y}-01-01` < CTX.SINCE && !ST.allLoaded, tot = sum(list.map(x => x.amt));
+  const d = $('#drawer'); d.classList.add('wide-d');
+  d.innerHTML = `<div class="dh"><div><div class="muted" style="font-size:12px;font-weight:600">Transactions · ${y}</div><h2>${esc(cat)}${sub != null ? ` <span class="muted" style="font-weight:500">› ${esc(sub === '__none' ? 'No sub-category' : sub)}</span>` : ''}</h2></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+    <div class="seg yt-yrs" style="margin:10px 0 12px;flex-wrap:wrap">${yrs.map(v => `<button data-yy="${v}" class="${v === y ? 'on' : ''}">${v}</button>`).join('')}</div>
+    <div class="stat-row" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px"><div class="mini"><div class="l">Total</div><div class="v num">${money(Math.abs(tot))}</div></div><div class="mini"><div class="l">Transactions</div><div class="v num">${list.length}</div></div><div class="mini"><div class="l">Average</div><div class="v num">${list.length ? money(Math.abs(tot) / list.length) : '—'}</div></div></div>
+    ${partial ? `<div class="banner" style="margin-bottom:10px">${icon('info')}<span>${y} starts before ${mLabel(CTX.SINCE.slice(0, 7))}, so only part of the year is loaded. <button class="link" id="ytLoad">Load full history</button></span></div>` : ''}
+    <div class="list" id="ytList">${list.slice(0, 400).map(x => txLi(x.t, x.amt)).join('') || '<p class="muted">No transactions in the loaded history.</p>'}</div>
+    ${list.length > 400 ? `<p class="muted" style="font-size:12px;margin-top:8px">Showing the largest 400 of ${list.length}.</p>` : ''}
+    <button class="btn" id="ytAll" style="margin-top:12px">${icon('tx')}<span>Open in Transactions</span></button>`;
+  openLayer('drawer');
+  $$('[data-yy]', d).forEach(b => b.onclick = () => openYearTx(cat, sub, b.dataset.yy));
+  $$('#ytList .li', d).forEach(li => li.onclick = () => openTxEdit(li.dataset.id));
+  $('#ytAll').onclick = () => { Object.assign(TXF, {cat, sub: sub == null ? '*' : sub, month: '', vendor: '', q: '', unc: false}); closeAll(); go('tx'); };
+  if ($('#ytLoad')) $('#ytLoad').onclick = async e => { e.target.textContent = 'loading…'; e.target.disabled = true;
+    try { const older = await DB.loadOlder(CTX.SINCE, 1e6), have = new Set(ST.tx.map(t => t.id)); older.forEach(t => { if (!have.has(t.id)) ST.tx.push(t); }); ST.tx.sort((a, b) => b.d.localeCompare(a.d)); ST.allLoaded = true; SYNC.adopt('tx', older.map(t => t.id)); openYearTx(cat, sub, y); }
+    catch (err) { toast('Couldn’t load: ' + err.message); } };
+}
 function renderYears(pg, seg) {
   const yrs = Y.years.map(String), idx = yrs.map((y, i) => i).filter(i => i >= yrs.length - 8), cys = String(CY);
   const exRowsY = Y.rows.filter(r => ST.excl.has(r.name));
@@ -396,18 +419,32 @@ function renderYears(pg, seg) {
   const hasSubs = cats.filter(r => subsOf(r.name).length).map(r => r.name);
   const subRows = r => { if (!YOPEN.has(r.name)) return ''; const subs = subsOf(r.name);
     const rest = show.map(i => -r.y[i] - sum(subs.map(sb => -(SY[r.name + '|' + sb][yrs[i]] || 0))));
-    return subs.map(sb => `<tr class="sub"><td><span class="tw sub-name">${esc(sb)}</span></td>${show.map(i => `<td>${short(-(SY[r.name + '|' + sb][yrs[i]] || 0))}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -(SY[r.name + '|' + sb][yrs[i]] || 0)), 'var(--s4)', 100, 22, false)}</td></tr>`).join('')
-      + (rest.some(v => Math.abs(v) >= 50) ? `<tr class="sub"><td><span class="tw sub-name"><i class="muted">No sub-category</i></span></td>${rest.map(v => `<td>${short(v)}</td>`).join('')}<td class="hide-sm"></td></tr>` : ''); };
+    return subs.map(sb => `<tr class="sub"><td><span class="tw sub-name">${esc(sb)}</span></td>${show.map(i => `<td class="yt-c" data-ytx="${esc(r.name)}" data-yts="${esc(sb)}" data-yy="${yrs[i]}">${short(-(SY[r.name + '|' + sb][yrs[i]] || 0))}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -(SY[r.name + '|' + sb][yrs[i]] || 0)), 'var(--s4)', 100, 22, false)}</td></tr>`).join('')
+      + (rest.some(v => Math.abs(v) >= 50) ? `<tr class="sub"><td><span class="tw sub-name"><i class="muted">No sub-category</i></span></td>${rest.map((v, k) => `<td class="yt-c" data-ytx="${esc(r.name)}" data-yts="__none" data-yy="${yrs[show[k]]}">${short(v)}</td>`).join('')}<td class="hide-sm"></td></tr>` : ''); };
   pg.innerHTML = `<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">${seg}<span class="chip">${yrs[idx[0]]} – ${cys}</span>${hasSubs.length ? `<button class="btn" id="yrExp" style="margin-left:auto">${icon('chev')}<span>${YOPEN.size ? 'Collapse all' : 'Expand all'}</span></button>` : ''}</div>
   <div class="grid g-12">
-    <div class="card c-12"><div class="card-h"><div><h3>Annual spending</h3><div class="sub">${exclLabel()} · dashed bar is the full-year ${CY} forecast (actuals + remaining budget)</div></div></div><div class="chart" id="yrChart"></div></div>
+    <div class="card c-12" data-lk="annual-spending"><div class="card-h"><div><h3>${YCH.cat ? esc(YCH.cat) + (YCH.sub ? ' › ' + esc(YCH.sub === '__none' ? 'No sub-category' : YCH.sub) : '') + ' by year' : 'Annual spending'}</h3><div class="sub">${YCH.cat ? (YCH.sub ? `From the monthly history · no forecast bar for sub-categories` : `Dashed bar is the full-year ${CY} forecast (actuals + remaining budget)`) : `${exclLabel()} · dashed bar is the full-year ${CY} forecast (actuals + remaining budget)`} · the filter only changes this chart</div></div>
+      <div class="right" style="display:flex;gap:8px;flex-wrap:wrap"><select class="in sel" id="ychCat" style="width:auto;max-width:220px"><option value="">All spending</option>${[['Fixed Expenses', 'Fixed'], ['Variable Expenses', 'Variable'], [null, 'Income']].map(([g, gl]) => { const rs = Y.rows.filter(r => (r.group ?? null) === g && !/Total|Net/.test(r.name)); return rs.length ? `<optgroup label="${gl}">${rs.map(r => `<option ${YCH.cat === r.name ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</optgroup>` : ''; }).join('')}</select>
+        ${YCH.cat ? `<select class="in sel" id="ychSub" style="width:auto;max-width:200px"><option value="">All sub-categories</option>${Object.keys(SY).filter(k => k.startsWith(YCH.cat + '|')).map(k => k.slice(YCH.cat.length + 1)).sort().map(sb => `<option ${YCH.sub === sb ? 'selected' : ''}>${esc(sb)}</option>`).join('')}</select>
+        <button class="btn" id="ychTx" style="height:34px">${icon('tx')}<span>Transactions</span></button>` : ''}</div></div><div class="chart" id="yrChart"></div></div>
     <div class="card c-12"><div class="card-h"><div><h3>By category</h3><div class="sub">Largest categories by ${PY} spend · open a category for its sub-categories</div></div></div>
     <div class="scroll-x"><table class="table"><tr><th>Category</th>${show.map(i => `<th>${yrs[i]}${yrs[i] === cys ? ' YTD' : ''}</th>`).join('')}<th class="hide-sm">Trend</th></tr>
-    ${cats.map(r => { const has = hasSubs.includes(r.name), op = YOPEN.has(r.name); return `<tr class="${has ? 'click' : ''} ${op ? 'open' : ''}" ${has ? `data-yc="${esc(r.name)}"` : ''}><td><span class="tw">${has ? `<button class="chev ${op ? 'on' : ''}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(r.name)}</span></td>${show.map(i => `<td>${short(-r.y[i])}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -r.y[i]), 'var(--s2)', 100, 26, false)}</td></tr>` + subRows(r); }).join('')}</table></div></div>
+    ${cats.map(r => { const has = hasSubs.includes(r.name), op = YOPEN.has(r.name); return `<tr class="${has ? 'click' : ''} ${op ? 'open' : ''}" ${has ? `data-yc="${esc(r.name)}"` : ''}><td><span class="tw">${has ? `<button class="chev ${op ? 'on' : ''}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(r.name)}</span></td>${show.map(i => `<td class="yt-c" data-ytx="${esc(r.name)}" data-yy="${yrs[i]}" title="See ${esc(r.name)} transactions in ${yrs[i]}">${short(-r.y[i])}</td>`).join('')}<td class="hide-sm" style="width:120px">${spark(show.slice(0, -1).map(i => -r.y[i]), 'var(--s2)', 100, 26, false)}</td></tr>` + subRows(r); }).join('')}</table></div></div>
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $$('[data-yc]', pg).forEach(tr => tr.onclick = () => { const k = tr.dataset.yc; YOPEN.has(k) ? YOPEN.delete(k) : YOPEN.add(k); render(); });
   if ($('#yrExp')) $('#yrExp').onclick = () => { if (YOPEN.size) YOPEN.clear(); else hasSubs.forEach(n => YOPEN.add(n)); render(); };
+  $$('[data-ytx]', pg).forEach(td => td.onclick = e => { e.stopPropagation(); openYearTx(td.dataset.ytx, td.dataset.yts ?? null, td.dataset.yy); });
+  $('#ychCat').onchange = e => { YCH.cat = e.target.value; YCH.sub = ''; render(); };
+  if ($('#ychSub')) $('#ychSub').onchange = e => { YCH.sub = e.target.value; render(); };
+  if ($('#ychTx')) $('#ychTx').onclick = () => openYearTx(YCH.cat, YCH.sub || null, cys);
+  const yRow = YCH.cat ? Y.rows.find(r => r.name === YCH.cat) : null;
+  if (YCH.cat && !yRow) YCH.cat = '';
+  if (yRow) { const inc = !yRow.group || /Income/.test(yRow.group), sg = v => inc ? v : -v;
+    const cv = YCH.sub ? idx.map(i => sg(SY[YCH.cat + '|' + YCH.sub]?.[yrs[i]] || 0)) : idx.map(i => sg(yRow.y[i]));
+    const lab = YCH.sub ? labels.slice(0, -1) : labels, vv = YCH.sub ? cv : cv.concat([sg(yRow.fcCur ?? 0)]);
+    CH.push(() => barChart($('#yrChart'), {labels: lab, series: [{name: YCH.sub || YCH.cat, values: vv, color: inc ? 'var(--s1)' : 'var(--s2)', hatchFn: i => !YCH.sub && i === lab.length - 1}], height: 250, xGap: 60}));
+    return; }
   CH.push(() => barChart($('#yrChart'), {labels, series: [{name: 'Spending', values: vals, color: 'var(--s2)', hatchFn: i => i === labels.length - 1}], height: 250, xGap: 60,
     tipExtra: i => { const j = idx[i]; return j == null ? '' : tipRow(null, 'Income', short(yr('Total Income').y[j] - sum(exRowsY.filter(r => r.group === 'Income').map(r => r.y[j])))); }}));
 }
