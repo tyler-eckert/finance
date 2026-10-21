@@ -103,7 +103,7 @@ async function signOut() { await sb.auth.signOut(); location.hash = ''; location
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/shell.js'];
+  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/app14.js', 'js/shell.js'];
   const v = CFG.version || '';
   const css = document.querySelector('link[href^="css/app.css"]'); if (css && v && !css.href.includes('?v=' + v)) css.href = 'css/app.css?v=' + v;   // the stylesheet follows the app version too
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {

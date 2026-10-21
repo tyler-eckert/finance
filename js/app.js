@@ -344,12 +344,13 @@ function renderOverview(pg) {
     ${ovAssetsCard()}${ovBalanceCard()}
     <div data-slot="month"></div><div data-slot="ytd"></div>
     ${ovVendorsCard()}
-    <div class="card c-5">
-      <div class="card-h"><div><h3>Insights</h3><div class="sub">Ranked by dollar impact</div></div><div class="right"><button class="btn" onclick="go('plan')" style="height:32px">See all</button></div></div>
-      ${insHTML(INS.slice(0, 3))}
+    <div class="card c-5 ins-card">
+      <div class="card-h"><div><h3>Insights</h3><div class="sub">Ranked by dollar impact · ${INS.length} in all</div></div><div class="right"><button class="btn" onclick="go('plan')" style="height:32px">See all</button></div></div>
+      <div class="ins-scroll">${insHTML(INS)}</div>
     </div>
-    ${ovUpcomingCard()}<div data-slot="changed"></div>
-    <div data-slot="cuts"></div><div data-slot="kids"></div>
+    <div data-slot="changed"></div><div data-slot="top"></div>
+    ${ovUpcomingCard()}<div data-slot="kids"></div>
+    <div data-slot="cuts"></div>
   </div>`;
   embedSummary($('.grid', pg));
   // allocation stacked bar

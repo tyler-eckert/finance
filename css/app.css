@@ -971,3 +971,36 @@ ol.tr-ul{padding-left:20px}
 .tr-fs td{text-align:left !important;vertical-align:top;white-space:normal;font-size:12.5px}
 .tr-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px 22px}.tr-doc{border-top:1px solid var(--border);padding-top:8px}
 .cf-py{margin-top:4px;font-size:11.5px}
+/* biggest spends (v56): never taller than its row partner; the list scrolls */
+.ts-card{display:flex;flex-direction:column}
+.ts-list{flex:1 1 auto;min-height:300px;contain:size;overflow:auto;margin-right:-6px;padding-right:6px}
+.ts-r{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.ts-r:last-child{border-bottom:0}.ts-r:hover{background:var(--surface-2)}
+.ts-i{font-size:11px;color:var(--text-3);text-align:right}
+.ts-m{display:flex;flex-direction:column;min-width:0}.ts-m b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ts-m span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg.sm button{height:26px;font-size:12px;padding:0 10px}
+/* vendors grouped (v56) */
+.vg tr.vg-h td{background:var(--surface-2)}.vg tr.vg-l1 td{background:transparent;font-size:13px}
+.vg-c{display:inline-block;width:14px;color:var(--text-3)}
+.vd-sub{font-size:12.5px;padding-left:14px}
+/* vendor › category › sub-category (v57) */
+.vtree tr.vt-v td{border-top:1px solid var(--border-strong,var(--border))}
+.vtree tr.vt-c td{font-size:12.5px;color:var(--text-2);padding-top:calc(var(--td-py) * .6);padding-bottom:calc(var(--td-py) * .6)}
+.vtree tr.vt-s td{font-size:12px;color:var(--text-3);padding-top:calc(var(--td-py) * .5);padding-bottom:calc(var(--td-py) * .5)}
+.vtree .vg-c{display:inline-block;width:16px;color:var(--text-3);cursor:pointer}
+.vtree .vt-n{font-size:10.5px;margin-left:6px}
+.vt-tools{display:flex;justify-content:flex-end;gap:16px;margin:-4px 0 6px}
+/* v58: Insights tile scrolls inside its row; scrolling lists keep the numbers clear of the scrollbar */
+.ins-card{display:flex;flex-direction:column}
+.ins-scroll{flex:1 1 auto;min-height:320px;contain:size;overflow:auto;padding-right:14px;scrollbar-gutter:stable}
+.ts-list{margin-right:0;padding-right:14px;scrollbar-gutter:stable}
+/* transactions · clean up (v60) */
+.badge-n{margin-left:6px;min-width:20px;height:20px;padding:0 6px;border-radius:99px;background:var(--neg);color:#fff;font-size:11px;font-weight:700;display:inline-grid;place-items:center}
+.qc-body{max-height:min(70vh,760px);overflow:auto;padding-right:10px;scrollbar-gutter:stable}
+.qc-sec{margin-bottom:22px}.qc-h h3{font-size:15px;margin:0;display:flex;align-items:center;gap:8px}.qc-h .muted{font-size:12px;margin:2px 0 8px}
+.qc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--border)}
+.qc-main{flex:1;min-width:0}.qc-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.qc-v{display:inline-flex;align-items:center;gap:6px;margin:2px 14px 2px 0;font-size:13px}
+.qc-ok{font-size:12.5px;padding:6px 0}
+.btn.sm{height:30px;padding:0 12px;font-size:12.5px}
+@media (max-width:860px){.qc-row{flex-direction:column;align-items:stretch}.qc-act{justify-content:flex-start}}

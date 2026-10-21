@@ -117,6 +117,8 @@ function renderSummary(pg, embed = false) {
         <div class="sum-kv" style="margin-top:10px"><span>Income</span><b class="num ${YT.inc >= LY.inc ? 'pos' : 'neg'}">${YT.inc >= LY.inc ? '+' : '−'}${short(Math.abs(YT.inc - LY.inc))} <span class="muted">vs last year</span></b></div>`
       : '<p class="muted">Not enough history for last year yet.</p>'}</div>
 
+    ${topSpendCard(M, monName)}
+
     <div class="card c-12"><div class="card-h"><div><h3>Easy places to cut</h3><div class="sub">Ideas from our own spending · ${ideas.total > 0 ? `about <b>${short(ideas.total)}/yr</b> if we act on all of them` : 'nothing stands out right now'}</div></div></div>
       <div class="cut-grid">${ideas.groups.map(g => `<div class="cut"><h4>${g.t}</h4><p class="muted">${g.d}</p>${g.items.map(it => `<div class="cut-i"><span>${esc(it.n)}${it.s ? `<small class="muted">${esc(it.s)}</small>` : ''}</span><b class="num">${it.v}</b>${it.h && CTX.CAN_WRITE ? `<button class="cut-x" data-cuthide="${esc(it.h)}" title="Not a place to cut — hide it" aria-label="Hide ${esc(it.h)}">×</button>` : ''}</div>`).join('')}<div class="cut-t"><span>Could save</span><b class="num pos">~${short(g.save)}/yr</b></div></div>`).join('') || '<p class="muted">No easy cuts found — spending looks in line with usual.</p>'}</div></div>
 
@@ -149,6 +151,9 @@ function renderSummary(pg, embed = false) {
           <div class="muted" style="font-size:12px">${on ? `Covers ${Math.round(c.covered * 100)}% of the ${short(c.drawn)} we plan to pull over 4 years` : `${Math.round(c.covered * 100)}% of the ${short(DATA.assume.collegeTarget)} goal`}${ok ? '' : ` · about <b>${money(c.extra)}/mo</b> more would close the gap`}</div></div>`; }).join('')}</div></div>` : ''}
   </div>`;
 
+  $$('[data-tsv]', pg).forEach(b => b.onclick = () => { UI.topSpend = b.dataset.tsv; SYNC.schedule(); render(); });
+  $$('[data-tsx]', pg).forEach(li => li.onclick = () => openTxEdit(li.dataset.tsx));
+  $$('[data-tsn]', pg).forEach(li => li.onclick = () => openVendor(li.dataset.tsn));
   $('#smPrev', pg).onclick = () => { SUMM.m = ymPlus(M, -1); render(); };
   $('#smNext', pg).onclick = () => { SUMM.m = ymPlus(M, 1); render(); };
   $('#smPrint', pg).onclick = () => window.print();
@@ -384,6 +389,21 @@ function ovUpcomingCard() {
   return `<div class="card c-5" id="ovUp"><div class="card-h"><div><h3>Coming up · next 12 months</h3><div class="sub">Tax payments and milestones · ${money(-sum(items.filter(i => i.k === 'Tax').map(i => i.a)))} of tax</div></div></div>
     <div class="tl">${items.map(e => `<div class="ev"><div class="when">${fd(e.d)}</div><div class="row"><div><div class="nm" style="font-weight:600"><span class="chip ${e.k === 'Tax' ? 'neg' : e.k === 'Loan' ? 'pos' : ''}" style="margin-right:6px">${e.k}</span>${esc(e.n)}</div>${e.ds ? `<div class="muted" style="font-size:12px">${esc(e.ds)}</div>` : ''}</div><div class="amt num">${e.a ? money(e.a) : ''}</div></div></div>`).join('') || '<p class="muted">Nothing scheduled in the next year.</p>'}</div></div>`;
 }
+// the month's biggest spends: single purchases (split lines count on their own), or totals by vendor
+function topSpendCard(M, monName) {
+  const mode = UI.topSpend || 'items', items = [], byV = {};
+  ST.tx.forEach(t => { if (t.d.slice(0, 7) !== M) return; pieces(t).forEach(p => {
+    if (!(p.amt < 0) || !p.cat || p.cat === 'TTS' || ST.excl.has(p.cat) || sKind(p.cat) !== 'out') return;
+    const v = vName(t.desc); items.push({id: t.id, d: t.d, v, cat: p.cat, sub: p.sub || '', a: -p.amt});
+    const o = byV[v] ||= {v, a: 0, n: 0, cats: {}}; o.a += -p.amt; o.n++; o.cats[p.cat] = (o.cats[p.cat] || 0) - p.amt; }); });
+  const tot = sum(items.map(i => i.a)), list = mode === 'vendors' ? Object.values(byV).sort((a, b) => b.a - a.a).slice(0, 12) : items.sort((a, b) => b.a - a.a).slice(0, 12);
+  const top = sum(list.map(x => x.a));
+  return `<div class="card c-5 ts-card"><div class="card-h"><div><h3>Biggest spends · ${monName}</h3><div class="sub">${list.length ? `Top ${list.length} = ${short(top)} of ${short(tot)} spent (${tot ? Math.round(top / tot * 100) : 0}%)` : 'No spending recorded'}</div></div>
+      <div class="right"><div class="seg sm"><button data-tsv="items" class="${mode === 'items' ? 'on' : ''}">Purchases</button><button data-tsv="vendors" class="${mode === 'vendors' ? 'on' : ''}">Vendors</button></div></div></div>
+    <div class="ts-list">${list.map((x, i) => mode === 'vendors'
+      ? `<div class="ts-r click" data-tsn="${esc(x.v)}"><span class="ts-i">${i + 1}</span><div class="ts-m"><b>${esc(x.v)}</b><span class="muted">${x.n} purchase${x.n === 1 ? '' : 's'} · ${esc(Object.entries(x.cats).sort((a, b) => b[1] - a[1]).map(c => c[0]).slice(0, 2).join(', '))}</span></div><b class="num">${money(x.a)}</b></div>`
+      : `<div class="ts-r click" data-tsx="${x.id}"><span class="ts-i">${i + 1}</span><div class="ts-m"><b>${esc(x.v)}</b><span class="muted">${MON[+x.d.slice(5, 7) - 1]} ${+x.d.slice(8, 10)} · ${esc(x.cat)}${x.sub ? ' › ' + esc(x.sub) : ''}</span></div><b class="num">${money(x.a)}</b></div>`).join('') || '<p class="muted">Nothing yet.</p>'}</div></div>`;
+}
 // Summary cards to fold into the Overview (minus the ones the Overview already covers)
 const OV_DROP = /^(Spending compared with past years|Net worth|Where it is|What we kept each month|Savings)$/;
 function embedSummary(grid) {
@@ -393,7 +413,8 @@ function embedSummary(grid) {
   const keep = cards.filter(c => !OV_DROP.test(T(c))), find = re => keep.find(c => re.test(T(c)));
   const glance = find(/at a glance$/); if (glance && tb) { const st = tb.querySelector('.stepper'); const h = glance.querySelector('.card-h'); if (st && h) { const r = document.createElement('div'); r.className = 'right'; r.appendChild(st); h.appendChild(r); } }
   const chg = find(/^What’s changed$/); if (chg) { chg.classList.remove('c-5'); chg.classList.add('c-7'); }
-  const slots = {glance: find(/at a glance$/), notes: find(/^Notes for /), month: find(/spending vs\. budget$/), ytd: find(/^The year so far$/), changed: chg, cuts: find(/^Easy places to cut$/), kids: find(/^Kids’ college$/)};
+  const slots = {glance: find(/at a glance$/), notes: find(/^Notes for /), month: find(/spending vs\. budget$/), ytd: find(/^The year so far$/), changed: chg, cuts: find(/^Easy places to cut$/), kids: find(/^Kids’ college$/), top: find(/^Biggest spends/)};
+  if (slots.kids) { slots.kids.classList.remove('c-12'); slots.kids.classList.add('c-7'); }
   $$('[data-slot]', grid).forEach(ph => { const c = slots[ph.dataset.slot]; if (c) ph.replaceWith(c); else ph.remove(); });
 }
 
