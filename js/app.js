@@ -3,9 +3,11 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sum = a => a.reduce((x, y) => x + (y || 0), 0);
-const money = (v, d = 0) => (v < 0 ? '−' : '') + '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+// ZDASH: pages that show a zero as $--- (set while Budget vs. actual draws)
+let ZDASH = false; const ZD = '<span class="zd">$---</span>';
+const money = (v, d = 0) => ZDASH && Math.abs(v) < .5 / 10 ** d ? ZD : (v < 0 ? '−' : '') + '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
 const short = (v, d) => {
-  const a = Math.abs(v), s = v < 0 ? '−' : '';
+  const a = Math.abs(v), s = v < 0 ? '−' : ''; if (ZDASH && a < .5) return ZD;
   if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(d ?? (a >= 1e7 ? 1 : 2)) + 'M';
   if (a >= 1e3) return s + '$' + (a / 1e3).toFixed(d ?? (a >= 1e5 ? 0 : 1)) + 'k';
   return s + '$' + a.toFixed(0);

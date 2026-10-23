@@ -45,7 +45,7 @@ function renderVendors(pg) {
     <div class="search">${icon('search')}<input class="in" id="vQ" placeholder="Search vendors or categories" value="${esc(VS.q)}"></div>
     <div class="seg" id="vDir"><button data-d="out" class="${VS.dir === 'out' ? 'on' : ''}">Spending</button><button data-d="in" class="${VS.dir === 'in' ? 'on' : ''}">Income</button></div>
     <select class="in sel" id="vCat" style="width:auto;max-width:200px"><option value="*">All categories</option>${ST.cats.filter(c => c.group !== 'TTS' || VS.xfer).map(c => `<option ${VS.cat === c.name ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-    ${VS.cat !== '*' ? `<select class="in sel" id="vSub" style="width:auto;max-width:200px"><option value="*">All sub-categories</option>${(catOf(VS.cat)?.subs || []).map(x => typeof x === 'string' ? x : x.name).map(n => `<option ${VS.sub === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="__none" ${VS.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>` : ''}
+    ${VS.cat !== '*' ? `<select class="in sel" id="vSub" style="width:auto;max-width:200px"><option value="*">All sub-categories</option>${(catOf(VS.cat)?.subs || []).map(x => typeof x === 'string' ? x : x.name).sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})).map(n => `<option ${VS.sub === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}<option value="__none" ${VS.sub === '__none' ? 'selected' : ''}>No sub-category</option></select>` : ''}
     <label class="tgl"><input type="checkbox" id="vX" ${VS.xfer ? 'checked' : ''}> Include transfers</label></div>
   ${exclBanner()}
   <div class="grid g-12">

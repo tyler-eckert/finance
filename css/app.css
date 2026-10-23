@@ -1008,3 +1008,5 @@ ol.tr-ul{padding-left:20px}
 /* locked tiles (v62): fixed height outside Layout; anything extra scrolls inside the tile */
 .card.lay-locked{overflow:auto;scrollbar-gutter:stable}
 .card.lay-locked .card-h .right{flex-wrap:nowrap}
+.zd{color:var(--text-3);opacity:.55;font-weight:400 !important}
+.cash-t td.ind{padding-left:16px}.cash-t tr.grp td{font-weight:700;font-size:12px;color:var(--text-2);padding-top:12px}.cash-t tr.muted-row td{font-size:12px}
