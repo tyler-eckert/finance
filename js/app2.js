@@ -203,23 +203,43 @@ function renderBudget(pg) {
     ${kpi(MON[m1 - 1] + ' income', inc, true, 'c-2')}${kpi(MON[m1 - 1] + ' spending', exp, false, 'c-2')}${kpi(MON[m1 - 1] + ' net', net, true, 'c-2')}${kpi('Income · YTD', yI, true, 'c-2')}${kpi('Spending · YTD', yE, false, 'c-2')}${kpi('Net · YTD', yN, true, 'c-2')}
     <div class="card c-7"><div class="card-h"><div><h3>Biggest variances</h3><div class="sub">Green = under budget · red = over · click to drill in</div></div></div><div class="chart" id="varChart"></div></div>
     <div class="card c-5"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${bMode === 'month' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div></div>
+    <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div>
+        <div class="right pj-ctl"><span class="muted">Projection</span><div class="seg sm" id="pjMode"><button data-k="budget" class="${UI.projMode === 'budget' ? 'on' : ''}" title="Actual so far + the budget for the rest of the year">Budget</button><button data-k="smart" class="${UI.projMode !== 'budget' ? 'on' : ''}" title="Actual so far + a blend of budget and how you’ve actually been spending">Smart</button></div>
+        ${UI.projMode !== 'budget' ? `<label class="pj-w" title="How much the rest of the year leans on the budget vs. your spending pattern">Budget <b id="pjWv">${Math.round((UI.projW ?? .7) * 100)}%</b><input type="range" id="pjW" min="0" max="100" step="5" value="${Math.round((UI.projW ?? .7) * 100)}"></label>` : ''}</div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
-  const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, used * 100)}%"></i></div><span class="muted num" style="font-size:11.5px;width:38px">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
+  // % used: every track runs 0–150%, so the 100% tick sits in the same spot on every row
+  const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar pb150" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(150, used * 100) / 1.5}%"></i><b class="pb-100"></b></div><span class="muted num pb-l">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
+  // projected for the year: actual so far + the budget for the rest of the year
+  const proj = r => { if (r.rest == null) return '<td class="proj"></td><td class="pj-d"></td>'; const p = r.ay + r.rest, d = p - r.fy;
+    const tip = r.rb != null && UI.projMode !== 'budget' ? `So far ${money(r.ay)} · rest of year: budget ${money(r.rb)}, your pace ${money(r.rp)} → ${money(r.rest)} at ${Math.round((r.w ?? UI.projW ?? .7) * 100)}% budget` : `So far ${money(r.ay)} + ${money(r.rest)} budget for the rest of the year`;
+    return `<td class="proj" title="${esc(tip.replace(/<[^>]+>/g, ''))}">${money(p)}</td>${vcell(d).replace('<td class="', '<td class="pj-d ')}`; };
   // table: the month and year-to-date side by side for the selected month
   const AM = actuals(y, m1, m1), AY = actuals(y, 1, m1), mLbl = MON[m1 - 1];
-  const R = c => ({bm: budgetFor(y, c, m1, m1), am: AM.A[c] || 0, by: budgetFor(y, c, 1, m1), ay: AY.A[c] || 0});
-  const cells = (r, income, muteB) => `<td class="muted bm">${money(r.bm)}</td><td>${money(r.am)}</td>${vcell(r.am - r.bm)}<td class="muted by">${money(r.by)}</td><td>${money(r.ay)}</td>${vcell(r.ay - r.by)}${bar(r.ay, r.by, income)}`;
-  const NC = 8;
-  let h = `<tr class="bh1"><th rowspan="2">Category</th><th colspan="3" class="bgrp">${mLbl} ${y}</th><th colspan="3" class="bgrp">Year to date · Jan – ${mLbl}</th><th rowspan="2" class="bar-cell">% used (YTD)</th></tr>
-    <tr class="bh2"><th class="bm">Budget</th><th>Actual</th><th>Variance</th><th class="by">Budget</th><th>Actual</th><th>Variance</th></tr>`; const HAS = new Set();
+  /* Smart projection for the months left in the year, per category:
+       rest = Σ  w × budget(month) + (1 − w) × pace(month)
+     pace(month) = your typical month lately (median of the last 6 full months, so one-off lumps don't skew it)
+                 + how far that same month last year sat from last year's typical month (seasonality and annual bills: April tax, December gifts…)
+     w = how much it leans on the budget (the slider, 70% by default). Budget mode is w = 100%. */
+  const SMART = UI.projMode !== 'budget', W = SMART ? (UI.projW ?? .7) : 1, MMs = typeof summMonthly === 'function' ? summMonthly() : {};
+  const med = a => { const b = a.slice().sort((x, z) => x - z), n = b.length; return n ? (n % 2 ? b[(n - 1) / 2] : (b[n / 2 - 1] + b[n / 2]) / 2) : 0; };
+  const mk = (yy, mm) => `${yy}-${String(mm).padStart(2, '0')}`, PJ = {};
+  const smart = c => { if (PJ[c]) return PJ[c]; const at = k => MMs[k]?.[c] || 0;
+    const recent = med(Array.from({length: 6}, (_, k) => at(ymPlus(mk(y, m1), -k)))), ly = Array.from({length: 12}, (_, k) => at(mk(y - 1, k + 1))), lyMed = med(ly), hasLY = ly.some(v => Math.abs(v) >= 1);
+    let bud = 0, pace = 0; for (let m = m1 + 1; m <= 12; m++) { bud += budgetFor(y, c, m, m); pace += recent + (hasLY ? ly[m - 1] - lyMed : 0); }
+    const w = /^tax(es)?$/i.test(c) ? 1 : W;   // estimated tax payments are scheduled, not a spending habit: keep them on the budget
+    return (PJ[c] = {bud, pace, w, rest: w * bud + (1 - w) * pace}); };
+  const R = c => { const sm = m1 < 12 ? smart(c) : {bud: 0, pace: 0, rest: 0}; return {bm: budgetFor(y, c, m1, m1), am: AM.A[c] || 0, by: budgetFor(y, c, 1, m1), ay: AY.A[c] || 0, rest: sm.rest, rb: sm.bud, rp: sm.pace, w: sm.w, fy: budgetFor(y, c, 1, 12)}; };
+  const cells = (r, income, muteB) => `<td class="muted bm">${money(r.bm)}</td><td>${money(r.am)}</td>${vcell(r.am - r.bm)}<td class="muted by">${money(r.by)}</td><td>${money(r.ay)}</td>${vcell(r.ay - r.by)}${bar(r.ay, r.by, income)}${proj(r)}`;
+  const NC = 10;
+  let h = `<tr class="bh1"><th rowspan="2">Category</th><th colspan="3" class="bgrp">${mLbl} ${y}</th><th colspan="3" class="bgrp">Year to date · Jan – ${mLbl}</th><th rowspan="2" class="bar-cell">% used (YTD)</th><th colspan="2" class="bgrp proj" title="${SMART ? 'Actual so far plus a blend of budget and your spending pace for the rest of the year' : 'Actual so far plus the budget for the rest of the year'}">Projected · full year ${y}${SMART ? ' · smart' : ''}</th></tr>
+    <tr class="bh2"><th class="bm">Budget</th><th>Actual</th><th>Variance</th><th class="by">Budget</th><th>Actual</th><th>Variance</th><th class="proj">Projected</th><th>vs budget</th></tr>`; const HAS = new Set();
   const gsum = (g, k) => sum(ST.cats.filter(c => c.group === g && !ST.excl.has(c.name)).map(c => R(c.name)[k]));
-  const gR = g => ({bm: gsum(g, 'bm'), am: gsum(g, 'am'), by: gsum(g, 'by'), ay: gsum(g, 'ay')});
+  const gR = g => ({bm: gsum(g, 'bm'), am: gsum(g, 'am'), by: gsum(g, 'by'), ay: gsum(g, 'ay'), rest: gsum(g, 'rest'), rb: gsum(g, 'rb'), rp: gsum(g, 'rp'), fy: gsum(g, 'fy')});
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
     h += `<tr class="grp"><td colspan="${NC}">${g.l}</td></tr>`;
     const income = g.k === 'Income';
@@ -232,17 +252,19 @@ function renderBudget(pg) {
       if (open) subs.sort((p, q) => (AY.S[c + '|' + p] || 0) - (AY.S[c + '|' + q] || 0)).forEach(sb => {
         const bm = subBudgetFor(y, c, sb, m1, m1), by = subBudgetFor(y, c, sb, 1, m1), am = AM.S[c + '|' + sb] || 0, ay = AY.S[c + '|' + sb] || 0;
         h += `<tr class="click sub" data-cat="${esc(c)}" data-sub="${esc(sb)}"><td><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>
-          <td class="muted bm">${bm == null ? '' : money(bm)}</td><td>${money(am)}</td>${bm == null ? '<td></td>' : vcell(am - bm)}<td class="muted by">${by == null ? '' : money(by)}</td><td>${money(ay)}</td>${by == null ? '<td></td>' : vcell(ay - by)}${by == null ? '<td class="bar-cell"></td>' : bar(ay, by, income)}</tr>`;
+          <td class="muted bm">${bm == null ? '' : money(bm)}</td><td>${money(am)}</td>${bm == null ? '<td></td>' : vcell(am - bm)}<td class="muted by">${by == null ? '' : money(by)}</td><td>${money(ay)}</td>${by == null ? '<td></td>' : vcell(ay - by)}${by == null ? '<td class="bar-cell"></td>' : bar(ay, by, income)}${by == null ? '<td class="proj"></td><td class="pj-d"></td>' : proj({ay, rest: m1 < 12 ? subBudgetFor(y, c, sb, m1 + 1, 12) || 0 : 0, fy: subBudgetFor(y, c, sb, 1, 12) || 0})}</tr>`;
       });
     });
     h += `<tr class="tot"><td>Total ${g.l.toLowerCase()}</td>${cells(gR(g.k), income)}</tr>`;
   });
-  if (exRows.length) h += `<tr class="grp"><td colspan="${NC}">Excluded from analysis</td></tr>` + [...ST.excl].map(n => ({n, r: R(n)})).filter(x => x.r.am || x.r.bm || x.r.ay || x.r.by).map(x => `<tr class="excl"><td>${esc(x.n)}</td><td class="muted bm">${money(x.r.bm)}</td><td class="muted">${money(x.r.am)}</td><td></td><td class="muted by">${money(x.r.by)}</td><td class="muted">${money(x.r.ay)}</td><td></td><td class="bar-cell"></td></tr>`).join('');
-  const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay}));
-  h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td></tr>`;
+  if (exRows.length) h += `<tr class="grp"><td colspan="${NC}">Excluded from analysis</td></tr>` + [...ST.excl].map(n => ({n, r: R(n)})).filter(x => x.r.am || x.r.bm || x.r.ay || x.r.by).map(x => `<tr class="excl"><td>${esc(x.n)}</td><td class="muted bm">${money(x.r.bm)}</td><td class="muted">${money(x.r.am)}</td><td></td><td class="muted by">${money(x.r.by)}</td><td class="muted">${money(x.r.ay)}</td><td></td><td class="bar-cell"></td><td class="proj"></td><td></td></tr>`).join('');
+  const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay, rest: a.rest + b.rest, rb: a.rb + b.rb, rp: a.rp + b.rp, fy: a.fy + b.fy}));
+  h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td>${proj(nR)}</tr>`;
   h += cashRows(NC, k => { const m = `${y}-${String(m1).padStart(2, '0')}`; return [['Starting', ymPlus(m, -1), ymPlus(`${y}-01`, -1)], ['Ending', m, m]].map(([l, a, b]) =>
-    [l, `<td class="muted bm"></td><td>${cashCell(k, a)}</td><td></td><td class="muted by"></td><td>${cashCell(k, b)}</td><td></td><td class="bar-cell"></td>`]); });
+    [l, `<td class="muted bm"></td><td>${cashCell(k, a)}</td><td></td><td class="muted by"></td><td>${cashCell(k, b)}</td><td></td><td class="bar-cell"></td><td class="proj"></td><td></td>`]); });
   $('#bvaTable').innerHTML = h;
+  $$('#pjMode button').forEach(b => b.onclick = () => { UI.projMode = b.dataset.k; SYNC.schedule(); render(); });
+  if ($('#pjW')) { $('#pjW').oninput = e => { $('#pjWv').textContent = e.target.value + '%'; }; $('#pjW').onchange = e => { UI.projW = +e.target.value / 100; SYNC.schedule(); render(); }; }
   $$('#bvaTable .chev').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.tg; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('#bvaTable tr.click').forEach(tr => tr.onclick = () => openCatTx(tr.dataset.cat, tr.dataset.sub, m0, m1));
   CH.push(() => divergingBars($('#varChart'), top, {onClick: r => openCatTx(r.name, undefined, m0, m1)}),
@@ -564,6 +586,21 @@ function drawImport() {
 const BGROUPS = ['Cash', 'Investing', 'Retirement', 'College', 'Debt', 'Other'];
 let balM = null, balView = 'grid', balInactive = false;   // history grid by default: balances go in once a month
 const acctLive = (a, i) => a.active !== false && (a.v[i] != null || a.v.slice(Math.max(0, i - 5), i + 1).some(v => v != null && Math.abs(v) >= .5) || (a.v.slice(0, i + 1).filter(v => v != null).pop() || 0) !== 0);
+// rename an account (and its institution label); transactions, the cash plan and every chart follow the new name
+function openRenameAccount(a) {
+  const m = $('#modal'); m.classList.remove('wide');
+  m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">Rename account</h2><p class="muted" style="font-size:12.5px">Balances and transactions stay attached — only the name changes.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
+    <div class="form"><div style="grid-column:1/-1"><label>Name</label><input class="in" id="raN" value="${esc(a.name)}"></div><div style="grid-column:1/-1"><label>Institution</label><input class="in" id="raI" value="${esc(a.inst || '')}"></div></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="raGo">Save</button></div>`;
+  openLayer('modal'); setTimeout(() => { $('#raN').focus(); $('#raN').select(); }, 50);
+  const go = () => { const n = $('#raN').value.trim(), inst = $('#raI').value.trim(), old = a.name; if (!n) return $('#raN').focus();
+    if (n !== old && ST.bal.accounts.some(x => x !== a && x.kind === 'account' && x.name.toLowerCase() === n.toLowerCase())) return toast('Another account already has that name');
+    a.name = n; a.inst = inst || a.inst;
+    if (n !== old) { ST.tx.forEach(t => { if (t.acct === old) t.acct = n; }); if (a.id && typeof MAP !== 'undefined' && MAP.acctName) MAP.acctName[a.id] = n;
+      if (UI.cash?.accts) UI.cash.accts = UI.cash.accts.map(x => x === old ? n : x); if (TXF.acct === old) TXF.acct = n; }
+    closeAll(); render(); toast(n !== old ? `Renamed ${old} → ${n}` : 'Saved'); };
+  $('#raGo').onclick = go; $('#raN').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
 function renderBalances(pg) {
   const B = ST.bal, months = B.months;
   if (balM == null) { const lastFull = months.map((m, j) => B.accounts.filter(a => a.v[j] != null).length); let j = lastFull.length - 1; while (j > 0 && !lastFull[j]) j--; balM = Math.min(months.length - 1, j + (lastFull[j] >= B.accounts.length * .8 ? 1 : 0)); }
@@ -596,7 +633,7 @@ function renderBalances(pg) {
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
         <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
-        return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : short(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
+        return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : short(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn acct-ren" data-ren-a="${kOf(a)}" title="Rename">${icon('edit')}</button>` : ''}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
           return `<td class="${j === A ? 'anc' : ''}"><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
           ${vc(val(a, A), val(a, A - 1), sg)}${vc(val(a, A), prevYA(a, ya), sg)}</tr>`).join(''); }).join('')}
       <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${short(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;
@@ -613,7 +650,7 @@ function renderBalances(pg) {
     <div class="card c-4 kpi"><div class="label">Quick fill${CTX.CAN_WRITE ? '' : ' · view only'}</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn" id="copyAll">${icon('undo')}<span>Carry forward blanks</span></button><button class="btn" id="pasteBtn">${icon('file')}<span>Paste values</span></button></div><div class="muted" style="font-size:11.5px;margin-top:8px">Saved as you type · loans here are statement balances</div></div>
     ${groups.map(g => `<div class="card c-6"><div class="card-h"><div><h3>${g}</h3><div class="sub">${short(sum(VA.filter(a => a.group === g).map(a => a.v[i] ?? a.v[i - 1] ?? 0)))}${g === 'Debt' ? ' owed' : ''}${VA.some(a => a.group === g && a.v[i] == null) ? ' · incl. last month for blanks' : ''}</div></div></div>
       ${VA.map(a => a.group !== g ? '' : `<div class="bal-row ${a.v[i] == null ? 'empty' : ''} ${a.active === false ? 'inact' : ''}" data-k="${kOf(a)}">
-        <div class="bal-nm"><div class="nm">${esc(a.name)}${a.active === false ? ' <span class="chip">Inactive</span>' : ''}</div><div class="ds">${esc(a.inst)} · last ${a.v[i - 1] != null ? short(a.v[i - 1]) : '—'}${a.kind === 'account' && ['Investing', 'Retirement', 'College'].includes(a.group) && CTX.CAN_WRITE ? ` · <button class="link" data-act="${kOf(a)}">${a.rollup ? 'By account' : 'Split into accounts'}</button>` : ''}</div></div>
+        <div class="bal-nm"><div class="nm">${esc(a.name)}${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn acct-ren" data-ren-a="${kOf(a)}" title="Rename">${icon('edit')}</button>` : ''}${a.active === false ? ' <span class="chip">Inactive</span>' : ''}</div><div class="ds">${esc(a.inst)} · last ${a.v[i - 1] != null ? short(a.v[i - 1]) : '—'}${a.kind === 'account' && ['Investing', 'Retirement', 'College'].includes(a.group) && CTX.CAN_WRITE ? ` · <button class="link" data-act="${kOf(a)}">${a.rollup ? 'By account' : 'Split into accounts'}</button>` : ''}</div></div>
         <div class="bal-sp hide-sm">${spark(a.v.slice(Math.max(0, i - 11), i + 1).map((v, j, arr) => v ?? arr[j - 1] ?? 0), g === 'Debt' ? 'var(--s5)' : 'var(--s1)', 70, 26, false)}</div>
         <div class="bal-in"><span>$</span><input class="in num balIn" ${a.rollup ? 'readonly title="Sum of the accounts under it — use Activity by account"' : ''} inputmode="decimal" placeholder="${a.v[i - 1] != null ? Math.round(a.v[i - 1]).toLocaleString() : '0'}" value="${a.v[i] != null ? a.v[i].toLocaleString('en-US', {maximumFractionDigits: 2}) : ''}"></div>
         <div class="bal-ch num">${a.v[i] != null && a.v[i - 1] ? `<span class="${(a.v[i] - a.v[i - 1]) * signOf(a) >= 0 ? 'pos' : 'neg'}">${pct((a.v[i] - a.v[i - 1]) / a.v[i - 1], 1)}</span>` : a.v[i] == null ? '<span class="tag new">Due</span>' : ''}</div>${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn bal-hide" data-hide="${kOf(a)}" title="${a.active === false ? 'Mark active' : 'Mark inactive (hide)'}">${icon(a.active === false ? 'eye' : 'eyeOff')}</button>` : ''}</div>`).join('')}</div>`).join('')}
@@ -634,6 +671,7 @@ function renderBalances(pg) {
   $('#balInact').onchange = e => { balInactive = e.target.checked; render(); };
   $$('[data-hide]', pg).forEach(b => b.onclick = () => { const a = B.accounts[+b.dataset.hide]; a.active = a.active === false; render(); toast(a.active ? `${a.name} is active again` : `${a.name} hidden · tick “Show inactive” to see it`, () => { a.active = !a.active; render(); }); });
   $$('[data-act]', pg).forEach(b => b.onclick = () => openActivity(B.accounts[+b.dataset.act], i));
+  $$('[data-ren-a]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); openRenameAccount(B.accounts[+b.dataset.renA]); });
   if (typeof wireChecks === 'function') wireChecks(pg);
 }
 function openPaste(i) {
