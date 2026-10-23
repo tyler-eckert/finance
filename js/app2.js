@@ -113,7 +113,7 @@ function toast(msg, undo) {
 }
 const catOptions = (sel, {blank = 'Uncategorized', any = false} = {}) => (any ? `<option value="*">Any category</option>` : '') + `<option value="">${blank}</option>` +
   GROUPS.map(g => `<optgroup label="${g.l}">${ST.cats.filter(c => c.group === g.k).map(c => `<option ${c.name === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</optgroup>`).join('');
-const subOptions = (cat, sel, {any = false} = {}) => (any ? `<option value="*">Any sub-category</option>` : '') + `<option value="">${(catOf(cat)?.subs.length) ? '— None —' : 'No sub-categories'}</option>` + (catOf(cat)?.subs || []).map(s => `<option ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('') + (cat && !any ? '<option value="__new">+ New sub-category…</option>' : '');
+const subOptions = (cat, sel, {any = false} = {}) => (any ? `<option value="*">Any sub-category</option>` : '') + `<option value="">${(catOf(cat)?.subs.length) ? '— None —' : 'No sub-categories'}</option>` + (catOf(cat)?.subs || []).slice().sort((a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'})).map(s => `<option ${s === sel ? 'selected' : ''}>${esc(s)}</option>`).join('') + (cat && !any ? '<option value="__new">+ New sub-category…</option>' : '');
 function wireCatSub(catSel, subSel, onChange) {
   catSel.onchange = () => { subSel.innerHTML = subOptions(catSel.value, ''); onChange && onChange(); };
   subSel.onchange = () => {
@@ -139,11 +139,40 @@ const cleanDesc = d => d.replace(/ (CHK|DEBIT CRD|CARD PUR).*$/i, '').trim();
    BUDGET (computed live from transactions)
    ===================================================================== */
 let bMonth = ASOF.m; const bOpen = new Set();
+/* ---- checking & savings: starting and ending balances for the period on screen (all three views) ---- */
+function cashKind(a) { const k = (a.acctKind || '').toLowerCase(); if (k === 'checking' || k === 'savings') return k; return /sav|money ?market|hysa|cd\b/i.test(a.name) ? 'savings' : 'checking'; }
+function cashBalAt(kind, m) {   // month-end balance in month m (carried forward from the last month entered)
+  const B = ST.bal, ms = B.months; let j = ms.indexOf(m); if (j < 0) j = m > ms[ms.length - 1] ? ms.length - 1 : -1; if (j < 0) return null;
+  let tot = 0, any = false;
+  B.accounts.filter(a => a.kind === 'account' && a.group === 'Cash' && cashKind(a) === kind).forEach(a => { for (let i = j; i >= 0; i--) if (a.v[i] != null) { tot += +a.v[i]; any = true; break; } });
+  return any ? tot : null;
+}
+function budCash(pg) {
+  const grid = [...pg.querySelectorAll(':scope > .grid')].pop(); if (!grid) return;
+  const last = ST.bal.months[ST.bal.months.length - 1], y = ASOF.y, P = [];
+  const per = (l, from, to) => P.push({l, from, to: to > last ? last : to, asOf: to > last});
+  if (bMode === 'years') { Y.years.slice(-6).forEach(v => per(v === CY ? v + ' YTD' : String(v), `${v}-01`, v === CY ? ym(CTX.TODAY) : `${v}-12`)); }
+  else if (bMode === 'actuals') { const ms = ymRange(AR.from, AR.to).slice(-12); ms.forEach(m => per(mShort(m), m, m)); if (ms.length > 1) per('Whole range', ymRange(AR.from, AR.to)[0], AR.to); }
+  else { const m = `${y}-${String(bMonth).padStart(2, '0')}`; per(`${MON[bMonth - 1]} ${y}`, m, m); per(`Year to date`, `${y}-01`, m); }
+  const val = v => v == null ? '<span class="muted">—</span>' : money(v);
+  const rows = [['checking', 'Checking'], ['savings', 'Savings']].filter(([k]) => B_HAS(k)).map(([k, l]) => {
+    const st = P.map(p => cashBalAt(k, ymPlus(p.from, -1))), en = P.map(p => cashBalAt(k, p.to));
+    return `<tr class="grp"><td colspan="${P.length + 1}">${l}</td></tr>
+      <tr><td class="ind">Starting balance</td>${st.map(v => `<td class="num">${val(v)}</td>`).join('')}</tr>
+      <tr><td class="ind">Ending balance</td>${en.map((v, i) => `<td class="num"><b>${val(v)}</b></td>`).join('')}</tr>
+      <tr class="muted-row"><td class="ind">Change</td>${en.map((v, i) => { const d = v == null || st[i] == null ? null : v - st[i]; return `<td class="num ${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}">${d == null ? '—' : (d > 0 ? '+' : '') + money(d)}</td>`; }).join('')}</tr>`; }).join('');
+  if (!rows) return;
+  const tS = P.map(p => sum(['checking', 'savings'].map(k => cashBalAt(k, ymPlus(p.from, -1)) || 0))), tE = P.map(p => sum(['checking', 'savings'].map(k => cashBalAt(k, p.to) || 0)));
+  grid.insertAdjacentHTML('beforeend', `<div class="card c-12" data-lk="checking-savings"><div class="card-h"><div><h3>Checking & savings</h3><div class="sub">Starting balance = the month-end before the period; ending = the last month-end in it${P.some(p => p.asOf) ? ` · latest balances are ${mLabel(last)}` : ''} · from Balances</div></div></div>
+    <div class="scroll-x"><table class="table cmp cash-t"><tr><th></th>${P.map(p => `<th>${esc(p.l)}${p.asOf ? '<div class="muted" style="font-size:10.5px;font-weight:500">as of ' + mShort(p.to) + '</div>' : ''}</th>`).join('')}</tr>${rows}
+      <tr class="tot"><td>Total cash · change</td>${tE.map((v, i) => { const d = v - tS[i]; return `<td class="num ${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}">${(d > 0 ? '+' : '') + money(d)}</td>`; }).join('')}</tr></table></div></div>`);
+}
+const B_HAS = k => ST.bal.accounts.some(a => a.kind === 'account' && a.group === 'Cash' && cashKind(a) === k);
 function renderBudget(pg) {
   if (bMode === 'ytd') bMode = 'month';   // the Month view shows the month and the year to date side by side
   const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['years', 'Years'], ['actuals', 'Actuals']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  if (bMode === 'years') { renderYears(pg, seg); return; }
-  if (bMode === 'actuals') { renderActuals(pg, seg); return; }
+  if (bMode === 'years') { renderYears(pg, seg); budCash(pg); return; }
+  if (bMode === 'actuals') { renderActuals(pg, seg); budCash(pg); return; }
   const m0 = bMode === 'month' ? bMonth : 1, m1 = bMonth, y = ASOF.y;
   const {A, S} = actuals(y, m0, m1);
   const rows = ST.cats.filter(c => c.group !== 'TTS' && !ST.excl.has(c.name)).map(c => ({c, b: budgetFor(y, c.name, m0, m1), a: A[c.name] || 0}));
@@ -171,10 +200,11 @@ function renderBudget(pg) {
     <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
   </div>`;
+  budCash(pg);
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
-  const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted">—</td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
+  const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(100, used * 100)}%"></i></div><span class="muted num" style="font-size:11.5px;width:38px">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
   // table: the month and year-to-date side by side for the selected month
   const AM = actuals(y, m1, m1), AY = actuals(y, 1, m1), mLbl = MON[m1 - 1];
@@ -951,7 +981,7 @@ function renderActuals(pg, seg) {
   let months = ymRange(AR.from, AR.to); const capped = months.length > 36; if (capped) months = months.slice(-36);
   const M = months.map(monthActuals);
   const subsOf = c => [...new Set(M.flatMap(r => Object.keys(r.S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1])))];
-  const f = v => Math.abs(v) < .5 ? '' : Math.round(v).toLocaleString('en-US');
+  const f = v => Math.abs(v) < .5 ? ZD : Math.round(v).toLocaleString('en-US');
   const cats = ST.cats.filter(c => c.group !== 'TTS' && !ST.excl.has(c.name));
   const catVals = c => M.map(r => r.A[c] || 0), subVals = (c, sb) => M.map(r => r.S[c + '|' + sb] || 0);
   const grpVals = g => M.map((_, i) => sum(cats.filter(c => c.group === g).map(c => M[i].A[c.name] || 0)));
@@ -959,7 +989,7 @@ function renderActuals(pg, seg) {
   const unc = M.map(r => r.A['Uncategorized'] || 0);
   // budget for the same months as the range (sub-categories only where they're budgeted separately)
   const budM = (c, sb) => { let t = 0, any = false; months.forEach(m => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); if (sb === undefined) { t += budgetFor(y, c, mo, mo) || 0; any = true; } else { const v = subBudgetFor(y, c, sb, mo, mo); if (v != null) { t += v; any = true; } } }); return any ? t : null; };
-  const bvCells = (a, b) => b == null ? '<td class="num muted bcol"></td><td class="num"></td>' : `<td class="num muted bcol">${f(b)}</td>${Math.abs(a - b) < .5 ? '<td class="num muted">—</td>' : `<td class="num ${a - b > 0 ? 'pos' : 'neg'}">${a - b > 0 ? '+' : '−'}${Math.round(Math.abs(a - b)).toLocaleString('en-US')}</td>`}`;
+  const bvCells = (a, b) => b == null ? '<td class="num muted bcol"></td><td class="num"></td>' : `<td class="num muted bcol">${f(b)}</td>${Math.abs(a - b) < .5 ? '<td class="num muted"><span class="zd">$---</span></td>' : `<td class="num ${a - b > 0 ? 'pos' : 'neg'}">${a - b > 0 ? '+' : '−'}${Math.round(Math.abs(a - b)).toLocaleString('en-US')}</td>`}`;
   const nM = months.length, cellsOf = (vals, b) => vals.map((v, i) => `<td class="num${v > 0 ? ' pos' : ''}" data-m="${months[i]}">${f(v)}</td>`).join('') + `<td class="num b">${f(sum(vals))}</td><td class="num muted">${f(sum(vals) / nM)}</td>` + bvCells(sum(vals), b);
   const grpBud = g => sum(cats.filter(c => c.group === g).map(c => budM(c.name) || 0));
   let h = `<tr><th class="stick">Category</th>${months.map(m => `<th>${mShort(m)}</th>`).join('')}<th>Total</th><th>Avg / mo</th><th class="bcol" title="Budget for the same months as the range">Budget</th><th title="Actual minus budget · green = better than budget">Variance</th></tr>`; const HAS = [];

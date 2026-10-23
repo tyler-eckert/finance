@@ -41,7 +41,7 @@ function render() {
   $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + cur));
   $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
   $('#pageTitle').textContent = p.n; $('#pageSub').textContent = p.sub();
-  const y = scrollY; CH = []; p.r($('#p-' + cur)); applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
+  const y = scrollY; CH = []; ZDASH = cur === 'budget'; try { p.r($('#p-' + cur)); } finally { ZDASH = false; } applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
   const keep = render.keep;
   requestAnimationFrame(() => { CH.forEach(f => f()); if (typeof fitTallCards === 'function') fitTallCards($('#p-' + cur)); if (keep && Math.abs(scrollY - y) > 2) scrollTo({top: y}); });   // free placement sizes tiles here, so restore the scroll after
   if (keep) scrollTo({top: y}); render.keep = true;
