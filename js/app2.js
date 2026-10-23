@@ -167,12 +167,18 @@ function budCash(pg) {
     <div class="scroll-x"><table class="table cmp cash-t"><tr><th></th>${P.map(p => `<th>${esc(p.l)}${p.asOf ? '<div class="muted" style="font-size:10.5px;font-weight:500">as of ' + mShort(p.to) + '</div>' : ''}</th>`).join('')}</tr>${rows}
       <tr class="tot"><td>Total cash · change</td>${tE.map((v, i) => { const d = v - tS[i]; return `<td class="num ${d > 0 ? 'pos' : d < 0 ? 'neg' : ''}">${(d > 0 ? '+' : '') + money(d)}</td>`; }).join('')}</tr></table></div></div>`);
 }
+// balance rows under Net (Month and Actuals tables): a blank spacer, then starting / ending balance per account type; budget columns stay empty
+const cashCell = (k, m, fmt = money) => { const v = cashBalAt(k, m); return v == null ? '<span class="muted">—</span>' : fmt(v); };
+function cashRows(ncol, build, stick = '') {
+  const kinds = [['checking', 'Checking'], ['savings', 'Savings']].filter(([k]) => B_HAS(k)); if (!kinds.length) return '';
+  return `<tr class="cash-gap"><td colspan="${ncol}"></td></tr>` + kinds.map(([k, l]) => build(k).map(([lbl, cells]) => `<tr class="cash-r"><td class="${stick}">${l} · ${lbl.toLowerCase()} balance</td>${cells}</tr>`).join('')).join('');
+}
 const B_HAS = k => ST.bal.accounts.some(a => a.kind === 'account' && a.group === 'Cash' && cashKind(a) === k);
 function renderBudget(pg) {
   if (bMode === 'ytd') bMode = 'month';   // the Month view shows the month and the year to date side by side
   const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['years', 'Years'], ['actuals', 'Actuals']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if (bMode === 'years') { renderYears(pg, seg); budCash(pg); return; }
-  if (bMode === 'actuals') { renderActuals(pg, seg); budCash(pg); return; }
+  if (bMode === 'actuals') { renderActuals(pg, seg); return; }
   const m0 = bMode === 'month' ? bMonth : 1, m1 = bMonth, y = ASOF.y;
   const {A, S} = actuals(y, m0, m1);
   const rows = ST.cats.filter(c => c.group !== 'TTS' && !ST.excl.has(c.name)).map(c => ({c, b: budgetFor(y, c.name, m0, m1), a: A[c.name] || 0}));
@@ -200,7 +206,6 @@ function renderBudget(pg) {
     <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
   </div>`;
-  budCash(pg);
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
@@ -235,6 +240,8 @@ function renderBudget(pg) {
   if (exRows.length) h += `<tr class="grp"><td colspan="${NC}">Excluded from analysis</td></tr>` + [...ST.excl].map(n => ({n, r: R(n)})).filter(x => x.r.am || x.r.bm || x.r.ay || x.r.by).map(x => `<tr class="excl"><td>${esc(x.n)}</td><td class="muted bm">${money(x.r.bm)}</td><td class="muted">${money(x.r.am)}</td><td></td><td class="muted by">${money(x.r.by)}</td><td class="muted">${money(x.r.ay)}</td><td></td><td class="bar-cell"></td></tr>`).join('');
   const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay}));
   h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td></tr>`;
+  h += cashRows(NC, k => { const m = `${y}-${String(m1).padStart(2, '0')}`; return [['Starting', ymPlus(m, -1), ymPlus(`${y}-01`, -1)], ['Ending', m, m]].map(([l, a, b]) =>
+    [l, `<td class="muted bm"></td><td>${cashCell(k, a)}</td><td></td><td class="muted by"></td><td>${cashCell(k, b)}</td><td></td><td class="bar-cell"></td>`]); });
   $('#bvaTable').innerHTML = h;
   $$('#bvaTable .chev').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.tg; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('#bvaTable tr.click').forEach(tr => tr.onclick = () => openCatTx(tr.dataset.cat, tr.dataset.sub, m0, m1));
@@ -1004,6 +1011,8 @@ function renderActuals(pg, seg) {
   });
   if (unc.some(x => Math.abs(x) >= .5)) h += `<tr class="excl"><td class="stick">Uncategorized</td>${cellsOf(unc, null)}</tr>`;
   h += `<tr class="tot net"><td class="stick">Net${ST.excl.size ? ` <span class="muted" style="font-size:11px;font-weight:500">${exclLabel()}</span>` : ''}</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num b ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td class="num muted">${f(sum(net) / nM)}</td>${bvCells(sum(net), grpBud('Income') + grpBud('Fixed Expense') + grpBud('Variable Expense'))}</tr>`;
+  h += cashRows(nM + 5, k => [['Starting', m => ymPlus(m, -1), ymPlus(months[0], -1)], ['Ending', m => m, months[nM - 1]]].map(([l, fm, tot]) =>
+    [l, months.map(m => `<td class="num">${cashCell(k, fm(m), f)}</td>`).join('') + `<td class="num b">${cashCell(k, tot, f)}</td><td class="num muted"></td><td class="num muted bcol"></td><td class="num"></td>`]), 'stick');
   const opt = sel => allM.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${mLabel(m)}</option>`).join('');
   const toM = ymPlus(lastM, -1), PRE = [['12', 'Last 12 months', ymPlus(toM, -11), toM], ['ytd', `${CY} so far`, `${CY}-01`, toM], ['py', String(PY), `${PY}-01`, `${PY}-12`], ['24', 'Last 24 months', ymPlus(toM, -23), toM]];
   pg.innerHTML = `<div class="toolbar wrap">${seg}
