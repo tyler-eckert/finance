@@ -1018,7 +1018,12 @@ ol.tr-ul{padding-left:20px}
 .bva td.proj,.bva th.proj{border-left:2px solid var(--border-strong);text-align:right;white-space:nowrap;min-width:110px}
 .bva td.proj .pj-d{font-size:10.5px;font-weight:500;margin-top:1px}
 .bva td.proj{font-weight:600}.bva th.proj.bgrp{border-left:2px solid var(--border-strong)}
-.acct-ren{opacity:0;margin-left:6px;vertical-align:middle;width:22px;height:22px}tr:hover .acct-ren,.bal-nm:hover .acct-ren,.acct-ren:focus{opacity:1}@media (hover:none){.acct-ren{opacity:.6}}
+/* rename pencil (v73): floats at the right of the name cell, takes no space, so rows keep their height */
+td.stick .acct-ren,.bal-nm .nm .acct-ren{position:absolute;top:50%;right:4px;transform:translateY(-50%);margin:0}
+td.stick:has(.acct-ren){padding-right:30px}
+.bal-nm .nm{position:relative;padding-right:28px;display:inline-block}
+.acct-ren{opacity:0;width:22px;height:22px;display:inline-grid;place-items:center}tr:hover .acct-ren,.bal-nm:hover .acct-ren,.acct-ren:focus{opacity:1}@media (hover:none){.acct-ren{opacity:.6}}
 .pj-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px}
 .pj-w{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2)}.pj-w input{width:110px}.pj-w b{min-width:34px}
 .bva td.proj[title]{cursor:help}
+.grid-t td.stick{vertical-align:middle}
