@@ -1198,3 +1198,17 @@ input[type=checkbox],input[type=radio]{accent-color:var(--brand-500)}
 .card.adm-fold.folded>.card-h .right{display:none}
 .card.adm-fold>.card-h:hover .adm-chev{background:var(--surface-3);color:var(--text)}
 .card.adm-fold.folded{align-self:start}
+
+/* v81 mobile: no sideways overflow, headers wrap, no zoom */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}
+html,body{max-width:100%;overflow-x:hidden}
+.card{min-width:0}
+.card-h>div:not(.right){min-width:0;flex:1 1 0}
+.card-h h3,.card-h .sub{overflow-wrap:anywhere}
+body:not(.compact) .card-h .sub{white-space:normal}
+@media (max-width:860px){
+  .card.adm-fold>.card-h{align-items:center}
+  .card-h h3{font-size:var(--fs-md,15px);line-height:1.25}
+  .card-h .sub{font-size:12px;line-height:1.35}
+  input,select,textarea,.in{font-size:16px!important}
+}

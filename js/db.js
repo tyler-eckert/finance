@@ -44,28 +44,19 @@ function showLogin(err) {
     <h2>Sign in</h2><p class="muted">Your finances, private to your household.</p>
     ${err ? `<div class="login-err">${escH(err)}</div>` : ''}
     <label>Email<input class="in" type="email" id="lgE" autocomplete="username" required></label>
-    <label>Password<input class="in" type="password" id="lgP" autocomplete="current-password"></label>
-    <button class="btn primary" type="submit" style="width:100%;justify-content:center">Sign in</button>
-    <button class="link" type="button" id="lgMagic">Email me a sign-in link instead</button></form>`);
+    <label>Password<input class="in" type="password" id="lgP" autocomplete="current-password" required></label>
+    <button class="btn primary" type="submit" style="width:100%;justify-content:center">Sign in</button></form>`);
   const f = document.getElementById('loginF'), e = document.getElementById('lgE');
   try { e.value = localStorage.getItem('fin.email') || ''; } catch (_) {}
   (e.value ? document.getElementById('lgP') : e).focus();
   f.onsubmit = async ev => {
     ev.preventDefault(); const email = e.value.trim(), password = document.getElementById('lgP').value;
     try { localStorage.setItem('fin.email', email); } catch (_) {}
-    if (!password) return magic(email);
     bootMsg('<div class="spin"></div><p>Signing in…</p>', true);
     const {error} = await sb.auth.signInWithPassword({email, password});
     if (error) return showLogin(error.message);
     start();
   };
-  document.getElementById('lgMagic').onclick = () => magic(e.value.trim());
-}
-async function magic(email) {
-  if (!email) return showLogin('Enter your email first.');
-  const {error} = await sb.auth.signInWithOtp({email, options: {shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname}});
-  if (error) return showLogin(error.message);
-  bootMsg(`<h2>Check your email</h2><p class="muted">A sign-in link is on its way to ${escH(email)}.</p><button class="link" onclick="showLogin()">Back</button>`);
 }
 const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 
