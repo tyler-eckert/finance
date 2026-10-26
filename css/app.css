@@ -1201,7 +1201,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--brand-500)}
 
 /* v81 mobile: no sideways overflow, headers wrap, no zoom */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}
-html,body{max-width:100%;overflow-x:hidden}
+@media (max-width:860px){html,body{max-width:100%;overflow-x:clip}}   /* clip, not hidden: hidden breaks the sticky side panel */
 .card{min-width:0}
 .card-h>div:not(.right){min-width:0;flex:1 1 0}
 .card-h h3,.card-h .sub{overflow-wrap:anywhere}
