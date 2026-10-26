@@ -73,7 +73,7 @@ if (!CTX.CAN_WRITE) $('#importBtn').style.display = 'none';
     const r = av.getBoundingClientRect(); p.style.top = (r.bottom + 8) + 'px'; p.style.right = Math.max(8, innerWidth - r.right) + 'px'; p.classList.add('on'); };
 })();
 $('#filterBtn').onclick = openFilter;
-function setTheme(t) { document.documentElement.dataset.theme = t; const tc = document.getElementById('themeColor'); if (tc) tc.content = t === 'dark' ? '#070a09' : '#eef1ef'; try { localStorage.setItem('fin.theme', JSON.stringify(t)); } catch (e) {} SYNC.schedule(); $$('#themeToggle button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); }
+function setTheme(t) { document.documentElement.dataset.theme = t; const tc = document.getElementById('themeColor'); if (tc) tc.content = t === 'dark' ? '#030504' : '#f4f6f5'; try { localStorage.setItem('fin.theme', JSON.stringify(t)); } catch (e) {} SYNC.schedule(); $$('#themeToggle button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); }
 $$('#themeToggle button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
 $('#themeMob').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 setTheme(CTX.prefs.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
