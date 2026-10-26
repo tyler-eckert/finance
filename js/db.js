@@ -76,9 +76,12 @@ async function start() {
     let pick = hhs[0]; try { pick = hhs.find(h => h.household_id === localStorage.getItem('fin.hh')) || hhs[0]; } catch (_) {}
     HH = pick.household_id; ROLE = pick.role;
     const t0 = performance.now();
-    const [{data: snap, error: e2}, ex] = await Promise.all([FDB.rpc('app_snapshot', {p_household: HH}), FDB.rpc('app_snapshot_extra', {p_household: HH})]);
+    const rpcRetry = async (fn, args) => { let r = await FDB.rpc(fn, args);   // a cold database can time out once; the second try is warm
+      if (r.error && /statement timeout|57014/.test((r.error.message || '') + r.error.code)) { bootMsg('<div class="spin"></div><p>Waking the database…</p>', true); r = await FDB.rpc(fn, args); }
+      return r; };
+    const snapP = rpcRetry('app_snapshot', {p_household: HH}), [{data: snap, error: e2}, ex] = await Promise.all([snapP, snapP.then(() => rpcRetry('app_snapshot_extra', {p_household: HH}))]);
     if (e2) throw e2;
-    if (ex.error) console.warn('[fin] app_snapshot_extra unavailable — run migration 1200', ex.error.message);
+    if (ex.error) console.warn('[fin] app_snapshot_extra failed', ex.error.message);
     Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: [], statement_balances: [], notes: [], invoices: [], lawn_activities: []}, ex.data || {}); snap.extraOk = !ex.error;
     SNAP = snap; console.info(`[fin] snapshot ${(JSON.stringify(snap).length / 1e6).toFixed(1)} MB in ${Math.round(performance.now() - t0)} ms`);
     buildData(snap);
@@ -373,13 +376,13 @@ const SYNC = {
     addEventListener('beforeunload', e => { if (SYNC.dirty()) { e.preventDefault(); e.returnValue = ''; } });
     this.status();
   },
-  schedule(ms = 500) { if (!CTX.CAN_WRITE) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.run(), ms); },
-  dirty() { return this.busy || this.hooks.length || Object.keys(this.diff()).some(k => this.diff()[k].length); },
+  schedule(ms = 500) { clearTimeout(this.timer); this.timer = setTimeout(() => this.run(), ms); },
+  dirty() { const D = this.diff(); return this.busy || (CTX.CAN_WRITE ? this.hooks.length || Object.keys(D).some(k => k !== '_now' && D[k].length) : D.prefs.length > 0); },
   status(msg) {
     const el = document.querySelector('.sync'); if (!el) return;
     const st = this.err ? 'err' : this.busy ? 'busy' : 'ok';
     el.dataset.st = st;
-    el.innerHTML = `<span class="dot"></span>${escH(msg || (this.err ? 'Not saved · ' + this.err : this.busy ? 'Saving…' : CTX.CAN_WRITE ? 'All changes saved' : 'View only'))}`;
+    el.innerHTML = `<span class="dot"></span>${escH(msg || (this.err ? 'Not saved · ' + this.err : this.busy ? 'Saving…' : CTX.CAN_WRITE ? 'All changes saved' : 'View only · your layout is saved'))}`;
     if (this.err) el.title = this.err;
   },
   // ---------- signatures of the current in-memory state
@@ -428,8 +431,14 @@ const SYNC = {
     let wroteBS = false;
     try {
       // explicit history-wide operations queued by the UI go first
+      if (!CTX.CAN_WRITE) this.hooks.length = 0;          // viewers: data operations never leave the browser
       while (this.hooks.length) { const h = this.hooks[0]; await h(); this.hooks.shift(); }
       const D = this.diff(), now = D._now;
+      if (!CTX.CAN_WRITE) {                                 // viewers save only their own view (months, layout, tabs, filters)
+        const lost = ORDER.filter(k => k !== 'prefs' && D[k].length);
+        lost.forEach(k => { this.sig[k] = now[k]; D[k] = []; });
+        if (lost.length && !this.roWarned && typeof toast === 'function') { this.roWarned = true; toast('View only — data changes aren’t saved. Reload to undo.'); }
+      }
       const done = (k, id) => { const v = now[k].get(id); if (v === undefined) this.sig[k].delete(id); else this.sig[k].set(id, v); };
       for (const k of ORDER) {
         if (!D[k].length) continue;

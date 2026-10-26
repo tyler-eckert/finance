@@ -77,7 +77,8 @@ $('#filterBtn').onclick = openFilter;
 function setTheme(t) { document.documentElement.dataset.theme = t; const tc = document.getElementById('themeColor'); if (tc) tc.content = t === 'dark' ? '#030504' : '#f4f6f5'; try { localStorage.setItem('fin.theme', JSON.stringify(t)); } catch (e) {} SYNC.schedule(); $$('#themeToggle button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); }
 $$('#themeToggle button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
 $('#themeMob').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-setTheme(CTX.prefs.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+/* theme is per device: this browser's saved choice, else the device's light/dark setting (never the account) */
+setTheme((() => { try { return JSON.parse(localStorage.getItem('fin.theme') || 'null'); } catch (_) { return null; } })() || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => { CH.forEach(f => f()); if (typeof packFree === 'function') requestAnimationFrame(() => packFree($('#p-' + cur))); }, 120); });
 cur = 'overview'; if (location.hash === '#week' && !tabHidden('week')) cur = 'week'; else if (tabHidden('overview')) cur = navPages().find(p => !tabHidden(p.k))?.k || 'overview';   // always open on Overview
 render.keep = false; render();

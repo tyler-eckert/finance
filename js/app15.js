@@ -13,6 +13,7 @@ async function fnErr(error, data) { if (data?.error) return data.error; const r 
   return (st ? `status ${st}` : '') + (t ? ` · ${t.slice(0, 160)}` : '') || error?.message || 'unknown error'; }
 const DG = {feeds: null, digests: null, loading: false, err: null, sel: null, busy: false};
 const DGS = () => ({tz: 'America/Chicago', threshold: 500, days: 14, sendDow: 0, sendHour: 17, email: true, emails: [], ...(CTX.settings?.digest || {})});
+const dgAgo = t => { const m = Math.round((Date.now() - new Date(t).getTime()) / 60e3); return m < 2 ? 'just now' : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} hr ago` : new Date(t).toLocaleDateString(undefined, {weekday: 'short', month: 'short', day: 'numeric'}); };
 const DAYN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const dgDay = d => { const t = new Date(d + 'T12:00:00'); return {dow: DAYN[t.getDay()], short: DAYN[t.getDay()].slice(0, 3), md: `${MON[t.getMonth()]} ${t.getDate()}`}; };
 const dgRange = (a, b) => { const A = dgDay(a), B = dgDay(b); return a.slice(5, 7) === b.slice(5, 7) ? `${A.md}–${+b.slice(8, 10)}` : `${A.md} – ${B.md}`; };
@@ -27,21 +28,31 @@ async function loadDigest(force) {
     DG.feeds = f.data || []; DG.digests = d.data || []; DG.err = null;
   } catch (e) { DG.err = /calendar_feeds|digests|does not exist|schema cache/i.test(e.message || '') ? 'Run migration 20261026002000_finance_weekly_digest.sql in Supabase to turn on the weekly digest.' : (e.message || String(e)); DG.feeds ||= []; DG.digests ||= []; }
   DG.loading = false; if (['week', 'admin', 'overview'].includes(cur)) render();
+  dgAutoRefresh();
 }
-async function buildDigestNow(send) {
-  if (DG.busy) return; DG.busy = true; render();
+/* keep the digest current: when it's more than an hour old (or a new week has started), rebuild it quietly — no email */
+const dgWeekStart = () => { const t = new Date(), w = t.getDay(), add = w === 0 ? 1 : w === 6 ? 2 : 1 - w; t.setDate(t.getDate() + add); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+function dgAutoRefresh() {
+  if (DG.busy || DG.err || !DG.feeds?.length || Date.now() - (DG.autoAt || 0) < 15 * 60e3) return;
+  const L = DG.digests?.[0], stale = !L || L.week_start < dgWeekStart() || Date.now() - new Date(L.generated_at).getTime() > 60 * 60e3;
+  if (!stale) return; DG.autoAt = Date.now(); buildDigestNow(false, true);
+}
+async function buildDigestNow(send, quiet) {
+  if (DG.busy) return; DG.busy = true; if (['week', 'admin', 'overview'].includes(cur)) render();
   const {data, error} = await sb.functions.invoke('weekly-digest', {body: {household_id: CTX.HH, send}});
   DG.busy = false;
-  if (error || data?.error) { const msg = await fnErr(error, data); toast('Couldn’t build the digest: ' + msg, null, 12000); render(); return; }
-  await loadDigest(true); DG.sel = data.week_start;
+  if (error || data?.error) { const msg = await fnErr(error, data); if (quiet) { console.warn('[fin] digest refresh', msg); if (['week', 'admin', 'overview'].includes(cur)) render(); return; } toast('Couldn’t build the digest: ' + msg, null, 12000); render(); return; }
+  const keepSel = quiet && DG.sel; await loadDigest(true); DG.sel = keepSel || data.week_start;
+  if (quiet) return;
   toast(`Digest for ${dgRange(data.week_start, data.range_end)} built${data.emailed?.length ? ' and emailed to ' + data.emailed.join(', ') : data.emailNote ? ' · ' + data.emailNote : ''}`);
 }
 
 /* ---------------- page: This week ---------------- */
 function renderWeek(pg) {
   if (!DG.digests) { loadDigest(); pg.innerHTML = `<div class="card"><p class="muted">Loading this week…</p></div>`; return; }
+  setTimeout(dgAutoRefresh, 0);
   const list = DG.digests, D0 = list.find(d => d.week_start === DG.sel) || list[0], S = DGS(), w = CTX.CAN_WRITE;
-  const tools = `<div class="toolbar wrap">${list.length ? `<select class="in sel" id="wkSel">${list.map(d => `<option value="${d.week_start}" ${d === D0 ? 'selected' : ''}>${dgRange(d.week_start, dgPlus(d.week_start, 6))}${d === list[0] ? ' · latest' : ''}</option>`).join('')}</select>` : ''}
+  const tools = `<div class="toolbar wrap">${list.length ? `<select class="in sel" id="wkSel">${list.map(d => `<option value="${d.week_start}" ${d === D0 ? 'selected' : ''}>${dgRange(d.week_start, dgPlus(d.week_start, 6))}${d === list[0] ? ' · latest' : ''}</option>`).join('')}</select>` : ''}${DG.busy ? `<span class="muted" style="font-size:12px">Refreshing…</span>` : list[0] ? `<span class="muted" style="font-size:12px">Updated ${dgAgo(list[0].generated_at)}</span>` : ''}
     ${w ? `<div style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="wkBuild" ${DG.busy ? 'disabled' : ''}>${icon('refresh')}<span>${DG.busy ? 'Building…' : 'Build now'}</span></button><button class="btn" id="wkSet">${icon('gear')}<span>Calendars & email</span></button></div>` : ''}</div>`;
   if (DG.err) { pg.innerHTML = tools + `<div class="banner">${icon('warn')}<span>${esc(DG.err)}</span></div>`; wireWeek(pg); return; }
   if (!D0) { pg.innerHTML = tools + `<div class="grid g-12"><div class="card c-12 dg-empty"><div class="card-h"><div><h3>No digest yet</h3><div class="sub">${DG.feeds.length ? `${DG.feeds.length} calendar${DG.feeds.length === 1 ? '' : 's'} connected · the first digest arrives ${DAYN[S.sendDow]} at ${S.sendHour % 12 || 12} ${S.sendHour < 12 ? 'am' : 'pm'}, or build one now` : 'Connect your calendars first: Admin → Weekly digest'}</div></div></div>
@@ -88,6 +99,7 @@ function wireWeek(pg, D0) {
 /* ---------------- Overview tile ---------------- */
 function ovWeekCard() {
   if (!DG.digests) { loadDigest(); return ''; }
+  setTimeout(dgAutoRefresh, 0);
   const D0 = DG.digests[0]; if (!D0) return '';
   const P = D0.payload, wk1End = dgPlus(P.from, 6), today = CTX.TODAY;
   const next = P.days.filter(d => d.date >= today && d.date <= wk1End).flatMap(d => d.events.filter(e => !e.cont).map(e => ({...e, d: d.date})).concat(d.bills.filter(b => b.why !== 'milestone').map(b => ({...b, d: d.date, bill: true})))).slice(0, 6);

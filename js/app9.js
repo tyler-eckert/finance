@@ -293,7 +293,14 @@ const mktLast = code => (CTX.market || []).filter(r => r[0] === code).sort((a, b
 function loanDecisionCard(act) {
   const loans = act.filter(l => l.rate != null && loanBal(l) > 0); if (!loans.length) return '';
   const mr = mktLast('MORTGAGE30US'), t10 = mktLast('DGS10') || mktLast('TB3MS'), mkt = mr ? mr.v / 100 : null, safe = t10 ? t10.v / 100 : .04;
-  const ret = (typeof SCN !== 'undefined' && SCN[0]?.p?.ret) || .07, ra = ret * (1 - .15), hurdle = ra - .01;   // after a 15% tax haircut, less 1 point for risk
+  // benchmark: what the Schwab brokerage has actually earned (time-weighted, after fees, last 5 yrs) or the plan's assumption
+  const schR = (typeof SCH !== 'undefined' ? SCH : []).filter(r => r.start > 0).slice(-60).map(r => (r.div + r.mkt + r.fee) / r.start);
+  const schAnn = schR.length >= 12 ? Math.pow(schR.reduce((a, x) => a * (1 + x), 1), 12 / schR.length) - 1 : null;
+  const schName = typeof SCH_SHORT !== 'undefined' ? SCH_SHORT : 'brokerage', schYrs = schR.length >= 60 ? '5 yrs' : `${Math.round(schR.length / 12 * 10) / 10} yrs`;
+  const basis = schAnn != null && UI.ldBasis !== 'plan' ? 'sch' : 'plan';
+  const planRet = (typeof SCN !== 'undefined' && SCN[0]?.p?.ret) || .07;
+  const ret = basis === 'sch' ? schAnn : planRet, ra = ret * (1 - .15), hurdle = ra - .01;   // after a 15% tax haircut, less 1 point for risk
+  const retLbl = basis === 'sch' ? `your ${esc(schName)} brokerage` : 'the portfolio';
   const E = LD.extra;
   const rows = loans.map(l => {
     const b = loanBal(l), base = remaining(l), n = base.length, I0 = sum(base.map(r => r.int)), withX = E ? remaining(l, E) : base, n1 = withX.length, I1 = sum(withX.map(r => r.int));
@@ -301,9 +308,10 @@ function loanDecisionCard(act) {
     const edge = fv(E, n) - fv((l.pmt || 0) + E, n - n1);   // >0: investing the extra beats paying down (on average)
     let v, why, cls;
     if (l.rate === 0) { v = 'Keep it'; cls = 'pos'; why = 'It’s interest-free — paying early gains nothing.'; }
-    else if (l.rate >= hurdle) { v = 'Pay it down'; cls = 'neg'; why = `A guaranteed ${pctRate(l.rate)} beats the ~${pctRate(hurdle)} the portfolio is expected to earn after tax and a margin for risk.`; }
+    else if (l.rate >= hurdle) { v = 'Pay it down'; cls = 'neg'; why = `A guaranteed ${pctRate(l.rate)} beats the ~${pctRate(hurdle)} ${retLbl} ${basis === 'sch' ? 'has earned' : 'is expected to earn'} after tax and a margin for risk.`; }
     else if (l.rate <= safe) { v = 'Invest — keep the loan'; cls = 'pos'; why = `Even ${t10 ? (mktLast('DGS10') ? '10-yr Treasuries' : 'T-bills') : 'safe bonds'} pay ${pctRate(safe)}, more than this loan costs.`; }
-    else { v = 'Lean invest'; cls = ''; why = `Investing is expected to earn ~${pctRate(ra)} after tax vs. ${pctRate(l.rate)} here, but paying down is a sure thing. Pay extra only if certainty matters more to you.`; }
+    else if (l.rate <= hurdle - .02) { v = 'Invest — keep the loan'; cls = 'pos'; why = `${basis === 'sch' ? `Your ${esc(schName)} has returned ${pctRate(ret)}/yr over ${schYrs}` : `The plan expects ${pctRate(ret)}/yr`} — ~${pctRate(hurdle)} after tax and a risk margin, well above this loan’s ${pctRate(l.rate)}. Extra cash works harder invested.`; }
+    else { v = 'Lean invest'; cls = ''; why = `${basis === 'sch' ? `Your ${esc(schName)} has earned` : 'Investing is expected to earn'} ~${pctRate(ra)} after tax vs. ${pctRate(l.rate)} here, but paying down is a sure thing. Pay extra only if certainty matters more to you.`; }
     let refi = null;
     if (l.type === 'Mortgage' && mkt != null && n > 60 && b > 50000) {
       const np = pmtCalc(b, mkt, n), save = (l.pmt || 0) - np, cost = b * (LS.refiCost || 2) / 100;
@@ -313,15 +321,15 @@ function loanDecisionCard(act) {
     return {l, b, n, n1, I0, I1, edge, v, why, cls, refi};
   });
   return `<div class="card c-12" id="ldCard"><div class="card-h"><div><h3>Pay down, refinance or invest?</h3>
-      <div class="sub">Each loan’s rate vs. ${mr ? `today’s 30-yr mortgage average (<b>${pctRate(mkt)}</b>, ${mLabel(mr.m)})` : 'today’s mortgage rates (run Automation to pull the 30-yr average)'} and your plan’s expected return (<b>${pctRate(ret)}</b>, ~${pctRate(ra)} after tax)</div></div>
-      <div class="right"><label class="tgl">Extra per loan <select class="in sm sel" onchange="LD.extra=+this.value;render()">${[0, 100, 250, 500, 1000, 2000].map(x => `<option value="${x}" ${x === E ? 'selected' : ''}>${money(x)}/mo</option>`).join('')}</select></label></div></div>
+      <div class="sub">Each loan’s rate vs. ${mr ? `today’s 30-yr mortgage average (<b>${pctRate(mkt)}</b>, ${mLabel(mr.m)})` : 'today’s mortgage rates (run Automation to pull the 30-yr average)'} and ${basis === 'sch' ? `what your ${esc(schName)} brokerage has actually returned (<b>${pctRate(ret)}/yr</b> over ${schYrs}, after fees` : `your plan’s expected return (<b>${pctRate(ret)}</b>`}, ~${pctRate(ra)} after tax)</div></div>
+      <div class="right" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${schAnn != null ? `<div class="seg" id="ldBasis"><button onclick="UI.ldBasis='sch';render()" class="${basis === 'sch' ? 'on' : ''}" title="Time-weighted, after fees, from your statements">${esc(schName)} actual</button><button onclick="UI.ldBasis='plan';render()" class="${basis === 'plan' ? 'on' : ''}" title="Base Plan scenario: ${pctRate(planRet)}">Plan assumption</button></div>` : ''}<label class="tgl">Extra per loan <select class="in sm sel" onchange="LD.extra=+this.value;render()">${[0, 100, 250, 500, 1000, 2000].map(x => `<option value="${x}" ${x === E ? 'selected' : ''}>${money(x)}/mo</option>`).join('')}</select></label></div></div>
     <div class="ld-list">${rows.map(r => `<div class="ld">
       <div class="ld-n"><b>${esc(r.l.name)}</b><div class="muted">${short(r.b)} at ${pctRate(r.l.rate)} · ${r.n} payments left</div></div>
       <div class="ld-v"><span class="chip ${r.cls}">${r.v}</span><div class="ds">${r.why}</div></div>
       <div class="ld-x">${E && r.l.rate > 0 ? `<div><span class="muted">+${money(E)}/mo:</span> saves <b>${short(r.I0 - r.I1)}</b> interest, done <b>${r.n - r.n1} mo</b> sooner</div>
         <div class="muted">Investing it instead (risk-adjusted) ends up ${r.edge >= 0 ? `<b class="pos">${short(r.edge)} ahead</b>` : `<b class="neg">${short(-r.edge)} behind</b>`} on average by the original payoff</div>` : ''}
         ${r.refi ? r.refi.ok ? `<div style="margin-top:4px">Refi at ${pctRate(mkt)}: <b>${money(r.refi.save)}/mo</b> less · ~${short(r.refi.cost)} costs · breaks even in <b>${r.refi.be} months</b></div>` : `<div class="muted" style="margin-top:4px">Refinancing: your rate is only ${(r.refi.gap * 100).toFixed(2)} pts ${r.refi.gap >= 0 ? 'above' : 'below'} today’s average — not worth the closing costs yet (look at ~0.75+).</div>` : ''}</div></div>`).join('')}</div>
-    <p class="muted" style="font-size:11.5px;margin-top:8px">Rules of thumb, not advice: a loan costing more than the portfolio’s expected after-tax return (less a point for risk) is worth paying down; one cheaper than safe Treasuries is worth keeping; refinancing usually pays when today’s rate is ~0.75 points lower and you’ll stay past the break-even. Expected return comes from the base scenario on the Plan page.</p></div>`;
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Rules of thumb, not advice: a loan costing more than the portfolio’s expected after-tax return (less a point for risk) is worth paying down; one cheaper than safe Treasuries is worth keeping; refinancing usually pays when today’s rate is ~0.75 points lower and you’ll stay past the break-even. The return is either what your brokerage has actually earned (time-weighted from your monthly statements, after fees, last 5 years) or the base scenario on the Plan page. Past returns aren’t guaranteed; paying down a loan is.</p></div>`;
 }
 
 /* =====================================================================

@@ -258,6 +258,13 @@ function renderBudget(pg) {
     h += `<tr class="tot"><td>Total ${g.l.toLowerCase()}</td>${cells(gR(g.k), income)}</tr>`;
   });
   if (exRows.length) h += `<tr class="grp"><td colspan="${NC}">Excluded from analysis</td></tr>` + [...ST.excl].map(n => ({n, r: R(n)})).filter(x => x.r.am || x.r.bm || x.r.ay || x.r.by).map(x => `<tr class="excl"><td>${esc(x.n)}</td><td class="muted bm">${money(x.r.bm)}</td><td class="muted">${money(x.r.am)}</td><td></td><td class="muted by">${money(x.r.by)}</td><td class="muted">${money(x.r.ay)}</td><td></td><td class="bar-cell"></td><td class="proj"></td><td></td></tr>`).join('');
+  { const KS = ['bm', 'am', 'by', 'ay', 'rest', 'rb', 'rp', 'fy'], comb = (a, b, s = 1) => Object.fromEntries(KS.map(k => [k, (a[k] || 0) + s * (b[k] || 0)]));
+    const hasTax = ST.cats.some(c => c.name === 'Tax' && (c.group === 'Fixed Expense' || c.group === 'Variable Expense')) && !ST.excl.has('Tax');
+    const tot = comb(gR('Fixed Expense'), gR('Variable Expense')), tx = hasTax ? R('Tax') : Object.fromEntries(KS.map(k => [k, 0])), pre = comb(tot, tx, -1);
+    h += `<tr class="grp"><td colspan="${NC}">Expense summary</td></tr>`
+      + `<tr class="tot"><td>Fixed + variable expenses <span class="muted" style="font-size:11px;font-weight:500">before tax</span></td>${cells(pre, false)}</tr>`
+      + (hasTax ? `<tr class="click" data-cat="Tax"><td><span class="tw"><span class="chev-sp"></span><span>Tax</span></span></td>${cells(tx, false)}</tr>` : '')
+      + `<tr class="tot"><td>Total expenses <span class="muted" style="font-size:11px;font-weight:500">fixed + variable + tax</span></td>${cells(tot, false)}</tr>`; }
   const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay, rest: a.rest + b.rest, rb: a.rb + b.rb, rp: a.rp + b.rp, fy: a.fy + b.fy}));
   h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td>${proj(nR)}</tr>`;
   h += cashRows(NC, k => { const m = `${y}-${String(m1).padStart(2, '0')}`; return [['Starting', ymPlus(m, -1), ymPlus(`${y}-01`, -1)], ['Ending', m, m]].map(([l, a, b]) =>
@@ -1048,6 +1055,12 @@ function renderActuals(pg, seg) {
     h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${cellsOf(grpVals(g.k), grpBud(g.k))}</tr>`;
   });
   if (unc.some(x => Math.abs(x) >= .5)) h += `<tr class="excl"><td class="stick">Uncategorized</td>${cellsOf(unc, null)}</tr>`;
+  { const hasTax = cats.some(c => c.name === 'Tax' && (c.group === 'Fixed Expense' || c.group === 'Variable Expense'));
+    const txV = hasTax ? catVals('Tax') : M.map(() => 0), txB = hasTax ? (budM('Tax') || 0) : 0, totB = grpBud('Fixed Expense') + grpBud('Variable Expense');
+    h += `<tr class="grp"><td class="stick" colspan="${nM + 5}">Expense summary</td></tr>`
+      + `<tr class="tot"><td class="stick">Fixed + variable expenses <span class="muted" style="font-size:11px;font-weight:500">before tax</span></td>${cellsOf(ex.map((v, i) => v - txV[i]), totB - txB)}</tr>`
+      + (hasTax ? `<tr class="click" data-cat="Tax"><td class="stick"><span class="tw"><span class="chev-sp"></span>Tax</span></td>${cellsOf(txV, txB)}</tr>` : '')
+      + `<tr class="tot"><td class="stick">Total expenses <span class="muted" style="font-size:11px;font-weight:500">fixed + variable + tax</span></td>${cellsOf(ex, totB)}</tr>`; }
   h += `<tr class="tot net"><td class="stick">Net${ST.excl.size ? ` <span class="muted" style="font-size:11px;font-weight:500">${exclLabel()}</span>` : ''}</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num b ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td class="num muted">${f(sum(net) / nM)}</td>${bvCells(sum(net), grpBud('Income') + grpBud('Fixed Expense') + grpBud('Variable Expense'))}</tr>`;
   h += cashRows(nM + 5, k => [['Starting', m => ymPlus(m, -1), ymPlus(months[0], -1)], ['Ending', m => m, months[nM - 1]]].map(([l, fm, tot]) =>
     [l, months.map(m => `<td class="num">${cashCell(k, fm(m), f)}</td>`).join('') + `<td class="num b">${cashCell(k, tot, f)}</td><td class="num muted"></td><td class="num muted bcol"></td><td class="num"></td>`]), 'stick');

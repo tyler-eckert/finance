@@ -378,7 +378,16 @@ Deno.serve(async req => {
       for (const h of hhs || []) {
         const S = settingsOf(h.settings?.digest), {data: feeds} = await fin.from('calendar_feeds').select('id').eq('household_id', h.id).limit(1);
         if (!feeds?.length && !h.settings?.digest) continue;   // not set up
-        const L = localParts(Date.now(), S.tz); if (dow(L.date) !== +S.sendDow || L.h !== +S.sendHour) continue;
+        const L = localParts(Date.now(), S.tz);
+        if (dow(L.date) !== +S.sendDow || L.h !== +S.sendHour) {
+          // every other day: a quiet morning refresh so calendar changes show up (no email)
+          if (L.h !== +(h.settings?.digest?.refreshHour ?? 6)) continue;
+          const started = new Date().toISOString();
+          try { const r = await buildFor(fin, admin, h.id, {send: false, trigger: 'refresh'}); results.push(r);
+            await fin.from('automation_runs').insert({job: 'digest', household_id: h.id, trigger: 'refresh', started_at: started, finished_at: new Date().toISOString(), ok: true, summary: r}); }
+          catch (e) { await fin.from('automation_runs').insert({job: 'digest', household_id: h.id, trigger: 'refresh', started_at: started, finished_at: new Date().toISOString(), ok: false, summary: {errors: [(e as Error).message]}}); }
+          continue;
+        }
         const {data: done} = await fin.from('digests').select('emailed_at').eq('household_id', h.id).eq('week_start', weekStart(L.date)).maybeSingle();
         if (done?.emailed_at) continue;
         const started = new Date().toISOString();
@@ -401,7 +410,7 @@ Deno.serve(async req => {
       const today = localParts(Date.now(), tz).date, ev = parseICS(await fetchICS(body.url), today, dAdd(today, 30), tz);
       return json(200, {ok: true, count: ev.length, next: ev.slice(0, 5).map(e => ({date: e.date, time: e.time, title: e.title}))});
     }
-    if (mem.role === 'viewer') return json(403, {error: 'Only owners and editors can build the digest'});
+    if (mem.role === 'viewer' && body.send) return json(403, {error: 'Only owners and editors can email the digest'});   // viewers may refresh it
     const started = new Date().toISOString(), r = await buildFor(fin, admin, body.household_id, {send: !!body.send, trigger: 'manual'});
     await fin.from('automation_runs').insert({job: 'digest', household_id: body.household_id, trigger: 'manual', started_at: started, finished_at: new Date().toISOString(), ok: !r.emailNote, summary: r});
     return json(200, {ok: true, ...r});
