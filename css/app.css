@@ -1187,3 +1187,14 @@ input[type=checkbox],input[type=radio]{accent-color:var(--brand-500)}
 .btn{white-space:nowrap}
 .dg-ev{align-items:start}.dg-ev>i{align-self:start;margin-top:5px}.dg-t,.dg-ev b{line-height:1.45}
 .dg-mini .dg-ev{grid-template-columns:10px 96px minmax(0,1fr) auto}
+/* Admin: collapsible sections (v79) */
+.adm-bar{margin-bottom:14px}
+.card.adm-fold>.card-h{cursor:pointer;user-select:none}
+.adm-chev{flex:none;width:24px;height:24px;margin:-2px 2px 0 -4px;display:grid;place-items:center;border-radius:var(--r-sm);color:var(--text-3);transition:transform var(--dur-2) var(--ease)}
+.adm-chev svg{width:14px;height:14px}
+.card.adm-fold:not(.folded)>.card-h .adm-chev{transform:rotate(90deg)}
+.card.adm-fold.folded>:not(.card-h){display:none!important}
+.card.adm-fold.folded>.card-h{margin-bottom:0}
+.card.adm-fold.folded>.card-h .right{display:none}
+.card.adm-fold>.card-h:hover .adm-chev{background:var(--surface-3);color:var(--text)}
+.card.adm-fold.folded{align-self:start}

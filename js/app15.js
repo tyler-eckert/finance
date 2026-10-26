@@ -4,6 +4,13 @@
    this page shows it, keeps the two of you a notes box per week, and Admin → Weekly digest manages the calendar links.
    ===================================================================== */
 Object.assign(I, {refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>', week: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7.5 14h3M7.5 17h6"/>'});
+// a readable reason from a failed function call: our own {error} body, or the status Supabase answered with
+async function fnErr(error, data) { if (data?.error) return data.error; const r = error?.context; let t = '';
+  try { t = r && typeof r.text === 'function' ? await r.text() : ''; } catch (e) {}
+  try { const j = JSON.parse(t); if (j.error || j.msg || j.message) return j.error || j.msg || j.message; } catch (e) {}
+  const st = r?.status; if (st === 546 || /WORKER_LIMIT/i.test(t)) return 'the function ran out of time or memory (546) — a very large calendar? Check Edge Functions → weekly-digest → Logs';
+  if (st === 404) return 'the weekly-digest function isn’t deployed (404)'; if (st === 401) return 'sign in again, and check Enforce JWT Verification is off (401)';
+  return (st ? `status ${st}` : '') + (t ? ` · ${t.slice(0, 160)}` : '') || error?.message || 'unknown error'; }
 const DG = {feeds: null, digests: null, loading: false, err: null, sel: null, busy: false};
 const DGS = () => ({tz: 'America/Chicago', threshold: 500, days: 14, sendDow: 0, sendHour: 17, email: true, emails: [], ...(CTX.settings?.digest || {})});
 const DAYN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -25,8 +32,7 @@ async function buildDigestNow(send) {
   if (DG.busy) return; DG.busy = true; render();
   const {data, error} = await sb.functions.invoke('weekly-digest', {body: {household_id: CTX.HH, send}});
   DG.busy = false;
-  if (error || data?.error) { let msg = data?.error || error.message; try { const j = await error.context?.json?.(); if (j?.error) msg = j.error; } catch (e) {}
-    toast('Couldn’t build the digest: ' + msg + (/Failed to send|not found|404/i.test(msg) ? ' — deploy the weekly-digest function first' : '')); render(); return; }
+  if (error || data?.error) { const msg = await fnErr(error, data); toast('Couldn’t build the digest: ' + msg, null, 12000); render(); return; }
   await loadDigest(true); DG.sel = data.week_start;
   toast(`Digest for ${dgRange(data.week_start, data.range_end)} built${data.emailed?.length ? ' and emailed to ' + data.emailed.join(', ') : data.emailNote ? ' · ' + data.emailNote : ''}`);
 }
@@ -155,7 +161,6 @@ async function testFeed(url, btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
   const {data, error} = await sb.functions.invoke('weekly-digest', {body: {household_id: CTX.HH, action: 'test_feed', url}});
   if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
-  let msg = data?.error || error?.message; if (error) { try { const j = await error.context?.json?.(); if (j?.error) msg = j.error; } catch (e) {} }
-  if (msg) return toast('Couldn’t read that calendar: ' + msg + (/Failed to send|not found|404/i.test(msg) ? ' — deploy the weekly-digest function first' : ''));
+  if (error || data?.error) return toast('Couldn’t read that calendar: ' + await fnErr(error, data), null, 12000);
   toast(`Works · ${data.count} event${data.count === 1 ? '' : 's'} in the next 30 days${data.next?.[0] ? ` · next: ${data.next[0].title} (${dgDay(data.next[0].date).short} ${dgDay(data.next[0].date).md})` : ''}`);
 }

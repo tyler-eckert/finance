@@ -27,8 +27,11 @@ import nodemailer from 'npm:nodemailer@6.9.16';
    ===================================================================== */
 // ---------------------------------------------------------------- time zones
 // minutes the zone is ahead of UTC at a given instant (e.g. America/Chicago in summer → −300)
+const FMT = new Map<string, Intl.DateTimeFormat>();   // building a formatter is slow; one per zone and shape is plenty
+const fmtFor = (tz: string, wd: boolean) => { const k = tz + (wd ? '|w' : ''); let f = FMT.get(k);
+  if (!f) { f = new Intl.DateTimeFormat('en-US', {timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', ...(wd ? {weekday: 'short'} : {})}); FMT.set(k, f); } return f; };
 function tzOffset(tz: string, utcMs: number) {
-  const f = new Intl.DateTimeFormat('en-US', {timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'});
+  const f = fmtFor(tz, false);
   const p: Record<string, number> = {}; f.formatToParts(new Date(utcMs)).forEach(x => { if (x.type !== 'literal') p[x.type] = +x.value; });
   return (Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second) - utcMs) / 60000;
 }
@@ -40,7 +43,7 @@ export function zonedToUtc(y: number, mo: number, d: number, h: number, mi: numb
   return t;
 }
 export function localParts(utcMs: number, tz: string) {
-  const f = new Intl.DateTimeFormat('en-US', {timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short'});
+  const f = fmtFor(tz, false);
   const p: Record<string, string> = {}; f.formatToParts(new Date(utcMs)).forEach(x => { if (x.type !== 'literal') p[x.type] = x.value; });
   return {date: `${p.year}-${p.month}-${p.day}`, h: +p.hour % 24, m: +p.minute};
 }
@@ -88,13 +91,17 @@ function expandRule(rule: string, start: DT, from: string, to: string, ex: Set<s
   const out: string[] = []; let n = 0;
   const take = (d: string) => { if (d < s0 || d > until || n >= count) return false; n++; if (d >= from && d <= to && !ex.has(d)) out.push(d); return true; };
   const hardStop = dAdd(to, 1);
-  if (freq === 'DAILY') { for (let d = s0, k = 0; d <= until && d <= hardStop && n < count && k < 5000; d = dAdd(d, interval), k++) take(d); }
+  const DAY = 864e5, gap = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY), skip = count === Infinity && from > s0;
+  if (freq === 'DAILY') { const jump = skip ? Math.max(0, Math.floor((gap(s0, from) - 2) / interval)) * interval : 0; for (let d = dAdd(s0, jump), k = 0; d <= until && d <= hardStop && n < count && k < 5000; d = dAdd(d, interval), k++) take(d); }
   else if (freq === 'WEEKLY') {
     const days = byday.length ? byday.map(b => DOW[b.slice(-2)]).sort() : [dow(s0)];
-    const wk0 = dAdd(s0, -dow(s0));   // Sunday of the first week
+    let wk0 = dAdd(s0, -dow(s0));   // Sunday of the first week
+    if (skip) { const wks = Math.max(0, Math.floor((gap(wk0, from) / 7 - 1) / interval)) * interval; wk0 = dAdd(wk0, wks * 7); }
     for (let w = wk0, k = 0; w <= until && w <= hardStop && n < count && k < 3000; w = dAdd(w, 7 * interval), k++) days.forEach(dd => take(dAdd(w, dd)));
   } else if (freq === 'MONTHLY') {
-    for (let y = start.y, m = start.mo, k = 0; k < 1200 && n < count; k++) {
+    let y0 = start.y, m0 = start.mo;
+    if (skip) { const fy = +from.slice(0, 4), fm = +from.slice(5, 7), months = (fy - y0) * 12 + (fm - m0) - 1; if (months > 0) { const k = Math.floor(months / interval) * interval; m0 += k; y0 += Math.floor((m0 - 1) / 12); m0 = (m0 - 1) % 12 + 1; } }
+    for (let y = y0, m = m0, k = 0; k < 1200 && n < count; k++) {
       const first = ymd(y, m, 1); if (first > until || first > hardStop) break;
       const dim = daysIn(y, m), cands: number[] = [];
       if (byday.length) byday.forEach(b => { const mm = b.match(/^([+-]?\d+)?(\w\w)$/); if (!mm) return; const wd = DOW[mm[2]], nth = mm[1] ? +mm[1] : 0;
@@ -105,20 +112,26 @@ function expandRule(rule: string, start: DT, from: string, to: string, ex: Set<s
       m += interval; while (m > 12) { m -= 12; y++; }
     }
   } else if (freq === 'YEARLY') {
-    for (let y = start.y, k = 0; k < 200 && n < count; y += interval, k++) { const d = ymd(y, start.mo, Math.min(start.d, daysIn(y, start.mo))); if (d > until || d > hardStop) break; take(d); }
+    const y0 = skip ? start.y + Math.max(0, Math.floor((+from.slice(0, 4) - start.y - 1) / interval)) * interval : start.y;
+    for (let y = y0, k = 0; k < 200 && n < count; y += interval, k++) { const d = ymd(y, start.mo, Math.min(start.d, daysIn(y, start.mo))); if (d > until || d > hardStop) break; take(d); }
   } else take(s0);
   return out;
 }
 
 // all events that touch [from, to] (local dates in tz), recurring ones expanded, cancelled ones and exceptions handled
 export function parseICS(text: string, from: string, to: string, tz: string): CalEvent[] {
+  // cheap pre-check on the raw lines: keep anything recurring or moved, and one-off events within a few days of the window
+  const lo = dAdd(from, -3).replace(/-/g, ''), hi = dAdd(to, 3).replace(/-/g, '');
+  const keepRaw = (b: string[]) => { let ds = '', de = ''; for (const l of b) { if (l.startsWith('RRULE') || l.startsWith('RECURRENCE-ID')) return true;
+      if (l.startsWith('DTSTART')) ds = (l.match(/:(\d{8})/) || [])[1] || ''; else if (l.startsWith('DTEND')) de = (l.match(/:(\d{8})/) || [])[1] || ''; }
+    if (!ds) return false; return ds <= hi && (de || ds) >= lo; };
   const lines = text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').split(/\r?\n/);
   const blocks: Prop[][] = []; let cur: string[] | null = null, depth = 0;
   for (const l of lines) {
     if (l === 'BEGIN:VEVENT') { cur = []; depth = 0; continue; }
     if (cur && l.startsWith('BEGIN:')) { depth++; continue; }          // VALARM inside an event
     if (cur && l.startsWith('END:') && depth) { depth--; continue; }
-    if (l === 'END:VEVENT' && cur) { blocks.push(parseProps(cur)); cur = null; continue; }
+    if (l === 'END:VEVENT' && cur) { if (keepRaw(cur)) blocks.push(parseProps(cur)); cur = null; continue; }
     if (cur && !depth) cur.push(l);
   }
   const masters: Prop[][] = [], overrides: Record<string, Prop[]> = {};
@@ -128,19 +141,23 @@ export function parseICS(text: string, from: string, to: string, tz: string): Ca
   const emit = (b: Prop[], st: DT, en: DT | null, durMs: number) => {
     const g = (n: string) => b.find(p => p.name === n)?.value || '';
     if (/CANCELLED/i.test(g('STATUS'))) return;
-    const s = dtUtc(st), e = en ? dtUtc(en) : s + durMs;
+    const home = st.allDay || st.tz === tz, s = home ? Date.UTC(st.y, st.mo - 1, st.d, st.h, st.mi, st.s) : dtUtc(st), e = en ? (home && (en.allDay || en.tz === tz) ? Date.UTC(en.y, en.mo - 1, en.d, en.h, en.mi, en.s) : dtUtc(en)) : s + durMs;
     let date: string, endDate: string, time: string | null = null;
     if (st.allDay) { date = ymd(st.y, st.mo, st.d); endDate = en ? dAdd(ymd(en.y, en.mo, en.d), -1) : date; if (endDate < date) endDate = date; }
+    else if (home) { date = ymd(st.y, st.mo, st.d); time = timeLabel(st.h, st.mi); endDate = new Date(Math.max(s, e - 1)).toISOString().slice(0, 10); }   // wall-clock ms: sorting and spans are all that need it
     else { const L = localParts(s, tz); date = L.date; time = timeLabel(L.h, L.m); endDate = localParts(Math.max(s, e - 1), tz).date; }
+    // startUtc / endUtc hold home wall-clock time (used only for sorting and spans), so shift converted events the same way
+    const sh = home ? 0 : tzOffset(tz, s) * 60000;
     if (endDate < from || date > to) return;
-    out.push({uid: g('UID'), title: unescapeText(g('SUMMARY')) || '(busy)', location: unescapeText(g('LOCATION')), allDay: st.allDay, startUtc: s, endUtc: e, date, endDate, time, status: g('STATUS')});
+    out.push({uid: g('UID'), title: unescapeText(g('SUMMARY')) || '(busy)', location: unescapeText(g('LOCATION')), allDay: st.allDay, startUtc: s + sh, endUtc: e + sh, date, endDate, time, status: g('STATUS')});
   };
   for (const b of masters) {
     const dsP = b.find(p => p.name === 'DTSTART'); if (!dsP) continue;
     const st = parseDT(dsP, tz), deP = b.find(p => p.name === 'DTEND'), en = deP ? parseDT(deP, tz) : null;
-    const durMs = en ? dtUtc(en) - dtUtc(st) : st.allDay ? 864e5 : 0;
     const rr = b.find(p => p.name === 'RRULE')?.value, uid = b.find(p => p.name === 'UID')?.value || '';
-    if (!rr) { emit(b, st, en, durMs); continue; }
+    if (rr) { const u = rr.match(/UNTIL=(\d{8})/); if (u && u[1] < from.replace(/-/g, '')) continue; }   // a series that ended before the window
+    const wall = (x: DT) => (x.allDay || x.tz === tz) ? Date.UTC(x.y, x.mo - 1, x.d, x.h, x.mi, x.s) : dtUtc(x), durMs = en ? wall(en) - wall(st) : st.allDay ? 864e5 : 0;
+    if (!rr) { const d0 = ymd(st.y, st.mo, st.d), d1 = en ? ymd(en.y, en.mo, en.d) : d0; if (d1 < dAdd(from, -2) || d0 > dAdd(to, 2)) continue; emit(b, st, en, durMs); continue; }
     const ex = new Set<string>(); b.filter(p => p.name === 'EXDATE').forEach(p => p.value.split(',').forEach(v => { const x = parseDT({...p, value: v}, tz); ex.add(ymd(x.y, x.mo, x.d)); }));
     const spanDays = st.allDay && en ? Math.max(0, Math.round((Date.UTC(en.y, en.mo - 1, en.d) - Date.UTC(st.y, st.mo - 1, st.d)) / 864e5) - 1) : 0;
     for (const d of expandRule(rr, st, dAdd(from, -spanDays - 1), to, ex)) {

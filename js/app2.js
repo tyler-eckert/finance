@@ -105,10 +105,10 @@ const subBudgetRows = (y, cat) => Object.entries(ST.subBudget[y] || {}).filter((
 const subBudgetFor = (y, cat, sub, m0, m1) => { const r = ST.subBudget[y]?.[cat + '|' + sub]; return r ? sum(r.slice(m0 - 1, m1)) : null; };
 
 /* ---------- small UI helpers ---------- */
-function toast(msg, undo) {
+function toast(msg, undo, ms = 4200) {
   let t = $('#toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
   t.innerHTML = `${icon('check')}<span>${esc(msg)}</span>${undo ? `<button id="toastUndo">Undo</button>` : ''}`;
-  t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 4200);
+  t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), ms);
   if (undo) $('#toastUndo').onclick = () => { undo(); t.classList.remove('on'); };
 }
 const catOptions = (sel, {blank = 'Uncategorized', any = false} = {}) => (any ? `<option value="*">Any category</option>` : '') + `<option value="">${blank}</option>` +

@@ -173,6 +173,21 @@ function scanPages() {   // render each page off-screen once to list its cards, 
   CH = saveCH; render.keep = keep; closeAll();
   return out;
 }
+/* Admin: every card folds to its header · open/closed is remembered per person (UI.admOpen) · first visit: only People is open */
+function admCollapse(pg) {
+  const cards = [...pg.querySelectorAll(':scope > .grid > .card')]; if (!cards.length) return;
+  const keyOf = c => normKey(c.querySelector('.card-h h3')?.textContent || cardTitle(c));
+  if (!Array.isArray(UI.admOpen)) UI.admOpen = [keyOf(cards[0])];
+  const open = new Set(UI.admOpen), save = () => { UI.admOpen = [...open]; SYNC.schedule(); };
+  const bar = document.createElement('div'); bar.className = 'toolbar adm-bar';
+  bar.innerHTML = `<span class="muted" style="font-size:var(--fs-sm)">${cards.length} sections · click a header to open or close it</span><div style="margin-left:auto;display:flex;gap:8px"><button class="btn sm" data-admall="1">Expand all</button><button class="btn sm" data-admall="0">Collapse all</button></div>`;
+  pg.prepend(bar);
+  cards.forEach(c => { const k = keyOf(c), h = c.querySelector('.card-h'); if (!h) return;
+    c.classList.add('adm-fold'); c.classList.toggle('folded', !open.has(k));
+    const chev = document.createElement('button'); chev.className = 'adm-chev'; chev.setAttribute('aria-label', 'Open or close'); chev.innerHTML = icon('chev', 2.4); h.prepend(chev);
+    h.onclick = e => { if (e.target.closest('button:not(.adm-chev),input,select,textarea,a,label')) return; open.has(k) ? open.delete(k) : open.add(k); c.classList.toggle('folded', !open.has(k)); save(); }; });
+  $$('[data-admall]', bar).forEach(b => b.onclick = () => { cards.forEach(c => { const k = keyOf(c); b.dataset.admall === '1' ? open.add(k) : open.delete(k); c.classList.toggle('folded', b.dataset.admall !== '1'); }); save(); });
+}
 function renderAdmin(pg) {
   if (!ADM.people && !ADM.loading) loadPeople();
   if (!ADM.scan) ADM.scan = scanPages();
@@ -246,6 +261,7 @@ function renderAdmin(pg) {
   $$('[data-pgo]', pg).forEach(b => b.onclick = () => { LAYOUT_EDIT = true; go(b.dataset.pgo); layBtnSync(); });
   $$('[data-prs]', pg).forEach(b => b.onclick = () => { resetPageDev(b.dataset.prs); render(); });
   $('#layResetAll').onclick = () => { const was = clone(UI.layout); Object.keys(UI.layout).forEach(resetPageDev); render(); toast(`All page layouts reset on ${devKey() === 'phone' ? 'this phone' : 'computers'}`, () => { UI.layout = was; render(); }); };
+  admCollapse(pg);
 }
 const confirmInline = (el, msg) => window.confirm(msg + ' Continue?');
 function openRemove(p) {
