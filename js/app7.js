@@ -211,6 +211,7 @@ function renderAdmin(pg) {
           ${cards.map((c, i) => `<div class="adm-card ${LH.includes(c.k) ? 'off' : ''}"><span title="${esc(c.t)}">${esc(c.t)}</span><button class="mini-btn" data-pmv="${p.k}|${c.k}|-1" ${i ? '' : 'disabled style="opacity:.3"'}>${icon('up')}</button><button class="mini-btn" data-pmv="${p.k}|${c.k}|1" ${i < cards.length - 1 ? '' : 'disabled style="opacity:.3"'}>${icon('down')}</button><button class="mini-btn" data-phd="${p.k}|${c.k}" title="${LH.includes(c.k) ? 'Show' : 'Hide'}">${icon(L.hidden.includes(c.k) ? 'eyeOff' : 'eye')}</button></div>`).join('') || '<p class="muted" style="font-size:12px">No cards</p>'}
           <div style="display:flex;gap:10px;margin-top:8px"><button class="link" data-pgo="${p.k}">Customize on page →</button>${UI.layout[p.k] ? `<button class="link" data-prs="${p.k}" style="margin-left:auto">Reset</button>` : ''}</div></div>`; }).join('')}</div>
       <p class="muted" style="font-size:11.5px;margin-top:10px">Cards that change with the page's selection (for example, the selected loan's detail) are listed under the name they had when this page last loaded.</p></div>
+    ${typeof digestAdminCard === 'function' ? digestAdminCard() : ''}
     ${automationCard()}
   </div>`;
   // people
@@ -232,6 +233,7 @@ function renderAdmin(pg) {
     const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
     if (error) return toast('Couldn’t save: ' + error.message); CTX.household.settings = settings; render(); toast('Saved as the household default for everyone without their own layout'); };
   wireAutomation();
+  if (typeof wireDigestAdmin === 'function') wireDigestAdmin(pg);
   if ($('#useDef')) $('#useDef').onclick = () => { const d = clone(CTX.household.settings.ui); UI.density = {...UI_DEFAULT.density, ...d.density}; UI.layout = d.layout || {}; applyDensity(); render(); toast('Using the household default'); };
   // phone bar
   $('#tbR').oninput = e => { (UI.mobile ||= {}).tabBottom = +e.target.value; $('#tbV').textContent = e.target.value + 'px'; applyDensity(); SYNC.schedule(); };

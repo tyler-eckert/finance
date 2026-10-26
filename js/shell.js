@@ -1,6 +1,7 @@
 /* ================= shell / routing ================= */
 const PAGES = [
   {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
+  {k: 'week', n: 'This week', i: 'week', g: 'Analyze', sub: () => 'Calendars and bills for the next two weeks · the weekly digest', r: renderWeek},
   {k: 'review', n: 'Year in review', i: 'cal', g: 'Analyze', sub: () => 'Recap, goals, notes and the annual deck', r: renderReview},
   {k: 'budget', n: 'Budget vs. actual', m: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
   {k: 'cash', n: 'Cash plan', i: 'cal', g: 'Analyze', sub: () => 'Bills, subscriptions, income and what’s coming · next 12 weeks', r: renderCash},
@@ -78,7 +79,7 @@ $$('#themeToggle button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
 $('#themeMob').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 setTheme(CTX.prefs.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => { CH.forEach(f => f()); if (typeof packFree === 'function') requestAnimationFrame(() => packFree($('#p-' + cur))); }, 120); });
-cur = 'overview'; if (tabHidden('overview')) cur = navPages().find(p => !tabHidden(p.k))?.k || 'overview';   // always open on Overview
+cur = 'overview'; if (location.hash === '#week' && !tabHidden('week')) cur = 'week'; else if (tabHidden('overview')) cur = navPages().find(p => !tabHidden(p.k))?.k || 'overview';   // always open on Overview
 render.keep = false; render();
 
 /* collapsible side menu (remembered on this device) */

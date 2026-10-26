@@ -328,7 +328,7 @@ function renderOverview(pg) {
       ${(() => { const P0 = cashflowByMonth(PY), pv = sum(P0.inc) - sum(P0.exp), cv = ytdInc + ytdExp, dd = cv - pv; return `<div class="delta cf-py">${PY} same months (Jan–${MON[ASOF.m - 1]}): <b class="num">${short(pv)}</b> <span class="num ${dd >= 0 ? 'pos' : 'neg'}">${dd >= 0 ? '+' : '−'}${short(Math.abs(dd))}</span></div>`; })()}
       <div style="margin-top:14px">${spark(CF.inc.map((v, i) => v - CF.exp[i]), 'var(--s2)', 200, 40)}</div></div>
 
-    <div data-slot="glance"></div><div data-slot="notes"></div>
+    <div data-slot="glance"></div>${typeof ovWeekCard === 'function' ? ovWeekCard() : ''}<div data-slot="notes"></div>
     <div class="card c-8">
       <div class="card-h"><div><h3>Net worth · actual & plan</h3><div class="sub">Month-end actuals, then the plan's projected range · ${PV.real ? "today's dollars (past values inflation-adjusted too)" : 'nominal dollars'}</div></div>
         <div class="right" style="display:flex;gap:8px;align-items:center">${lblToggle()}<div class="seg" id="nwSeg">${[['1y', '±1Y'], ['3y', '±3Y'], ['5y', '±5Y'], ['all', 'All']].map(([k, l]) => `<button data-k="${k}" class="${k === nwRange ? 'on' : ''}" title="${k === 'all' ? 'All history, plus the plan horizon below' : 'This many years back and ahead'}">${l}</button>`).join('')}</div></div></div>
