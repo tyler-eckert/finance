@@ -283,7 +283,7 @@ function openAddPerson() {
   <div class="form">
     <div style="grid-column:1/-1"><label>Email</label><input class="in" id="apE" type="email" placeholder="name@example.com" autocomplete="off"></div>
     <div><label>Name <span class="muted">(optional)</span></label><input class="in" id="apN" placeholder="e.g. Jessie"></div>
-    <div><label>Permission</label><select class="in" id="apR"><option value="editor">Editor · can change data</option><option value="viewer">Viewer · read only</option><option value="owner">Owner · full admin</option></select></div>
+    <div><label>Permission</label><select class="in" id="apR"><option value="editor">Editor · can change data</option><option value="viewer">Viewer · browse, switch months, own layout</option><option value="owner">Owner · full admin</option></select></div>
     <div style="grid-column:1/-1"><label>Temporary password <span class="muted">(8+ characters · blank = send invite email)</span></label><input class="in" id="apP" type="text" autocomplete="new-password" placeholder="Leave blank to invite"></div>
   </div>
   <div class="hint" id="apMsg" style="display:none"></div>
