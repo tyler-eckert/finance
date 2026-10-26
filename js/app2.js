@@ -242,11 +242,8 @@ function renderBudget(pg) {
   const TAXOUT = ST.cats.some(c => c.name === 'Tax' && (c.group === 'Fixed Expense' || c.group === 'Variable Expense')) && !ST.excl.has('Tax');
   const gsum = (g, k) => sum(ST.cats.filter(c => c.group === g && !ST.excl.has(c.name) && !(TAXOUT && c.name === 'Tax')).map(c => R(c.name)[k]));
   const gR = g => ({bm: gsum(g, 'bm'), am: gsum(g, 'am'), by: gsum(g, 'by'), ay: gsum(g, 'ay'), rest: gsum(g, 'rest'), rb: gsum(g, 'rb'), rp: gsum(g, 'rp'), fy: gsum(g, 'fy')});
-  GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
-    h += `<tr class="grp"><td colspan="${NC}">${g.l}</td></tr>`;
-    const income = g.k === 'Income';
-    sectioned(g.k, rows.map(r => r.c)).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td colspan="${NC}">${esc(x.hdr)}</td></tr>`; return; } const r = rows.find(y => y.c === x.c);
-      const c = r.c.name, rr = R(c); if (TAXOUT && c === 'Tax') return; if (!rr.am && !rr.bm && !rr.ay && !rr.by) return;
+  const catRowM = (r, income) => {
+      const c = r.c.name, rr = R(c); if (!rr.am && !rr.bm && !rr.ay && !rr.by) return;
       const subKeys = [...new Set(Object.keys(AY.S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1]))];
       const subs = [...new Set([...r.c.subs.filter(sb => subKeys.includes(sb) || subBudgetFor(y, c, sb, 1, m1) != null), ...subKeys])].filter(sb => Math.abs(AY.S[c + '|' + sb] || 0) >= .5 || subBudgetFor(y, c, sb, 1, m1) != null);
       const has = subs.some(Boolean); if (has) HAS.add(c); const open = has && bOpen.has(c);
@@ -256,6 +253,12 @@ function renderBudget(pg) {
         h += `<tr class="click sub" data-cat="${esc(c)}" data-sub="${esc(sb)}"><td><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>
           <td class="muted bm">${bm == null ? '' : money(bm)}</td><td>${money(am)}</td>${bm == null ? '<td></td>' : vcell(am - bm)}<td class="muted by">${by == null ? '' : money(by)}</td><td>${money(ay)}</td>${by == null ? '<td></td>' : vcell(ay - by)}${by == null ? '<td class="bar-cell"></td>' : bar(ay, by, income)}${by == null ? '<td class="proj"></td><td class="pj-d"></td>' : proj({ay, rest: m1 < 12 ? subBudgetFor(y, c, sb, m1 + 1, 12) || 0 : 0, fy: subBudgetFor(y, c, sb, 1, 12) || 0})}</tr>`;
       });
+  };
+  GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
+    h += `<tr class="grp"><td colspan="${NC}">${g.l}</td></tr>`;
+    const income = g.k === 'Income';
+    sectioned(g.k, rows.map(r => r.c)).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td colspan="${NC}">${esc(x.hdr)}</td></tr>`; return; } const r = rows.find(y => y.c === x.c);
+      if (TAXOUT && r.c.name === 'Tax') return; catRowM(r, income);
     });
     h += `<tr class="tot"><td>Total ${g.l.toLowerCase()}</td>${cells(gR(g.k), income)}</tr>`;
   });
@@ -265,7 +268,7 @@ function renderBudget(pg) {
     const pre = comb(gR('Fixed Expense'), gR('Variable Expense')), tx = hasTax ? R('Tax') : Object.fromEntries(KS.map(k => [k, 0])), tot = comb(pre, tx);
     h += `<tr class="grp"><td colspan="${NC}">Expense summary</td></tr>`
       + `<tr class="tot"><td>Fixed + variable expenses <span class="muted" style="font-size:11px;font-weight:500">before tax</span></td>${cells(pre, false)}</tr>`
-      + (hasTax ? `<tr class="click" data-cat="Tax"><td><span class="tw"><span class="chev-sp"></span><span>Tax</span></span></td>${cells(tx, false)}</tr>` : '')
+      + (hasTax ? (() => { const h0 = h; h = ''; const r = rows.find(z => z.c.name === 'Tax'); if (r) catRowM(r, false); const out = h || `<tr class="click" data-cat="Tax"><td><span class="tw"><span class="chev-sp"></span><span>Tax</span></span></td>${cells(tx, false)}</tr>`; h = h0; return out; })() : '')
       + `<tr class="tot"><td>Total expenses <span class="muted" style="font-size:11px;font-weight:500">fixed + variable + tax</span></td>${cells(tot, false)}</tr>`; }
   const nR = ['Income', 'Fixed Expense', 'Variable Expense'].map(gR).concat(TAXOUT ? [R('Tax')] : []).reduce((a, b) => ({bm: a.bm + b.bm, am: a.am + b.am, by: a.by + b.by, ay: a.ay + b.ay, rest: a.rest + b.rest, rb: a.rb + b.rb, rp: a.rp + b.rp, fy: a.fy + b.fy}));
   h += `<tr class="tot net"><td>Net${ST.excl.size ? ' <span class="muted" style="font-size:11px;font-weight:500">' + exclLabel() + '</span>' : ''}</td><td class="muted bm">${money(nR.bm)}</td><td>${money(nR.am)}</td>${vcell(nR.am - nR.bm)}<td class="muted by">${money(nR.by)}</td><td>${money(nR.ay)}</td>${vcell(nR.ay - nR.by)}<td class="bar-cell"></td>${proj(nR)}</tr>`;
@@ -1049,12 +1052,15 @@ function renderActuals(pg, seg) {
   const nM = months.length, cellsOf = (vals, b) => vals.map((v, i) => `<td class="num${v > 0 ? ' pos' : ''}" data-m="${months[i]}">${f(v)}</td>`).join('') + `<td class="num b">${f(sum(vals))}</td><td class="num muted">${f(sum(vals) / nM)}</td>` + bvCells(sum(vals), b);
   const grpBud = g => sum(cats.filter(c => inGrp(c, g)).map(c => budM(c.name) || 0));
   let h = `<tr><th class="stick">Category</th>${months.map(m => `<th>${mShort(m)}</th>`).join('')}<th>Total</th><th>Avg / mo</th><th class="bcol" title="Budget for the same months as the range">Budget</th><th title="Actual minus budget · green = better than budget">Variance</th></tr>`; const HAS = [];
-  GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
-    h += `<tr class="grp"><td class="stick" colspan="${nM + 5}">${g.l}</td></tr>`;
-    sectioned(g.k, cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="${nM + 5}">${esc(x.hdr)}</td></tr>`; return; } const c = x.c; if (TAXOUT && c.name === 'Tax') return; const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
+  const catRowA = c => {
+      const v = catVals(c.name); if (v.every(x => Math.abs(x) < .5)) return;
       const subs = subsOf(c.name).filter(sb => subVals(c.name, sb).some(x => Math.abs(x) >= .5)), has = subs.length > 1 || (subs.length === 1 && subs[0] !== ''), open = has && AR.open.has(c.name); if (has) HAS.push(c.name);
       h += `<tr class="click" data-cat="${esc(c.name)}"><td class="stick"><span class="tw">${has ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellsOf(v, budM(c.name))}</tr>`;
       if (open) subs.sort((p, q) => sum(subVals(c.name, p)) - sum(subVals(c.name, q))).forEach(sb => { h += `<tr class="subr click" data-cat="${esc(c.name)}" data-sub="${esc(sb)}"><td class="stick"><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>${cellsOf(subVals(c.name, sb), budM(c.name, sb))}</tr>`; });
+  };
+  GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
+    h += `<tr class="grp"><td class="stick" colspan="${nM + 5}">${g.l}</td></tr>`;
+    sectioned(g.k, cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="${nM + 5}">${esc(x.hdr)}</td></tr>`; return; } if (TAXOUT && x.c.name === 'Tax') return; catRowA(x.c);
     });
     h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${cellsOf(grpVals(g.k), grpBud(g.k))}</tr>`;
   });
@@ -1063,7 +1069,7 @@ function renderActuals(pg, seg) {
     const txV = txAll, txB = hasTax ? (budM('Tax') || 0) : 0, totB = grpBud('Fixed Expense') + grpBud('Variable Expense') + txB;
     h += `<tr class="grp"><td class="stick" colspan="${nM + 5}">Expense summary</td></tr>`
       + `<tr class="tot"><td class="stick">Fixed + variable expenses <span class="muted" style="font-size:11px;font-weight:500">before tax</span></td>${cellsOf(ex.map((v, i) => v - txV[i]), totB - txB)}</tr>`
-      + (hasTax ? `<tr class="click" data-cat="Tax"><td class="stick"><span class="tw"><span class="chev-sp"></span>Tax</span></td>${cellsOf(txV, txB)}</tr>` : '')
+      + (hasTax ? (() => { const h0 = h; h = ''; catRowA(cats.find(z => z.name === 'Tax')); const out = h; h = h0; return out; })() : '')
       + `<tr class="tot"><td class="stick">Total expenses <span class="muted" style="font-size:11px;font-weight:500">fixed + variable + tax</span></td>${cellsOf(ex, totB)}</tr>`; }
   h += `<tr class="tot net"><td class="stick">Net${ST.excl.size ? ` <span class="muted" style="font-size:11px;font-weight:500">${exclLabel()}</span>` : ''}</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num b ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td class="num muted">${f(sum(net) / nM)}</td>${bvCells(sum(net), grpBud('Income') + grpBud('Fixed Expense') + grpBud('Variable Expense') + (TAXOUT ? budM('Tax') || 0 : 0))}</tr>`;
   h += cashRows(nM + 5, k => [['Starting', m => ymPlus(m, -1), ymPlus(months[0], -1)], ['Ending', m => m, months[nM - 1]]].map(([l, fm, tot]) =>

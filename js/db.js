@@ -461,7 +461,7 @@ const SYNC = {
   queue(fn) { this.hooks.push(fn); this.schedule(0); },
 };
 const RENDER_SILENT = () => { const r = window.render; r.keep = true; const s = SYNC.schedule; SYNC.schedule = () => {}; try { r(); } finally { SYNC.schedule = s; } };
-const prefsNow = () => ({excl: [...ST.excl].sort(), exclSub: [...(ST.exclSub || [])].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, theme: document.documentElement.dataset.theme, ui: typeof UI === 'undefined' ? undefined : UI});
+const prefsNow = () => ({excl: [...ST.excl].sort(), exclSub: [...(ST.exclSub || [])].sort(), pv: {h: PV.h, sc: PV.sc, real: PV.real, pm: PV.pm}, conf: SCCONF, tax: {rates: TX.rates, preset: TX.preset, highAGI: TX.highAGI}, bm: {show: [...BM.show].sort(), stocks: BM.stocks}, ui: typeof UI === 'undefined' ? undefined : UI});
 const smartSave = s => ({enabled: !!s.enabled, cadence: s.cadence, autoAccept: s.autoAccept, basis: s.basis, condition: s.condition, vin: s.vin, miles: s.miles, annualMiles: s.annualMiles, address: s.address, zip: s.zip, off: [...(s.off || [])].sort()});
 
 const ORDER = ['cats', 'acct', 'sub', 'inv', 'valias', 'cash', 'loans', 'assets', 'tx', 'rules', 'budget', 'bal', 'avals', 'quotes', 'scn', 'ledger', 'taxy', 'taxw', 'plan', 'prefs'];
