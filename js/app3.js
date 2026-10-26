@@ -453,7 +453,8 @@ function openSources(id) {
       <div><label>Odometer</label><input class="in num" id="sMi" value="${esc(S.miles)}" placeholder="miles"></div>
       <div><label>Miles per year</label><input class="in num" id="sAm" value="${S.annualMiles}"></div>
       <div><label>Condition</label><select class="in" id="sCd">${['Excellent', 'Good', 'Fair', 'Poor'].map(c => `<option ${c === S.condition ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
-      <div><label>Value basis</label><select class="in" id="sBs">${['Private party', 'Trade-in', 'Dealer retail'].map(c => `<option ${c === S.basis ? 'selected' : ''}>${c}</option>`).join('')}</select></div>` : `
+      <div><label>Value basis</label><select class="in" id="sBs">${['Private party', 'Trade-in', 'Dealer retail'].map(c => `<option ${c === S.basis ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+      <div><label>ZIP <span class="muted">(local market for dealer prices)</span></label><input class="in num" id="sZp" value="${esc(S.zip)}" placeholder="ZIP" maxlength="5"></div>` : `
       <div style="grid-column:1/-1"><label>Address</label><input class="in" id="sAd" value="${esc(S.address)}" placeholder="Street address, Edmond, OK"></div>
       <div><label>ZIP</label><input class="in num" id="sZp" value="${esc(S.zip)}" placeholder="ZIP"></div>
       <div><label>Purchase price · date</label><input class="in" disabled value="${a.cost ? money(a.cost) + ' · ' + mLabel(a.purchase) : '—'}"></div>`}
