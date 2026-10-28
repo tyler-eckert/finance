@@ -71,8 +71,16 @@ function render() {
   const vt = $('#vtabs'); if (vt) { vt.innerHTML = sec.v.length > 1 ? `<div class="seg vseg" role="tablist">${sec.v.map(([k, l]) => `<button role="tab" data-v="${k}" aria-selected="${k === cur}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; vt.classList.toggle('on', sec.v.length > 1); $$('[data-v]', vt).forEach(b => b.onclick = () => go(b.dataset.v)); }
   const y = scrollY; CH = []; ZDASH = cur === 'budget'; try { p.r($('#p-' + cur)); } finally { ZDASH = false; } applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
   const keep = render.keep;
-  requestAnimationFrame(() => { CH.forEach(f => f()); if (typeof fitTallCards === 'function') fitTallCards($('#p-' + cur)); if (keep && Math.abs(scrollY - y) > 2) scrollTo({top: y}); });   // free placement sizes tiles here, so restore the scroll after
+  requestAnimationFrame(() => { segsInView(); CH.forEach(f => f()); if (typeof fitTallCards === 'function') fitTallCards($('#p-' + cur)); if (keep && Math.abs(scrollY - y) > 2) scrollTo({top: y}); });   // free placement sizes tiles here, so restore the scroll after
   if (keep) scrollTo({top: y}); render.keep = true;
+}
+/* v96 · segmented bars that are wider than the screen scroll sideways: keep the selected one fully in view, and fade the edge
+   that has more tabs past it so it's clear the bar scrolls */
+function segsInView() {
+  $$('.vtabs .seg, .page.on .seg').forEach(sg => { const ov = sg.scrollWidth > sg.clientWidth + 2; sg.classList.toggle('seg-ovf', ov); if (!ov) return;
+    const on = sg.querySelector('button.on'); if (on) { const l = on.getBoundingClientRect().left - sg.getBoundingClientRect().left + sg.scrollLeft, r = l + on.offsetWidth; if (l < sg.scrollLeft + 8 || r > sg.scrollLeft + sg.clientWidth - 8) sg.scrollLeft = Math.max(0, l - (sg.clientWidth - on.offsetWidth) / 2); }
+    const edge = () => { sg.classList.toggle('seg-l', sg.scrollLeft > 4); sg.classList.toggle('seg-r', sg.scrollLeft + sg.clientWidth < sg.scrollWidth - 4); };
+    edge(); if (!sg._edge) { sg._edge = 1; sg.addEventListener('scroll', edge, {passive: true}); } });
 }
 function go(k) { if (!PAGES.some(p => p.k === k) && SECTIONS().some(s => s.k === k)) return goSec(k); cur = k; history.replaceState(null, '', '#' + k); closeAll(); render.keep = false; scrollTo({top: 0}); render(); }
 function buildNav() {

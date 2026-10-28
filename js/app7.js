@@ -228,7 +228,7 @@ function renderAdmin(pg) {
       ${IS_OWNER ? `<div class="right"><button class="btn primary" id="admAdd">${icon('plus')}<span>Add person</span></button></div>` : ''}</div>
       ${ADM.err ? `<div class="banner">${icon('warn')}<span>${esc(ADM.err)}${/household_people/.test(ADM.err) ? ' — run migration 20261017001100_finance_admin.sql.' : ''}</span></div>` : ''}
       <div class="list adm-list">${ADM.people == null ? '<p class="muted">Loading…</p>' : ADM.people.map(p => `<div class="li">
-        <div class="avatar" style="width:34px;height:34px;font-size:12px;flex:none">${esc((p.display_name || p.email || '?').slice(0, 2).toUpperCase())}</div>
+        <div class="avatar adm-av">${esc((p.display_name || p.email || '?').trim().split(/[\s@._-]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase().slice(0, 2) || '?')}</div>
         <div style="min-width:0;flex:1"><div class="nm ell">${esc(p.display_name || p.email)}${p.is_me ? ' <span class="chip">You</span>' : ''}</div><div class="ds ell">${esc(p.email)} · last sign-in ${fmtWhen(p.last_sign_in_at)}</div></div>
         ${roleSel(p)}
         ${IS_OWNER ? `<button class="mini-btn" title="Set password" data-pw="${p.user_id}">${icon('edit')}</button><button class="mini-btn" title="Remove from household" data-rm="${p.user_id}">${icon('trash')}</button>` : ''}</div>`).join('')}</div>
