@@ -14,7 +14,7 @@ Object.assign(I, {
 });
 
 /* ---------------- account tax treatment (household setting) ---------------- */
-const TAXT_L = {taxable: 'Taxable', pretax: 'Pre-tax', roth: 'Roth', hsa: 'HSA', '529': '529 · college', none: 'Not counted'};
+const TAXT_L = {taxable: 'Taxable', pretax: 'Pre-tax', roth: 'Roth', hsa: 'HSA', '529': '529', none: 'Not counted'};
 const TAXT_SET = () => CTX.household?.settings?.tax_treat || CTX.settings?.tax_treat || {};
 const taxtGuess = a => { const n = (a.name || '').toLowerCase();
   if (a.group === 'College' || /529/.test(n)) return '529'; if (/\bhsa\b/.test(n)) return 'hsa'; if (/roth/.test(n)) return 'roth';
@@ -50,7 +50,7 @@ function onTrack() {
   const sc = SCN[0], K = kept12(), pre = neededPre(sc);
   const needed = pre == null ? null : contrib401 + pre, saved = contrib401 + K.kept, planned = contrib401 + sc.p.pre;
   const atPace = simP({...sc.p, pre: K.kept}, 300, false).prob, planP = scnRun(sc).prob;
-  return {sc, K, needed, saved, planned, gap: needed == null ? null : saved - needed, atPace, planP, conf: SCCONF};
+  return {sc, K, needed, saved, planned, gap: needed == null ? null : saved - Math.max(0, needed), atPace, planP, conf: SCCONF};
 }
 // taxable money at retirement (today's dollars) against the years before 59½
 function bridge() {
@@ -78,7 +78,7 @@ function renderOnTrack(pg) {
   pg.innerHTML = `<div class="grid g-12">
     <div class="card hero c-12 ot-hero" data-lk="ot-hero"><div class="label hero-top"><span>Retire at ${p.retire} · ${esc(T.sc.name)}</span><button class="link hero-link" onclick="go('plan')">Open plan →</button></div>
       <div class="ot-row"><div><div class="val">${st.l}</div><div class="delta">${st.s}</div></div>
-        <div class="ot-vs"><div><span>Needed each year</span><b class="num">${T.needed == null ? '—' : short(T.needed)}</b><small>for a ${Math.round(T.conf * 100)}% chance</small></div><i>vs</i><div><span>Saved, last 12 months</span><b class="num">${short(T.saved)}</b><small>${per}</small></div></div></div>
+        <div class="ot-vs"><div><span>Needed each year</span><b class="num">${T.needed == null ? '—' : short(Math.max(0, T.needed))}</b><small>${T.needed != null && T.needed <= 0 ? `already enough · could draw ${short(-T.needed)}/yr` : `for a ${Math.round(T.conf * 100)}% chance`}</small></div><i>vs</i><div><span>Saved, last 12 months</span><b class="num">${short(T.saved)}</b><small>${per}</small></div></div></div>
       <div class="hero-grid">
         <div>Odds at that pace<b class="num">${Math.round(T.atPace * 100)}%</b></div>
         <div>Odds with the plan’s savings<b class="num">${Math.round(T.planP * 100)}%</b></div>

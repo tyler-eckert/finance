@@ -1358,3 +1358,56 @@ body:not(.compact) .card-h .sub{white-space:normal}
 [data-theme=dark] .gl-i{background:color-mix(in srgb,var(--brand-500) 18%,transparent);color:var(--brand-300)}
 .gl-i svg{width:18px;height:18px}
 .gl-kv{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:var(--fs-sm);color:var(--text-2)}
+
+/* ================= v95 · phone legibility pass ================= */
+@media (max-width:860px){
+  /* header: subtitle gets two lines instead of an ellipsis */
+  .top p{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  body.scrolled .top p{display:none}
+  /* toolbars: buttons keep their words; rows wrap instead of hiding labels */
+  .toolbar{row-gap:8px}
+  .toolbar .btn span{display:inline}
+  .toolbar .btn:not(.primary):has(> svg:only-child) span{display:none}
+  /* list rows (Taxes · From your bank, Balances, …): the name gets the first line, controls wrap below */
+  .li{flex-wrap:wrap;row-gap:6px}
+  .li>div:first-child{flex:1 1 0!important;min-width:58%!important}
+  .li .nm.ell{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+  .li .sel,.li .btn{margin-left:0!important}
+  .li .amt+.sel{margin-left:auto!important}
+  /* connection rows (Assets → Valuation sources) */
+  .conn{flex-wrap:wrap;row-gap:8px}
+  .conn>div:first-child{flex:1 1 100%}
+  /* wide tables scroll sideways instead of squeezing words onto 3–9 lines */
+  .scroll-x>.table:not(.bva) td,.scroll-x>.table:not(.bva) th{white-space:nowrap}
+  .scroll-x{-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .tr-ag{display:block;overflow-x:auto}
+  .tr-ag td,.tr-ag th{min-width:150px}.tr-ag td:first-child,.tr-ag th:first-child{min-width:120px}
+  .form .two{grid-template-columns:1fr}
+  /* KPI tiles: the budget line sits under the chip, never squeezed beside it */
+  .kpi .delta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+  .kpi .delta>.muted{flex-basis:100%;margin-left:0!important}
+  /* Budget vs. actual cards: the % used bar spans the card */
+  .table.bva td.bar-cell{width:auto!important;max-width:none!important;min-width:0!important;justify-self:stretch}
+  .table.bva .bar-cell>div{width:100%}
+  .table.bva .bar-cell .pbar{flex:1 1 auto;min-width:0;width:auto;height:6px}
+  /* Home: the net-worth chart keeps just its range buttons */
+  #p-overview .plan-ctl{display:none}
+  /* This week list: event name on the first line, the time / Bill tag under it */
+  .dg-list .dg-ev,.dg-mini .dg-ev{grid-template-columns:10px minmax(0,1fr) auto;row-gap:1px}
+  .dg-list .dg-ev>i,.dg-mini .dg-ev>i{grid-row:1/3}
+  .dg-list .dg-t,.dg-mini .dg-t{grid-column:2;grid-row:2;font-size:var(--fs-xs);color:var(--text-3)}
+  .dg-list .dg-n,.dg-mini .dg-n{grid-column:2;grid-row:1}
+  .dg-list .dg-ev>b,.dg-mini .dg-ev>b{grid-column:3;grid-row:1}
+  .dg-li{gap:10px}
+  /* On track */
+  .table.ot-t th:nth-child(4),.table.ot-t td:nth-child(4){display:none}
+  .ot-a{grid-template-columns:minmax(0,1fr) 138px;row-gap:2px}
+  .ot-a .nm{grid-column:1;grid-row:1}
+  .ot-a>b{grid-column:1;grid-row:2;justify-self:start;font-size:var(--fs-sm)}
+  .ot-a .sel{grid-column:2;grid-row:1/3;height:38px}
+  .ot-vs b{font-size:var(--fs-2xl)}
+  /* Needs attention: tighter, amount and link share the second line */
+  .att-i{padding:8px 4px}
+  /* card subtitles: two lines on a phone instead of a one-line ellipsis */
+  body.compact .card-h .sub,.card-h .sub{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+}
