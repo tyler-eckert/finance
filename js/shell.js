@@ -16,7 +16,31 @@ const PAGES = [
   {k: 'builder', n: 'Budget', i: 'grid', g: 'Manage', sub: () => 'Build the monthly budget for the year', r: renderBuilder},
   {k: 'cats', n: 'Categories', i: 'tag', g: 'Manage', sub: () => 'Create, rename, merge and recategorize history', r: renderCats},
   {k: 'admin', n: IS_OWNER ? 'Admin' : 'Settings', i: 'gear', g: 'Manage', sub: () => IS_OWNER ? 'People and permissions, table density and page layout' : 'Table density and page layout', r: renderAdmin},
+  {k: 'ontrack', n: 'On track', i: 'target', g: 'Analyze', sub: () => `Are we saving enough to retire at ${SCN[0]?.p.retire ?? 55}? · ${esc(SCN[0]?.name || 'Base')} plan`, r: renderOnTrack},
+  {k: 'goals', n: 'Goals', i: 'flag', g: 'Analyze', sub: () => 'Retirement, college and the big plans · how each one is coming along', r: renderGoals},
 ];
+/* v94 · six sections, each a set of views (the old pages). Pages keep their keys, so go('budget') etc. still work.
+   A per-person Simple view (Settings or the avatar menu) shows just Home, On track, Goals and This week. */
+const SECTIONS_FULL = [
+  {k: 'home', n: 'Home', i: 'home', v: [['overview', 'Overview'], ['week', 'This week']]},
+  {k: 'spending', n: 'Spending', i: 'budget', v: [['budget', 'Budget vs. actual'], ['tx', 'Transactions'], ['vendors', 'Vendors'], ['cash', 'Bills'], ['lawn', 'Lawn care']]},
+  {k: 'planS', n: 'Plan', i: 'invest', v: [['ontrack', 'On track'], ['plan', 'Investments'], ['goals', 'Goals'], ['review', 'Year in review']]},
+  {k: 'networth', n: 'Net worth', i: 'wallet', v: [['balances', 'Balances'], ['loans', 'Assets & loans']]},
+  {k: 'taxS', n: 'Taxes', i: 'file', v: [['taxes', 'Taxes']]},
+  {k: 'settings', n: 'Settings', i: 'gear', v: [['admin', IS_OWNER ? 'Admin' : 'App'], ['builder', 'Budget setup'], ['cats', 'Categories'], ['trust', 'Trust']]},
+];
+const SECTIONS_SIMPLE = [
+  {k: 'home', n: 'Home', i: 'home', v: [['overview', 'Home']]},
+  {k: 'ontrackS', n: 'On track', i: 'target', v: [['ontrack', 'On track']]},
+  {k: 'goalsS', n: 'Goals', i: 'flag', v: [['goals', 'Goals']]},
+  {k: 'weekS', n: 'This week', i: 'week', v: [['week', 'This week']]},
+];
+const isSimple = () => UI.simple ?? (CTX.ROLE === 'viewer');
+const SECTIONS = () => (isSimple() ? SECTIONS_SIMPLE : SECTIONS_FULL).map(s => ({...s, v: s.v.filter(([k]) => !tabHidden(k))})).filter(s => s.v.length);
+const secOf = k => SECTIONS().find(s => s.v.some(v => v[0] === k));
+const SECLAST = {};
+function goSec(sk) { const s = SECTIONS().find(x => x.k === sk); if (!s) return; go(SECLAST[sk] && s.v.some(v => v[0] === SECLAST[sk]) ? SECLAST[sk] : s.v[0][0]); }
+function setSimple(on) { UI.simple = on; SYNC.schedule(); buildNav(); if (!secOf(cur)) cur = 'overview'; go(cur); }
 const TABS_DEF = ['overview', 'budget', 'tx', 'plan'];
 // tab order, visibility, section and the phone bar come from UI.tabs (Admin → Tabs); Admin itself can't be hidden
 const TABSET = () => { const dk = devKey(); UI.tabsBy ||= {}; const t = UI.tabsBy[dk] ||= clone(UI.tabs || {order: [], hidden: [], group: {}, bar: null}); tabMigrate(t); return t; };
@@ -40,27 +64,30 @@ function render() {
   const p = PAGES.find(x => x.k === cur);
   if (!$('#p-' + cur)) { const sec = document.createElement('section'); sec.className = 'page'; sec.id = 'p-' + cur; ($('.page')?.parentNode || document.querySelector('main') || document.body).appendChild(sec); }   // an older cached index.html may not have the newest page
   $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-' + cur));
-  $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
-  $('#pageTitle').textContent = p.n; $('#pageSub').textContent = p.sub();
+  if (!secOf(cur)) { const s0 = SECTIONS()[0]; cur = s0.v[0][0]; return render(); }   // a view this person's menu doesn't have (Simple view)
+  const sec = secOf(cur); SECLAST[sec.k] = cur;
+  $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === sec.k || (b.dataset.k === 'more' && !TABS.includes(sec.k))));
+  $('#pageTitle').textContent = sec.n; $('#pageSub').textContent = p.sub();
+  const vt = $('#vtabs'); if (vt) { vt.innerHTML = sec.v.length > 1 ? `<div class="seg vseg" role="tablist">${sec.v.map(([k, l]) => `<button role="tab" data-v="${k}" aria-selected="${k === cur}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; vt.classList.toggle('on', sec.v.length > 1); $$('[data-v]', vt).forEach(b => b.onclick = () => go(b.dataset.v)); }
   const y = scrollY; CH = []; ZDASH = cur === 'budget'; try { p.r($('#p-' + cur)); } finally { ZDASH = false; } applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
   const keep = render.keep;
   requestAnimationFrame(() => { CH.forEach(f => f()); if (typeof fitTallCards === 'function') fitTallCards($('#p-' + cur)); if (keep && Math.abs(scrollY - y) > 2) scrollTo({top: y}); });   // free placement sizes tiles here, so restore the scroll after
   if (keep) scrollTo({top: y}); render.keep = true;
 }
-function go(k) { cur = k; history.replaceState(null, '', '#' + k); closeAll(); render.keep = false; scrollTo({top: 0}); render(); }
+function go(k) { if (!PAGES.some(p => p.k === k) && SECTIONS().some(s => s.k === k)) return goSec(k); cur = k; history.replaceState(null, '', '#' + k); closeAll(); render.keep = false; scrollTo({top: 0}); render(); }
 function buildNav() {
-  TABS = barKeys();
-  $('#nav').innerHTML = ['Analyze', 'Manage'].map((g, gi) => { const list = navPages(g).filter(p => !tabHidden(p.k)); return list.length ? `${gi ? `<div class="nav-label">${g}</div>` : ''}` + list.map(p => `<button class="nav-btn" data-k="${p.k}">${icon(p.i)}${p.n}</button>`).join('') : ''; }).join('');
-  $('#tabbar').innerHTML = TABS.map(k => PAGES.find(p => p.k === k)).map(p => `<button data-k="${p.k}">${icon(p.i)}${p.m || (p.n === 'Investments' ? 'Invest' : p.n)}</button>`).join('') + `<button data-k="more">${icon('more')}More</button>`;
-  $$('.nav-btn, .tabbar button').forEach(b => { b.title = b.textContent.trim(); b.onclick = () => b.dataset.k === 'more' ? openMore() : go(b.dataset.k); });
-  $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === cur || (b.dataset.k === 'more' && !TABS.includes(cur))));
+  const S = SECTIONS(); TABS = S.slice(0, 4).map(x => x.k);
+  $('#nav').innerHTML = S.map(x => `<button class="nav-btn" data-k="${x.k}">${icon(x.i)}${x.n}</button>`).join('');
+  $('#tabbar').innerHTML = S.slice(0, 4).map(x => `<button data-k="${x.k}">${icon(x.i)}${x.n}</button>`).join('') + (S.length > 4 ? `<button data-k="more">${icon('more')}More</button>` : '');
+  $$('.nav-btn, .tabbar button').forEach(b => { b.title = b.textContent.trim(); b.onclick = () => b.dataset.k === 'more' ? openMore() : goSec(b.dataset.k); });
+  const sec = secOf(cur); $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === sec?.k || (b.dataset.k === 'more' && sec && !TABS.includes(sec.k))));
 }
 buildNav();
 function openMore() {
   const m = $('#modal'); m.classList.remove('wide'); m.classList.add('sheet');
   m.innerHTML = `<div class="dh"><h2 style="font-size:18px">More</h2><button class="x" onclick="closeAll()">${icon('close')}</button></div>
-  <div class="more-grid">${navPages().filter(p => !TABS.includes(p.k) && !tabHidden(p.k)).map(p => `<button data-k="${p.k}"><span class="ico">${icon(p.i)}</span>${p.n}</button>`).join('')}</div>`;
-  openLayer('modal'); $$('.more-grid button', m).forEach(b => b.onclick = () => go(b.dataset.k));
+  <div class="more-grid">${SECTIONS().filter(x => !TABS.includes(x.k)).map(x => `<button data-k="${x.k}"><span class="ico">${icon(x.i)}</span>${x.n}</button>`).join('')}</div>`;
+  openLayer('modal'); $$('.more-grid button', m).forEach(b => b.onclick = () => goSec(b.dataset.k));
 }
 function openLayer(id) { $('#scrim').classList.add('on'); $('#' + id).classList.add('on'); }
 function closeAll() { $('#scrim').classList.remove('on'); $('#drawer').classList.remove('on'); setTimeout(() => { if (!$('#drawer').classList.contains('on')) $('#drawer').classList.remove('wide-d'); }, 300); const m = $('#modal'); m.classList.remove('on'); setTimeout(() => { if (!m.classList.contains('on')) m.classList.remove('wide', 'sheet'); }, 220); hideTip(); }
@@ -70,17 +97,29 @@ $('#layoutBtn').onclick = () => { if (LAYOUT_EDIT) layLock(cur, $('#p-' + cur));
 if (!CTX.CAN_WRITE) $('#importBtn').style.display = 'none';
 (() => { const e = CTX.email || '', nm = e.split('@')[0].split(/[._-]/).filter(Boolean), av = $('.avatar');
   av.textContent = ((nm[0]?.[0] || '') + (nm[1]?.[0] || nm[0]?.[1] || '')).toUpperCase() || '·'; av.title = e; av.style.cursor = 'pointer';
-  av.onclick = ev => { ev.stopPropagation(); const p = $('#fltPop'); p.innerHTML = `<div class="flt-h"><b>${esc(CTX.household.name)} household</b></div><div class="muted" style="font-size:12px;padding:0 4px 10px">${esc(e)} · ${esc(CTX.ROLE)}</div><button class="btn" style="width:100%;justify-content:center" onclick="location.reload()">Reload data</button><button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="signOut()">Sign out</button>`;
+  av.onclick = ev => { ev.stopPropagation(); const p = $('#fltPop'); p.innerHTML = `<div class="flt-h"><b>${esc(CTX.household.name)} household</b></div><div class="muted" style="font-size:12px;padding:0 4px 10px">${esc(e)} · ${esc(CTX.ROLE)}</div><button class="btn" style="width:100%;justify-content:center;margin-bottom:8px" onclick="setSimple(!isSimple())">${isSimple() ? 'Show the full app' : 'Simple view'}</button><div class="muted" style="font-size:var(--fs-xs);padding:0 4px 10px">${isSimple() ? 'You’re in Simple view: Home, On track, Goals and This week.' : 'Simple view shows just Home, On track, Goals and This week · saved for you only.'}</div><button class="btn" style="width:100%;justify-content:center" onclick="location.reload()">Reload data</button><button class="btn" style="width:100%;justify-content:center;margin-top:8px" onclick="signOut()">Sign out</button>`;
     const r = av.getBoundingClientRect(); p.style.top = (r.bottom + 8) + 'px'; p.style.right = Math.max(8, innerWidth - r.right) + 'px'; p.classList.add('on'); };
 })();
 $('#filterBtn').onclick = openFilter;
+/* v77 · phone header: filter / layout / import / theme live under one ⋯ menu so the page title gets the row */
+$('#topMore').onclick = ev => { ev.stopPropagation(); const p = $('#fltPop'), mb = $('#topMore'), r = mb.getBoundingClientRect();
+  const fOn = $('#filterBtn').style.display !== 'none', n = ST.excl.size + ST.exclSub.size, dark = document.documentElement.dataset.theme === 'dark';
+  const it = (id, ic, l, note = '') => `<button class="mp-i" role="menuitem" data-mp="${id}">${icon(ic)}<span>${l}</span>${note ? `<em>${note}</em>` : ''}</button>`;
+  p.innerHTML = `<div class="more-pop" role="menu">${fOn ? it('filter', 'filter', 'Categories', n ? n + ' excluded' : 'All') : ''}${cur !== 'admin' ? it('layout', 'layout', LAYOUT_EDIT ? 'Done with layout' : 'Layout') : ''}${CTX.CAN_WRITE ? it('import', 'down', 'Import') : ''}<button class="mp-i" role="menuitem" data-mp="theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg><span>${dark ? 'Light' : 'Dark'} mode</span></button></div>`;
+  const place = () => { p.style.top = (r.bottom + 8) + 'px'; };
+  place(); p.classList.add('on');
+  $$('[data-mp]', p).forEach(b => b.onclick = e2 => { e2.stopPropagation(); const k = b.dataset.mp; p.classList.remove('on');
+    if (k === 'filter') { openFilter(); place(); }
+    else if (k === 'layout') $('#layoutBtn').click();
+    else if (k === 'import') openImport();
+    else setTheme(dark ? 'light' : 'dark'); }); };
 function setTheme(t) { document.documentElement.dataset.theme = t; const tc = document.getElementById('themeColor'); if (tc) tc.content = t === 'dark' ? '#030504' : '#f4f6f5'; try { localStorage.setItem('fin.theme', JSON.stringify(t)); } catch (e) {} SYNC.schedule(); $$('#themeToggle button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); }
 $$('#themeToggle button').forEach(b => b.onclick = () => setTheme(b.dataset.t));
 $('#themeMob').onclick = () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 /* theme is per device: this browser's saved choice, else the device's light/dark setting (never the account) */
 setTheme((() => { try { return JSON.parse(localStorage.getItem('fin.theme') || 'null'); } catch (_) { return null; } })() || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 let rt, lastW = innerWidth; addEventListener('resize', () => { if (innerWidth === lastW) return; lastW = innerWidth; clearTimeout(rt); rt = setTimeout(() => { CH.forEach(f => f()); if (typeof packFree === 'function') requestAnimationFrame(() => packFree($('#p-' + cur))); }, 120); });
-cur = 'overview'; if (location.hash === '#week' && !tabHidden('week')) cur = 'week'; else if (tabHidden('overview')) cur = navPages().find(p => !tabHidden(p.k))?.k || 'overview';   // always open on Overview
+cur = 'overview'; if (location.hash === '#week' && !tabHidden('week')) cur = 'week'; else if (!secOf('overview')) cur = SECTIONS()[0].v[0][0];   // always open on Overview
 render.keep = false; render();
 
 /* collapsible side menu (remembered on this device) */

@@ -42,9 +42,9 @@ const LDK = (page, key) => { const L = pageLayout(page), dk = devKey(); L[key + 
 const setOrder = (page, list) => { LDK(page, 'order'); pageLayout(page).orderBy[devKey()] = list; };
 function resetPageDev(page) { const L = UI.layout[page]; if (!L) return; const dk = devKey();
   (L.orderBy ||= {})[dk] = []; (L.hiddenBy ||= {})[dk] = []; ['size', 'tall', 'free', 'pos', 'lock'].forEach(k => { if (L[k]) delete L[k][dk]; }); }
-/* Locked tiles: when Layout closes, every tile's height on the page is saved (per device). Outside Layout a tile keeps that
-   height whatever its contents do (a filter, a longer list, a wrapped header), so nothing around it moves; extra content scrolls
-   inside the tile. Open Layout to resize — closing it locks the new sizes. */
+/* Locked tiles: when Layout closes, every tile's height on the page is saved (per device). Outside Layout a tile never gets
+   SHORTER than that height, so nothing below it jumps up; since v77 it grows when its contents need more room instead of
+   clipping or scrolling inside. Open Layout to resize — closing it saves the new sizes. */
 function layLock(page, el) { if (!el) return; const dk = devKey(), L = pageLayout(page), K = ((L.lock ||= {})[dk] = {});
   pageCards(el).forEach(c => { if (!c.dataset.cid || c.style.display === 'none' || c.classList.contains('lay-hidden')) return; const h = Math.round(c.getBoundingClientRect().height); if (h > 20) K[c.dataset.cid] = h; });
   if (typeof SYNC !== 'undefined') SYNC.schedule(); }
@@ -57,6 +57,32 @@ function applyCompact() { document.body.classList.toggle('compact', isCompact())
 let DEV_NOW = devKey();
 addEventListener('resize', () => { const d = devKey(); if (d !== DEV_NOW) { DEV_NOW = d; applyCompact(); if (typeof buildNav === 'function') buildNav(); if (typeof render === 'function') render(); } });
 
+/* v77 · minimum tile widths: a tile saved at ⅙ of a wide screen gets crushed on a narrower one (one word per line, numbers cut off).
+   Each kind of tile has a minimum width in px; on a narrower grid it takes more columns until it fits, and wraps to the next row. */
+const MIN_W = c => +c.dataset.minw || (c.classList.contains('hero') ? 300 : c.querySelector('table') ? 360 : c.querySelector('.chart') ? 320 : c.classList.contains('kpi') ? 210 : 260);
+function fitMinWidth(card, free) {
+  const g = card.parentElement; if (!g || !g.clientWidth || devKey() === 'phone') return;
+  const cols = (getComputedStyle(g).gridTemplateColumns.match(/px/g) || []).length || 12; if (cols < 12) return;   // phone grids already stack
+  const gap = parseFloat(getComputedStyle(g).columnGap) || 0, colW = (g.clientWidth - gap * 11) / 12;
+  const need = Math.min(12, Math.ceil((MIN_W(card) + gap) / (colW + gap))), now = spanOf(card); if (now >= need) return;
+  const m = (card.style.gridColumn || '').match(/^(\d+)\s*\//);   // pinned "col / span n": keep the column when it still fits
+  card.style.gridColumn = m && free ? `${Math.max(1, Math.min(13 - need, +m[1]))} / span ${need}` : `span ${need}`;
+}
+
+/* ---------- v77 · focused Overview: six cards by default (one-time; the old layout is kept in UI.layoutBak and Undo restores it) ---------- */
+const OV_CORE = ['ov-this-week', 'net-worth-open-plan', 'at-a-glance', 'net-worth-actual-&-plan', 'where-it-sits', 'notes-for'];
+const OV_PHONE = ['net-worth-open-plan', 'at-a-glance', 'ov-this-week', 'where-it-sits', 'net-worth-actual-&-plan', 'notes-for'];
+const OV_SIZE = {'ov-this-week': 12, 'net-worth-open-plan': 4, 'at-a-glance': 8, 'net-worth-actual-&-plan': 8, 'where-it-sits': 4, 'notes-for': 12};
+function ovFocus(cards) {
+  if (UI.ovFocus >= 1 || !cards.length) return false;
+  const keys = cards.map(c => c.k), rest = keys.filter(k => !OV_CORE.includes(k)), was = clone(UI.layout.overview || null);
+  UI.layoutBak = {...(UI.layoutBak || {}), overview: was};
+  UI.layout.overview = {order: [], hidden: [], orderBy: {desk: [...OV_CORE, ...rest], phone: [...OV_PHONE, ...rest]}, hiddenBy: {desk: rest.slice(), phone: rest.slice()}, size: {desk: {...OV_SIZE}}, free: {desk: false, phone: false}};
+  UI.ovFocus = 1; if (typeof SYNC !== 'undefined') SYNC.schedule();
+  setTimeout(() => toast('Overview trimmed to 6 cards · Layout → eye icon brings any card back', () => { if (was) UI.layout.overview = was; else delete UI.layout.overview; render(); SYNC.schedule(); }), 400);
+  return true;
+}
+
 /* Apply the saved order / visibility after each render (called from render()) */
 function applyLayout(page, el) {
   if (page === 'admin') return;
@@ -65,6 +91,7 @@ function applyLayout(page, el) {
     if (w.classList.contains('card') || !w.children.length || ![...w.children].every(x => x.classList.contains('card'))) return;
     const span = [...w.classList].find(k => /^c-\d+$/.test(k));
     [...w.children].forEach(x => { if (span && ![...x.classList].some(k => /^c-\d+$/.test(k))) x.classList.add(span); g.insertBefore(x, w); }); w.remove(); }));
+  if (page === 'overview' && !LAYOUT_EDIT) ovFocus(tagCards(page, el));
   const cards = tagCards(page, el), L = UI.layout[page] || {order: [], hidden: []};
   document.body.classList.toggle('lay-on', LAYOUT_EDIT);
   el.querySelector('.lay-banner')?.remove();
@@ -72,7 +99,7 @@ function applyLayout(page, el) {
     const b = document.createElement('div'); b.className = 'lay-banner';
     b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right or bottom edge (or use − / +) to resize it, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp" title="Tiles pack into any empty space, and you can drop a tile anywhere"><input type="checkbox" id="layFree" ${L.free?.[devKey()] ? 'checked' : ''}> Free placement</label><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
     el.prepend(b);
-    $('#layDone').onclick = () => { layLock(page, el); LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved · tiles locked at these sizes'); };
+    $('#layDone').onclick = () => { layLock(page, el); LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved · tiles keep at least these heights'); };
     $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); resetPageDev(page); render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
     $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
     $('#layCompact').onchange = e => { (UI.compact ||= {})[devKey()] = e.target.checked; applyCompact(); render(); };
@@ -90,7 +117,9 @@ function applyLayout(page, el) {
     c.el.dataset.extra = TL[c.k] || ''; c.el.style.height = ''; c.el.style.minHeight = ''; c.el.classList.remove('lay-tall-scroll');
     c.el.style.alignSelf = TL[c.k] ? 'start' : '';   // a card with its own height doesn't stretch to its row
     const LKH = !LAYOUT_EDIT && L.lock?.[dk]?.[c.k]; c.el.classList.toggle('lay-locked', !!LKH);
-    if (LKH) { c.el.style.height = LKH + 'px'; c.el.style.alignSelf = 'start'; }
+    // v77: a locked tile keeps AT LEAST its saved height (nothing below it jumps up), but grows when its content needs more — it never clips
+    if (LKH) { c.el.style.minHeight = LKH + 'px'; c.el.style.alignSelf = 'start'; }
+    if (!LAYOUT_EDIT) fitMinWidth(c.el, FREE);
     const hid = LGET(L, 'hidden').includes(c.k);
     c.el.classList.toggle('lay-hidden', hid && LAYOUT_EDIT);
     c.el.style.display = hid && !LAYOUT_EDIT ? 'none' : '';
@@ -203,7 +232,7 @@ function renderAdmin(pg) {
         <div style="min-width:0;flex:1"><div class="nm ell">${esc(p.display_name || p.email)}${p.is_me ? ' <span class="chip">You</span>' : ''}</div><div class="ds ell">${esc(p.email)} · last sign-in ${fmtWhen(p.last_sign_in_at)}</div></div>
         ${roleSel(p)}
         ${IS_OWNER ? `<button class="mini-btn" title="Set password" data-pw="${p.user_id}">${icon('edit')}</button><button class="mini-btn" title="Remove from household" data-rm="${p.user_id}">${icon('trash')}</button>` : ''}</div>`).join('')}</div>
-      <p class="muted" style="font-size:11.5px;margin-top:10px">Removing someone takes away their access to this household; their login stays in Supabase Auth until you delete it there.</p></div>
+      <p class="muted" style="font-size:var(--fs-xs);margin-top:10px">Removing someone takes away their access to this household; their login stays in Supabase Auth until you delete it there.</p></div>
 
     <div class="card c-5"><div class="card-h"><div><h3>Table density</h3><div class="sub">Row padding and text size for every table · saved to your profile</div></div></div>
       <div class="seg" id="densSeg">${DENSITY.map(d => `<button data-d="${d.k}" class="${preset === d.k ? 'on' : ''}">${d.l}</button>`).join('')}${preset ? '' : '<button class="on">Custom</button>'}</div>
@@ -213,19 +242,19 @@ function renderAdmin(pg) {
       ${IS_OWNER ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><button class="btn" id="hhDef">Save my display & layout as household default</button></div>` : ''}
       ${CTX.household.settings?.ui ? `<button class="link" id="useDef" style="margin-top:10px">Use the household default</button>` : ''}</div>
 
-    ${tabsCard()}
+    ${simpleViewCard()}
     <div class="card c-12"><div class="card-h"><div><h3>Phone bottom bar</h3><div class="sub">How far the tab bar sits above the bottom edge of the screen · Auto follows the phone's safe area (home indicator)</div></div>
       <div class="right"><button class="btn ${UI.mobile?.tabBottom == null ? 'active-f' : ''}" id="tbAuto">Auto</button></div></div>
       <div class="ctrl"><div><label>Distance from the bottom<b id="tbV">${UI.mobile?.tabBottom == null ? 'Auto' : UI.mobile.tabBottom + 'px'}</b></label><input type="range" id="tbR" min="0" max="60" step="1" value="${UI.mobile?.tabBottom ?? 24}"></div></div>
-      <p class="muted" style="font-size:11.5px;margin-top:6px">Applies on phones (the bar is hidden on wide screens). Try 4–10px if the bar floats too high when opened from the Home Screen.</p></div>
+      <p class="muted" style="font-size:var(--fs-xs);margin-top:6px">Applies on phones (the bar is hidden on wide screens). Try 4–10px if the bar floats too high when opened from the Home Screen.</p></div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Page layout · ${devKey() === 'phone' ? 'this phone' : 'computers'}</h3><div class="sub">Show, hide and order the cards on each page · phones and computers each keep their own · or open a page and press <b>Layout</b> to drag cards around</div></div>
       <div class="right"><button class="btn" id="layResetAll">Reset all pages</button></div></div>
       <div class="adm-pages">${PAGES.filter(p => p.k !== 'admin').map(p => { const L = UI.layout[p.k] || {order: [], hidden: []}, LO = LGET(L, 'order'), LH = LGET(L, 'hidden'); const cards = (ADM.scan[p.k] || []).map((c, i) => ({...c, o: LO.indexOf(c.k) < 0 ? 1000 + i : LO.indexOf(c.k)})).sort((a, b) => a.o - b.o);
-        return `<div class="adm-page"><h4>${icon(p.i)}${esc(p.n)}<span class="muted" style="margin-left:auto;font-weight:500;font-size:11.5px">${LH.length ? LH.length + ' hidden' : ''}</span></h4>
+        return `<div class="adm-page"><h4>${icon(p.i)}${esc(p.n)}<span class="muted" style="margin-left:auto;font-weight:500;font-size:var(--fs-xs)">${LH.length ? LH.length + ' hidden' : ''}</span></h4>
           ${cards.map((c, i) => `<div class="adm-card ${LH.includes(c.k) ? 'off' : ''}"><span title="${esc(c.t)}">${esc(c.t)}</span><button class="mini-btn" data-pmv="${p.k}|${c.k}|-1" ${i ? '' : 'disabled style="opacity:.3"'}>${icon('up')}</button><button class="mini-btn" data-pmv="${p.k}|${c.k}|1" ${i < cards.length - 1 ? '' : 'disabled style="opacity:.3"'}>${icon('down')}</button><button class="mini-btn" data-phd="${p.k}|${c.k}" title="${LH.includes(c.k) ? 'Show' : 'Hide'}">${icon(L.hidden.includes(c.k) ? 'eyeOff' : 'eye')}</button></div>`).join('') || '<p class="muted" style="font-size:12px">No cards</p>'}
           <div style="display:flex;gap:10px;margin-top:8px"><button class="link" data-pgo="${p.k}">Customize on page →</button>${UI.layout[p.k] ? `<button class="link" data-prs="${p.k}" style="margin-left:auto">Reset</button>` : ''}</div></div>`; }).join('')}</div>
-      <p class="muted" style="font-size:11.5px;margin-top:10px">Cards that change with the page's selection (for example, the selected loan's detail) are listed under the name they had when this page last loaded.</p></div>
+      <p class="muted" style="font-size:var(--fs-xs);margin-top:10px">Cards that change with the page's selection (for example, the selected loan's detail) are listed under the name they had when this page last loaded.</p></div>
     ${typeof digestAdminCard === 'function' ? digestAdminCard() : ''}
     ${automationCard()}
   </div>`;
@@ -267,7 +296,7 @@ const confirmInline = (el, msg) => window.confirm(msg + ' Continue?');
 function openRemove(p) {
   const m = $('#modal'); m.classList.remove('wide');
   m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">Remove ${esc(p.display_name || p.email)}?</h2><p class="muted" style="font-size:12.5px">They lose access to this household right away. Their login isn't deleted.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
-  <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="rmGo" style="background:var(--neg);border-color:var(--neg)">Remove</button></div>`;
+  <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="rmGo" style="background:var(--neg);border-color:var(--neg-ink)">Remove</button></div>`;
   openLayer('modal');
   $('#rmGo').onclick = async () => { const {error} = await sb.schema('finance').from('household_members').delete().eq('household_id', CTX.HH).eq('user_id', p.user_id);
     if (error) return toast('Couldn’t remove: ' + error.message); ADM.people = ADM.people.filter(x => x !== p); closeAll(); render(); toast(`Removed ${p.email}`); if (p.is_me) setTimeout(() => location.reload(), 900); };
@@ -400,7 +429,13 @@ function fitTallCards(el) {
   packFree(el);
 }
 
-/* ---------------- Admin → Tabs: show / hide, reorder, section, phone bar ---------------- */
+/* v94 · Admin → Simple view (replaces the old Tabs card: the menu is now six fixed sections) */
+function simpleViewCard() {
+  return `<div class="card c-12" id="simpleCard"><div class="card-h"><div><h3>Simple view</h3><div class="sub">Just Home, On track, Goals and This week · for you only, on every device · viewers start in Simple view</div></div>
+    <div class="right"><button class="btn ${isSimple() ? '' : 'primary'}" onclick="setSimple(!isSimple())">${isSimple() ? 'Show the full app' : 'Switch to Simple view'}</button></div></div>
+    <p class="muted" style="font-size:var(--fs-sm)">Anyone can switch from the avatar menu (top right). To set it up for someone else, add them as a <b>Viewer</b> in People & permissions — they’ll open in Simple view.</p></div>`;
+}
+/* ---------------- Admin → Tabs: show / hide, reorder, section, phone bar (v94: no longer shown) ---------------- */
 function tabsCard() {
   const T = TABSET(), bar = barKeys();
   const row = (p, list, i) => { const hid = tabHidden(p.k), lock = p.k === 'admin';
@@ -413,7 +448,7 @@ function tabsCard() {
   return `<div class="card c-12" id="tabsCard"><div class="card-h"><div><h3>Tabs · ${devKey() === 'phone' ? 'this phone' : 'computers'}</h3><div class="sub">Show, hide and reorder the pages in the menu · phones and computers each keep their own · drag a row or use the arrows</div></div>
     <div class="right"><button class="btn" id="tbReset">Reset tabs</button></div></div>
     <div class="tb-cols">${['Analyze', 'Manage'].map(g => { const list = navPages(g); return `<div><div class="nav-label" style="margin:0 0 6px">${g}</div><div class="tb-list" data-tg="${g}">${list.map((p, i) => row(p, list, i)).join('') || '<p class="muted">No tabs here.</p>'}</div></div>`; }).join('')}</div>
-    <p class="muted" style="font-size:11.5px;margin-top:8px">A hidden tab is only removed from the menu — its data and settings stay, and you can show it again here. The phone bar holds 4 tabs; the rest are under More.</p></div>`;
+    <p class="muted" style="font-size:var(--fs-xs);margin-top:8px">A hidden tab is only removed from the menu — its data and settings stay, and you can show it again here. The phone bar holds 4 tabs; the rest are under More.</p></div>`;
 }
 function wireTabsCard() {
   const card = $('#tabsCard'); if (!card) return; const T = TABSET();

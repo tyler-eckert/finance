@@ -190,7 +190,7 @@ function openLawnAct(a0 = {}) {
       <div><label>Cost <span class="muted">(optional)</span></label><input class="in num" id="laC" value="${a.cost ?? ''}" placeholder="$0"></div>
       <div style="grid-column:1/-1"><label>Product / rate <span class="muted">(optional)</span></label><input class="in" id="laP" value="${esc(a.product || '')}" placeholder="e.g. Ferrous sulfate 2 oz / 1,000 sq ft"></div>
       <div style="grid-column:1/-1"><label>Notes</label><input class="in" id="laN" value="${esc(a.notes || '')}"></div></div>
-    <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="laDel" style="color:var(--neg)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="laGo">Save</button></div>`;
+    <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="laDel" style="color:var(--neg-ink)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="laGo">Save</button></div>`;
   openLayer('modal');
   $('#laGo').onclick = async () => { Object.assign(a, {activity: $('#laA').value, turf: $('#laT').value, act_date: $('#laD').value, status: $('#laS').value, who: $('#laW').value.trim() || 'DIY', cost: $('#laC').value.trim() ? +$('#laC').value.replace(/[$,]/g, '') : null, product: $('#laP').value.trim(), notes: $('#laN').value.trim()});
     if (!a.act_date) return toast('Pick a date'); await lawnSaveAct(a, isNew); closeAll(); render(); };
@@ -213,7 +213,7 @@ function openLawnImport() {
   const m = $('#modal'); m.classList.add('wide');
   m.innerHTML = `<div class="dh"><div><h2 style="font-size:20px">Import invoice lines</h2><p class="muted" style="font-size:12.5px">Copy the rows from your spreadsheet (with the header row) and paste them here. Lines are grouped by Inv #; an invoice already imported is replaced.</p></div><button class="x" onclick="closeAll()">${icon('close')}</button></div>
     <div class="form"><div><label>Vendor</label><input class="in" id="liV" value="${esc(LW.vendor)}"></div><div><label>Default category</label><select class="in" id="liC">${catOptions(LAWN_CAT)}</select></div></div>
-    <textarea class="in" id="liT" rows="9" style="width:100%;margin-top:10px;font-family:ui-monospace,monospace;font-size:11.5px" placeholder="Service Date	SD Year	Description	Cost	Categories	Subcategories	Inv #	Paid Date	PD Year"></textarea>
+    <textarea class="in" id="liT" rows="9" style="width:100%;margin-top:10px;font-family:ui-monospace,monospace;font-size:var(--fs-xs)" placeholder="Service Date	SD Year	Description	Cost	Categories	Subcategories	Inv #	Paid Date	PD Year"></textarea>
     <div id="liP" class="hint" style="display:none;margin-top:10px"></div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px"><button class="btn" onclick="closeAll()">Cancel</button><button class="btn primary" id="liGo" disabled>Import</button></div>`;
   openLayer('modal');
@@ -299,7 +299,7 @@ function openInvoiceForm(inv0) {
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap"><button class="btn" id="ivAdd" style="height:30px">${icon('plus')}<span>Add line</span></button>
         ${F.lines.length > 1 ? `<button class="btn" id="ivFill" style="height:30px" title="Put the remaining amount on the last line">Fill last line</button>` : ''}<span style="margin-left:auto;font-size:13px">${status()}</span></div>
       <h4 style="margin:16px 0 6px;font-size:13px">Bank payment</h4><div class="inv-cands" id="ivCands">${candHtml()}</div>
-      <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="ivDel" style="color:var(--neg)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button>
+      <div style="display:flex;gap:10px;margin-top:18px">${!isNew ? `<button class="btn" id="ivDel" style="color:var(--neg-ink)">Delete</button>` : ''}<span style="flex:1"></span><button class="btn" onclick="closeAll()">Cancel</button>
         <button class="btn primary" id="ivGo" ${totalOk() && F.no.trim() && !F.busy ? '' : 'disabled'}>${F.busy ? 'Saving…' : F.tx ? 'Save, tie & split' : 'Save invoice'}</button></div>`;
     $$('[data-k]', m).forEach(el => {
       const k = el.dataset.k, i = el.dataset.i, set = () => { if (k === 'subNew') F.lines[+i].sub = el.value; else if (i != null) F.lines[+i][k] = el.value; else F[k] = el.value; };

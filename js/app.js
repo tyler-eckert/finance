@@ -301,10 +301,13 @@ function renderOverview(pg) {
   INS = buildInsights();
   const nw12 = BS.netWorth[i12], nwYtd = BS.netWorth[iDecPY];
   const inv = investable(L) + BS.college[L];
-  const CF = cashflowByMonth(CY), ytdInc = sum(CF.inc), ytdExp = -sum(CF.exp);
+  // v77: cash flow runs through the last full month, like the glance and The year so far (a half-finished month made "kept" swing negative)
+  const CF0 = cashflowByMonth(CY), cfN = (() => { const lf = typeof lastFullMonth === 'function' ? lastFullMonth() : null; return lf && +lf.slice(0, 4) === CY ? +lf.slice(5, 7) : CF0.inc.length; })();
+  const CF = {inc: CF0.inc.slice(0, cfN), exp: CF0.exp.slice(0, cfN)}, ytdInc = sum(CF.inc), ytdExp = -sum(CF.exp), cfThru = cfN ? MON[cfN - 1] : MON[0];
   const chkN = typeof dataChecks === 'function' ? dataChecks().list.filter(c => c.sev === 'bad').length : 0;
   pg.innerHTML = `${chkN ? `<div class="banner" style="margin-bottom:14px">${icon('warn')}<span><b>${chkN} data check${chkN > 1 ? 's' : ''}</b> need${chkN > 1 ? '' : 's'} a look — some balances may be off, which would skew net worth.</span><button class="btn" style="height:30px;margin-left:auto" onclick="go('balances')">Review</button></div>` : ''}
   <div class="grid g-12">
+    ${typeof ovAttentionCard === 'function' ? ovAttentionCard() : ''}
     <div class="card hero c-6">
       <div class="kpi"><div class="label hero-top"><span>Net worth · ${mLabel(BS.months[L])}</span><button class="link hero-link" onclick="go('plan')">Open plan →</button></div>
       <div class="val num">${money(NW)}</div>
@@ -313,7 +316,8 @@ function renderOverview(pg) {
         <div>Investments<b class="num">${short(inv)}</b></div>
         <div>Home & vehicle equity<b class="num">${short(BS.assets[L])}</b></div>
         <div>Cash<b class="num">${short(BS.cash[L])}</b></div>
-        <div>Retire-ready age<b class="num">${earliest(pvSc()) ?? '> 65'}</b></div>
+        ${(() => { const rh = typeof retireHeadline === 'function' ? retireHeadline() : null, ea = earliest(pvSc());   // v77: same answer as the plan headline and the glance
+          return rh ? `<div title="Plan · ${esc(rh.name)} · earliest age with a ${Math.round(rh.conf * 100)}% chance: ${ea ?? '> 65'}">Odds of retiring at ${rh.age}<b class="num">${Math.round(rh.prob * 100)}%</b></div>` : `<div>Earliest retire age<b class="num">${ea ?? '> 65'}</b></div>`; })()}
       </div>
       <div class="hero-plan" title="Plan · ${esc(pvSc().name)}: ${short(planAt(pvSc(), pvSc().p.retire, 'nw'))} net worth at ${pvSc().p.retire}"><span>Plan · ${esc(pvSc().name)}</span><b>${short(planAt(pvSc(), pvSc().p.retire, 'nw'))}</b> net worth at ${pvSc().p.retire} (median, ${PV.real ? "today's $" : 'future $'})</div>
     </div>
@@ -322,10 +326,10 @@ function renderOverview(pg) {
       <div class="val num">${short(v)}</div>
       <div class="delta">${chip(nz((v - d) / Math.abs(d || 1)))} <span class="num ${v - d >= 0 ? 'pos' : 'neg'}" style="margin-left:4px;font-weight:600">${v - d >= 0 ? '+' : '−'}${short(Math.abs(v - d))}</span> since Dec</div>
       <div style="margin-top:14px">${spark(BS.months.slice(-24).map((m, j) => S[L - 23 + j] ?? 0), k === 'brokerage' ? 'var(--s1)' : 'var(--s2)', 200, 40)}</div></div>`; }).join('')}
-    <div class="card c-2 kpi"><div class="label"><span class="ico">${icon('cash')}</span>${CY} cash flow</div>
+    <div class="card c-2 kpi"><div class="label"><span class="ico">${icon('cash')}</span>Cash flow · Jan–${cfThru} ${CY}</div>
       <div class="val num">${short(ytdInc + ytdExp)}</div>
       <div class="delta">${exclLabel()} · ${ytdInc ? Math.round((ytdInc + ytdExp) / ytdInc * 100) : 0}% of income kept</div>
-      ${(() => { const P0 = cashflowByMonth(PY), pv = sum(P0.inc) - sum(P0.exp), cv = ytdInc + ytdExp, dd = cv - pv; return `<div class="delta cf-py">${PY} same months (Jan–${MON[ASOF.m - 1]}): <b class="num">${short(pv)}</b> <span class="num ${dd >= 0 ? 'pos' : 'neg'}">${dd >= 0 ? '+' : '−'}${short(Math.abs(dd))}</span></div>`; })()}
+      ${(() => { const P0 = cashflowByMonth(PY), pv = sum(P0.inc.slice(0, cfN)) - sum(P0.exp.slice(0, cfN)), cv = ytdInc + ytdExp, dd = cv - pv; return `<div class="delta cf-py">${PY} same months (Jan–${cfThru}): <b class="num">${short(pv)}</b> <span class="num ${dd >= 0 ? 'pos' : 'neg'}">${dd >= 0 ? '+' : '−'}${short(Math.abs(dd))}</span></div>`; })()}
       <div style="margin-top:14px">${spark(CF.inc.map((v, i) => v - CF.exp[i]), 'var(--s2)', 200, 40)}</div></div>
 
     <div data-slot="glance"></div>${typeof ovWeekCard === 'function' ? ovWeekCard() : ''}<div data-slot="notes"></div>
@@ -479,7 +483,7 @@ function renderInvest(pg) {
       <div class="chart" id="schChart"></div>${PV.pm === 'total' ? planLegend('Investable') + planStats('inv') : ''}
       <div class="legend" style="${PV.pm === 'total' ? 'display:none' : ''}"><span><i class="sw" style="background:var(--s1)"></i>Balance</span><span><i class="sw" style="background:var(--s2);border-radius:50%"></i>Deposit</span><span><i class="sw" style="background:var(--s5);border-radius:50%"></i>Withdrawal</span></div></div>
     <div class="card c-4"><div class="card-h"><div><h3>Accounts</h3><div class="sub">Last 24 months</div></div></div>
-      <div class="list">${accts.map(a => { const v = BS[a.k].slice(-24); const ch = v.length > 12 && v[v.length - 13] ? (v[v.length - 1] - v[v.length - 13]) / v[v.length - 13] : 0; return `<div class="li"><div style="min-width:0"><div class="nm">${esc(a.n)}</div><div class="ds">${a.d}</div></div><div style="margin-left:auto">${spark(v, a.c, 64, 26, false)}</div><div class="amt num" style="margin-left:12px;min-width:72px">${short(BS[a.k][L])}<div style="font-size:11px;font-weight:600" class="${ch >= 0 ? 'pos' : 'neg'}">${pct(ch, 0)} 1y</div></div></div>`; }).join('')}</div></div>
+      <div class="list">${accts.map(a => { const v = BS[a.k].slice(-24); const ch = v.length > 12 && v[v.length - 13] ? (v[v.length - 1] - v[v.length - 13]) / v[v.length - 13] : 0; return `<div class="li"><div style="min-width:0"><div class="nm">${esc(a.n)}</div><div class="ds">${a.d}</div></div><div style="margin-left:auto">${spark(v, a.c, 64, 26, false)}</div><div class="amt num" style="margin-left:12px;min-width:72px">${short(BS[a.k][L])}<div style="font-size:var(--fs-xs);font-weight:600" class="${ch >= 0 ? 'pos' : 'neg'}">${pct(ch, 0)} 1y</div></div></div>`; }).join('')}</div></div>
 
     ${flowCard()}
     ${accountProjection()}

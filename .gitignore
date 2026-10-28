@@ -14,3 +14,7 @@ __pycache__/
 Trust Docs/
 *.pdf
 trust_summary*.json
+
+# Personal data / scratch - never commit
+seed/private/
+Claude outputs/

@@ -40,7 +40,7 @@ const boot = document.getElementById('boot');
 const bootMsg = (html, busy) => { boot.querySelector('.boot-body').innerHTML = html; boot.classList.toggle('busy', !!busy); };
 function showLogin(err) {
   bootMsg(`<form id="loginF" class="login" autocomplete="on">
-    <img src="trust-logo.png" alt="" style="width:92px;display:block;margin:0 auto 10px">
+    <div class="login-brand"><div class="logo-mark login-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="#fff"><rect x="4.5" y="5" width="15" height="3.4" rx="1.7"/><rect x="4.5" y="10.3" width="9.6" height="3.4" rx="1.7"/><rect x="4.5" y="15.6" width="15" height="3.4" rx="1.7"/></g><circle cx="18" cy="12" r="1.9" fill="#7fcf9f"/></svg></div><div class="logo-word">eckert<span>.fin</span></div></div>
     <h2>Sign in</h2><p class="muted">Your finances, private to your household.</p>
     ${err ? `<div class="login-err">${escH(err)}</div>` : ''}
     <label>Email<input class="in" type="email" id="lgE" autocomplete="username" required></label>
@@ -69,17 +69,22 @@ async function start() {
   if (!session) return showLogin();
   SESSION = session;
   bootMsg('<div class="spin"></div><p>Loading your data…</p>', true);
+  preloadApp();   // v94: the app's scripts download while the data loads, instead of after it
   try {
-    const {data: hhs, error} = await FDB.rpc('my_households');
-    if (error) throw error;
-    if (!hhs || !hhs.length) return bootMsg(`<h2>No household yet</h2><p class="muted">You're signed in as ${escH(session.user.email)}, but this account isn't linked to a household. Run the membership SQL from the README, then reload.</p><button class="btn" onclick="signOut()">Sign out</button>`);
-    let pick = hhs[0]; try { pick = hhs.find(h => h.household_id === localStorage.getItem('fin.hh')) || hhs[0]; } catch (_) {}
-    HH = pick.household_id; ROLE = pick.role;
     const t0 = performance.now();
     const rpcRetry = async (fn, args) => { let r = await FDB.rpc(fn, args);   // a cold database can time out once; the second try is warm
       if (r.error && /statement timeout|57014/.test((r.error.message || '') + r.error.code)) { bootMsg('<div class="spin"></div><p>Waking the database…</p>', true); r = await FDB.rpc(fn, args); }
       return r; };
-    const snapP = rpcRetry('app_snapshot', {p_household: HH}), [{data: snap, error: e2}, ex] = await Promise.all([snapP, snapP.then(() => rpcRetry('app_snapshot_extra', {p_household: HH}))]);
+    // v94: with the household remembered on this device, the snapshot starts right away (alongside the membership check)
+    const fetchBoth = hh => [rpcRetry('app_snapshot', {p_household: hh}), rpcRetry('app_snapshot_extra', {p_household: hh})];
+    let known = null; try { known = localStorage.getItem('fin.hh'); } catch (_) {}
+    const early = known ? fetchBoth(known) : null;
+    const {data: hhs, error} = await FDB.rpc('my_households');
+    if (error) throw error;
+    if (!hhs || !hhs.length) return bootMsg(`<h2>No household yet</h2><p class="muted">You're signed in as ${escH(session.user.email)}, but this account isn't linked to a household. Run the membership SQL from the README, then reload.</p><button class="btn" onclick="signOut()">Sign out</button>`);
+    const pick = hhs.find(h => h.household_id === known) || hhs[0];
+    HH = pick.household_id; ROLE = pick.role; try { localStorage.setItem('fin.hh', HH); } catch (_) {}
+    const [{data: snap, error: e2}, ex] = await Promise.all(early && HH === known ? early : fetchBoth(HH));
     if (e2) throw e2;
     if (ex.error) console.warn('[fin] app_snapshot_extra failed', ex.error.message);
     Object.assign(snap, {vendor_aliases: [], vendor_monthly: [], cash_items: [], market_series: [], automation: [], statement_balances: [], notes: [], invoices: [], lawn_activities: []}, ex.data || {}); snap.extraOk = !ex.error;
@@ -88,6 +93,7 @@ async function start() {
     await loadApp();
     boot.classList.add('gone'); setTimeout(() => boot.remove(), 400);
     SYNC.init();
+    setTimeout(backfillHistory, 400);   // v94: older transactions arrive in the background
   } catch (err) {
     console.error(err);
     bootMsg(`<h2>Couldn't load</h2><p class="muted">${escH(err.message || err)}</p><div style="display:flex;gap:8px;justify-content:center"><button class="btn" onclick="location.reload()">Retry</button><button class="btn" onclick="signOut()">Sign out</button></div>`);
@@ -96,8 +102,26 @@ async function start() {
 async function signOut() { await sb.auth.signOut(); location.hash = ''; location.reload(); }
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
+const APP_FILES = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/app14.js', 'js/app15.js', 'js/app16.js', 'js/shell.js'];
+function preloadApp() {   // fetch every module now (in parallel, into the HTTP cache); loadApp() runs them in order once the data is in
+  const v = CFG.version || '';
+  APP_FILES.forEach(f => { const l = document.createElement('link'); l.rel = 'preload'; l.as = 'script'; l.href = f + (v ? '?v=' + v : ''); document.head.appendChild(l); });
+  const l = document.createElement('link'); l.rel = 'preload'; l.as = 'style'; l.href = 'css/app.css' + (v ? '?v=' + v : ''); document.head.appendChild(l);
+}
+/* v94 · full history in the background: the snapshot holds the recent window (fast first paint); everything older is
+   fetched in parallel pages after the app is on screen, merged into ST.tx, and the open page redraws once (not while you type). */
+async function backfillHistory() {
+  if (typeof ST === 'undefined' || ST.allLoaded) return;
+  try {
+    const t0 = performance.now(), older = await DB.loadOlder(CTX.SINCE, 1e6), have = new Set(ST.tx.map(t => t.id));
+    older.forEach(t => { if (!have.has(t.id)) ST.tx.push(t); }); ST.tx.sort((a, b) => b.d.localeCompare(a.d)); ST.allLoaded = true; SYNC.adopt('tx', older.map(t => t.id));
+    console.info(`[fin] history backfill: ${older.length} older transactions in ${Math.round(performance.now() - t0)} ms`);
+    const redraw = () => { const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) || document.querySelector('.modal.on, .drawer.on')) return setTimeout(redraw, 1500); render(); };
+    redraw();
+  } catch (e) { console.warn('[fin] history backfill failed', e.message || e); }
+}
 function loadApp() {
-  const files = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/app14.js', 'js/app15.js', 'js/shell.js'];
+  const files = APP_FILES;
   const v = CFG.version || '';
   const css = document.querySelector('link[href^="css/app.css"]'); if (css && v && !css.href.includes('?v=' + v)) css.href = 'css/app.css?v=' + v;   // the stylesheet follows the app version too
   return files.reduce((p, f) => p.then(() => new Promise((res, rej) => {
@@ -788,12 +812,16 @@ const DB = {
       if (i >= 0) { if (CTX.stmt[i].complete && !o.complete) return; CTX.stmt[i] = o; } else CTX.stmt.push(o); });
   },
   async loadOlder(before, limit = 5000) {
-    const out = [];
-    for (let from = 0; from < limit; from += 1000) {
-      const rows = must(await FDB.from('transactions').select('id, posted_on, description, amount, category_id, subcategory_id, project_id, account_id, notes, is_split, transaction_splits(category_id, subcategory_id, amount, notes, sort_order)')
-        .eq('household_id', hh()).lt('posted_on', before).order('posted_on', {ascending: false}).range(from, from + 999));
-      out.push(...rows); if (rows.length < 1000) break;
-    }
+    // v94: count first, then fetch the 1,000-row pages several at a time (was one after another)
+    const base = () => FDB.from('transactions').select('id, posted_on, description, amount, category_id, subcategory_id, project_id, account_id, notes, is_split, transaction_splits(category_id, subcategory_id, amount, notes, sort_order)')
+      .eq('household_id', hh()).lt('posted_on', before).order('posted_on', {ascending: false}).order('id', {ascending: true});
+    const {count, error} = await FDB.from('transactions').select('id', {count: 'exact', head: true}).eq('household_id', hh()).lt('posted_on', before);
+    if (error) throw error;
+    const n = Math.min(limit, count || 0), pages = []; for (let from = 0; from < n; from += 1000) pages.push(from);
+    const out = [], res = new Array(pages.length); let next = 0;
+    const worker = async () => { while (next < pages.length) { const i = next++, from = pages[i]; res[i] = must(await base().range(from, Math.min(n, from + 1000) - 1)); } };
+    await Promise.all(Array.from({length: Math.min(6, pages.length)}, worker));
+    res.forEach(r => out.push(...r));
     return out.map(r => { const t = {id: r.id, d: r.posted_on, desc: r.description, amt: +r.amount, cat: MAP.catName[r.category_id] || '', sub: MAP.subName[r.subcategory_id]?.name || '', proj: MAP.projCode[r.project_id] || '', acct: MAP.acctName[r.account_id] || '', note: r.notes || ''};
       if (r.is_split && r.transaction_splits?.length) t.splits = r.transaction_splits.sort((a, b) => a.sort_order - b.sort_order).map(s => ({cat: MAP.catName[s.category_id] || '', sub: MAP.subName[s.subcategory_id]?.name || '', amt: +s.amount, note: s.notes || ''}));
       return t; });

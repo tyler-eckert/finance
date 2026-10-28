@@ -102,7 +102,7 @@ function renderRetirement(pg) {
         <div><label>Spending <b id="hq-spend">${short(sel.p.spend)}/yr</b></label><input type="range" min="120000" max="360000" step="5000" value="${sel.p.spend}" data-hq="spend"></div>
         <div><label>Social Security <b id="hq-ss">${sel.p.ss ? short(sel.p.ss) + '/yr' : 'None'}</b></label><input type="range" min="0" max="80000" step="2500" value="${sel.p.ss || 0}" data-hq="ss"></div></div>
       <div class="delta" style="margin-top:10px">${(() => { const e = earliest(sel); return e ? `Earliest age with a ${fmtPct(SCCONF)} chance: <b>${e}</b> (${YNOW + e - ageNow}, ${e - ageNow} years from now)` : `No age between 45 and 65 reaches ${fmtPct(SCCONF)} with these assumptions`; })()}</div></div>
-      <div class="rh-side"><div class="label" style="margin-bottom:8px">Confidence target</div>${confSeg}<div class="label" style="margin-top:14px;font-size:11px">Earliest age · chance at the scenario's own age</div>
+      <div class="rh-side"><div class="label" style="margin-bottom:8px">Confidence target</div>${confSeg}<div class="label" style="margin-top:14px;font-size:var(--fs-xs)">Earliest age · chance at the scenario's own age</div>
         <div class="rh-chips">${SCN.map((s, i) => { const e = earliest(s); return `<div class="rh-chip"><i class="sw" style="background:${SC_COLORS[i % 5]}"></i><span>${esc(s.name)}</span><b>${e ? 'Age ' + e : '> 65'}</b><span class="rh-at">${Math.round(scnRun(s).prob * 100)}% at ${s.p.retire}</span></div>`; }).join('')}</div></div></div>
 
     <div class="card c-12"><div class="card-h"><div><h3>Retirement age vs. chance of success</h3><div class="sub">Share of 250 market paths where the money lasts to 95, for each possible retirement age · dashed line = your ${fmtPct(SCCONF)} target</div></div></div>
@@ -211,7 +211,7 @@ function benchCard() {
       ${BM.show.has('cus') && bmHas('cus') ? `<label class="bm-mix">Stocks <input type="range" id="bmMix" min="0" max="100" step="10" value="${BM.stocks}"> <b id="bmMixV">${BM.stocks}%</b></label>` : ''}${['sp', 'mod', 'agg'].some(bmHas) ? '' : '<span class="sample-pill">No benchmark data yet</span>'}</div>
     <div class="chart" id="bmChart"></div><div class="legend" id="bmLeg"></div>
     <div class="scroll-x" style="margin-top:14px"><table class="table cmp" id="bmTable"></table></div>
-    <p class="muted" style="font-size:11.5px;margin-top:10px">Your lines use your monthly statements. Benchmark lines come from <code>finance.benchmark_returns</code> (monthly total returns); load them with the benchmark job in the README. Choose the benchmark that matches the account's target mix.</p></div>`;
+    <p class="muted" style="font-size:var(--fs-xs);margin-top:10px">Your lines use your monthly statements. Benchmark lines come from <code>finance.benchmark_returns</code> (monthly total returns); load them with the benchmark job in the README. Choose the benchmark that matches the account's target mix.</p></div>`;
 }
 function drawBench() {
   const el = $('#bmChart'); if (!el) return;

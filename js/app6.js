@@ -83,7 +83,7 @@ function planStats(kind) {
     <div class="mini"><div class="l">${kind === 'nw' ? 'Net worth' : 'Investable'} · ${mShort(LASTM)}</div><div class="v num">${short(now)}</div></div>
     <div class="mini"><div class="l">Plan · age ${a10} (${YNOW + 10})</div><div class="v num">${short(planAt(sc, a10, kind))}</div></div>
     <div class="mini"><div class="l">Plan · retire at ${ret}</div><div class="v num">${short(planAt(sc, ret, kind))}</div></div>
-    <div class="mini"><div class="l">Actual vs plan · since Dec</div><div class="v num ${pva.diff >= 0 ? 'pos' : 'neg'}">${pva.diff >= 0 ? '+' : '−'}${short(Math.abs(pva.diff))}</div><div class="ds" style="font-size:11px;color:var(--text-3)">${pva.diff >= 0 ? 'ahead of' : 'behind'} the ${(sc.p.ret * 100).toFixed(1)}% path</div></div></div>`;
+    <div class="mini"><div class="l">Actual vs plan · since Dec</div><div class="v num ${pva.diff >= 0 ? 'pos' : 'neg'}">${pva.diff >= 0 ? '+' : '−'}${short(Math.abs(pva.diff))}</div><div class="ds" style="font-size:var(--fs-xs);color:var(--text-3)">${pva.diff >= 0 ? 'ahead of' : 'behind'} the ${(sc.p.ret * 100).toFixed(1)}% path</div></div></div>`;
 }
 
 /* ---------- projected balances by account (expected path, before market swings) ---------- */
@@ -102,5 +102,5 @@ function accountProjection() {
     ${rows.map(x => `<tr><td>${x.n}</td><td>${short(x.b)}</td>${ages.map(a => `<td>${short(at(x, a))}</td>`).join('')}<td class="hide-sm muted">${x.note}</td></tr>`).join('')}
     <tr><td>${coll.n}</td><td>${short(coll.b)}</td>${ages.map(a => `<td>${short(cAt(a))}</td>`).join('')}<td class="hide-sm muted">${coll.note}</td></tr>
     <tr class="tot"><td>Total</td><td>${short(sum(rows.map(x => x.b)) + coll.b)}</td>${ages.map(a => `<td>${short(sum(rows.map(x => at(x, a))) + cAt(a))}</td>`).join('')}<td class="hide-sm"></td></tr></table></div>
-    <p class="muted" style="font-size:11.5px;margin-top:8px">Expected (average) values run above the median line in the charts because market returns compound unevenly. Edit the assumptions on Plan → Retirement.</p></div>`;
+    <p class="muted" style="font-size:var(--fs-xs);margin-top:8px">Expected (average) values run above the median line in the charts because market returns compound unevenly. Edit the assumptions on Plan → Retirement.</p></div>`;
 }
