@@ -204,20 +204,24 @@ function renderBudget(pg) {
   pg.innerHTML = `
   <div class="toolbar">${seg}
     <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}</option>`).join('')}</select>
-    <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button><button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
+    <div class="seg" id="bPer"><button data-p="m" class="${BPER === 'm' ? 'on' : ''}">Month</button><button data-p="y" class="${BPER === 'y' ? 'on' : ''}">Year to date</button></div>
+    <div style="margin-left:auto;display:flex;gap:8px"><div class="seg" id="bView" title="Bars or the full table"><button data-v="bars" class="${budView() === 'bars' ? 'on' : ''}">Bars</button><button data-v="table" class="${budView() === 'table' ? 'on' : ''}">Table</button></div>${budView() === 'table' ? `<button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button>` : ''}<button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
   ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
   <div class="grid g-12">
-    ${kpi(MON[m1 - 1] + ' income', inc, true, 'c-2', 'm')}${kpi(MON[m1 - 1] + ' spending', exp, false, 'c-2', 'm')}${kpi(MON[m1 - 1] + ' net', net, true, 'c-2', 'm')}${kpi('Income · YTD', {...yI, bm: inc.b}, true, 'c-2', 'y')}${kpi('Spending · YTD', {...yE, bm: exp.b}, false, 'c-2', 'y')}${kpi('Net · YTD', {...yN, bm: net.b}, true, 'c-2', 'y')}
-    <div class="card c-7"><div class="card-h"><div><h3>Biggest variances</h3><div class="sub">Green = under budget · red = over · click to drill in</div></div></div><div class="chart" id="varChart"></div></div>
-    <div class="card c-5"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${bMode === 'month' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
-    <div class="card c-12"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div>
+    ${budSummaryCard({per: BPER, mL: MON[m1 - 1], y, LIVE, frac, day: tD, dim, inc: BPER === 'y' ? {a: yI.a, b: {full: yI.b, month: inc.b}} : {a: inc.a, b: {full: inc.b, month: inc.b}}, exp: BPER === 'y' ? {a: yE.a, b: {full: yE.b, month: exp.b}} : {a: exp.a, b: {full: exp.b, month: exp.b}}, net: BPER === 'y' ? {a: yN.a, b: {full: yN.b, month: net.b}} : {a: net.a, b: {full: net.b, month: net.b}}})}
+    ${budView() === 'bars' ? budBarsCard({y, m0: BPER === 'y' ? 1 : m1, m1, LIVE, frac, mL: MON[m1 - 1], per: BPER}) : ''}
+    <div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${BPER === 'm' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
+    <div class="card c-12 ${budView() === 'table' ? '' : 'bud-hide'}" data-lk="bva-table"><div class="card-h"><div><h3>Budget vs. actual · table</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div>
         <div class="right pj-ctl"><span class="muted">Projection</span><div class="seg sm" id="pjMode"><button data-k="budget" class="${UI.projMode === 'budget' ? 'on' : ''}" title="Actual so far + the budget for the rest of the year">Budget</button><button data-k="smart" class="${UI.projMode !== 'budget' ? 'on' : ''}" title="Actual so far + a blend of budget and how you’ve actually been spending">Smart</button></div>
         ${UI.projMode !== 'budget' ? `<label class="pj-w" title="How much the rest of the year leans on the budget vs. your spending pattern">Budget <b id="pjWv">${Math.round((UI.projW ?? .7) * 100)}%</b><input type="range" id="pjW" min="0" max="100" step="5" value="${Math.round((UI.projW ?? .7) * 100)}"></label>` : ''}</div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
-  $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
+  if ($('#bExpand')) $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
+  $$('#bPer button').forEach(b => b.onclick = () => { BPER = b.dataset.p; render(); });
+  $$('#bView button').forEach(b => b.onclick = () => { UI.budView = b.dataset.v; SYNC.schedule(); render(); });
+  wireBudBars(pg, BPER === 'y' ? 1 : m1, m1);
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   // % used: every track runs 0–150%, so the 100% tick sits in the same spot on every row
   const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar pb150" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(150, used * 100) / 1.5}%"></i><b class="pb-100"></b></div><span class="muted num pb-l">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
@@ -286,8 +290,8 @@ function renderBudget(pg) {
   if ($('#pjW')) { $('#pjW').oninput = e => { $('#pjWv').textContent = e.target.value + '%'; }; $('#pjW').onchange = e => { UI.projW = +e.target.value / 100; SYNC.schedule(); render(); }; }
   $$('#bvaTable .chev').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.tg; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('#bvaTable tr.click').forEach(tr => tr.onclick = () => openCatTx(tr.dataset.cat, tr.dataset.sub, m0, m1));
-  CH.push(() => divergingBars($('#varChart'), top, {onClick: r => openCatTx(r.name, undefined, m0, m1)}),
-    () => waterfall($('#wfChart'), [{name: 'Income', v: inc.a, total: true}, {name: 'Fixed', v: fx.a}, {name: 'Variable', v: vx.a - tax}, ...(ST.excl.has('Tax') ? [] : [{name: 'Tax', v: tax}]), {name: 'Net', v: net.a, total: true}], {height: 260}));
+  const WY = BPER === 'y', wTax = WY ? (AYk['Tax'] || 0) : tax, wI = WY ? yI.a : inc.a, wF = WY ? yF.a : fx.a, wV = WY ? yV.a : vx.a, wN = WY ? yN.a : net.a;
+  CH.push(() => waterfall($('#wfChart'), [{name: 'Income', v: wI, total: true}, {name: 'Fixed', v: wF}, {name: 'Variable', v: wV - wTax}, ...(ST.excl.has('Tax') ? [] : [{name: 'Tax', v: wTax}]), {name: 'Net', v: wN, total: true}], {height: 260}));
 }
 function openCatTx(cat, sub, m0, m1) {
   const y = ASOF.y, lo = `${y}-${String(m0).padStart(2, '0')}`, hi = `${y}-${String(m1).padStart(2, '0')}`;

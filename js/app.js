@@ -58,6 +58,16 @@ const monthsElapsed = CTX.ASOF.m;
 const ageNow = YNOW - DATA.assume.birthYear;
 const nz = v => Number.isFinite(v) ? v : 0;
 const SCH_NAME = CTX.SCH_ACCT || 'Brokerage';
+/* v97 · Home shows the last FULL month (balances, net worth, plan start); every other page uses the latest month loaded.
+   render() calls this before drawing a page. */
+let ASOF_FULL = false;
+function setAsOf(full) {
+  const lf = full && typeof lastFullMonth === 'function' ? lastFullMonth() : null, i = lf ? BS.months.indexOf(lf) : -1, nl = i >= 0 ? i : BS.months.length - 1;
+  ASOF_FULL = i >= 0 && i < BS.months.length - 1; if (nl === L) return;
+  L = nl; i12 = Math.max(0, L - 12); NW = BS.netWorth[L];
+  if (typeof LASTM !== 'undefined') LASTM = BS.months[L];
+  if (typeof PB !== 'undefined') PB.clear();
+}
 function refreshDerived() {   // called after balance / loan / asset edits rebuild BS in place
   L = BS.months.length - 1; iDecPY = Math.max(0, at(`${PY}-12`)); i12 = Math.max(0, L - 12); NW = BS.netWorth[L];
   if (typeof LASTM !== 'undefined') LASTM = BS.months[L];
@@ -75,6 +85,12 @@ function showTip(html, x, y) {
   tip.style.left = left + 'px'; tip.style.top = top + 'px';
 }
 const hideTip = () => tip.style.opacity = 0;
+/* v96 · phones: a tooltip never sticks. Any new touch clears it first (the chart under the finger shows a fresh one), scrolling
+   clears it, and it fades on its own 2.5s after the finger lifts. */
+{ let tT = 0; const clr = () => { clearTimeout(tT); hideTip(); };
+  addEventListener('touchstart', clr, {capture: true, passive: true});
+  addEventListener('scroll', clr, {capture: true, passive: true});
+  addEventListener('touchend', () => { clearTimeout(tT); tT = setTimeout(hideTip, 2500); }, {capture: true, passive: true}); }
 const tipRow = (c, n, v) => `<div class="r"><span>${c ? `<i class="sw" style="background:${c}"></i>` : ''}${esc(n)}</span><b class="num">${v}</b></div>`;
 
 /* ================= charts (hand-built SVG) ================= */
@@ -116,7 +132,7 @@ function lineChart(el, o) {
   ticks.forEach(t => { add(s, 'line', {x1: P.l, x2: w - P.r, y1: Yp(t), y2: Yp(t)}, 'stroke:var(--grid)'); txt(s, P.l - 8, Yp(t) + 4, (o.yFmt || short)(t), 'end'); });
   const every = Math.ceil(n / Math.max(2, Math.floor((w - P.l) / (o.xGap || 64))));
   o.labels.forEach((lb, i) => { const t = o.xFmt ? o.xFmt(lb, i, every) : (i % every === 0 ? lb : null); if (t) txt(s, X(i), h - 6, t, 'middle'); });
-  (o.vlines || []).forEach(v => { add(s, 'line', {x1: X(v.i), x2: X(v.i), y1: P.t, y2: h - P.b}, 'stroke:var(--text-3);stroke-dasharray:3 4;stroke-width:1'); txt(s, X(v.i) + 6, P.t + 10, v.label, 'start', 'fill:var(--text-2);font-weight:600'); });
+  (o.vlines || []).forEach(v => { add(s, 'line', {x1: X(v.i), x2: X(v.i), y1: P.t, y2: h - P.b}, 'stroke:var(--text-3);stroke-dasharray:3 4;stroke-width:1'); { const nr = X(v.i) > w - 70; txt(s, X(v.i) + (nr ? -6 : 6), P.t + 10, v.label, nr ? 'end' : 'start', 'fill:var(--text-2);font-weight:600'); } })   // v96: a label near the right edge sits left of its line;
   if (o.band) {
     const b = o.band, ix = b.hi.map((v, i) => i).filter(i => b.hi[i] != null && b.lo[i] != null), pts = ix.map(i => `${X(i)},${Yp(b.hi[i])}`).concat(ix.map(i => `${X(i)},${Yp(b.lo[i])}`).reverse());
     add(s, 'polygon', {points: pts.join(' ')}, `fill:${b.color};opacity:.16`);
@@ -220,6 +236,8 @@ function divergingBars(el, rows, o = {}) {
 
 /* Waterfall */
 function waterfall(el, steps, o = {}) {
+  // v96: when the columns would be too narrow for their labels (a phone, or many steps), draw it sideways: one labelled row per step
+  if ((el.clientWidth - 58) / steps.length < 58) return waterfallH(el, steps, o);
   const h = chartH(el, o.height || 240), [s, w] = svgEl(el, h);
   const P = {l: 50, r: 8, t: 18, b: 40};
   let run = 0; const bars = steps.map(st => { if (st.total) { const b = {...st, from: 0, to: st.v}; run = st.v; return b; } const b = {...st, from: run, to: run + st.v}; run += st.v; return b; });
@@ -235,6 +253,23 @@ function waterfall(el, steps, o = {}) {
     add(s, 'rect', {x, y: top, width: bw, height: Math.max(2, bot - top), rx: 0}, `fill:${col}${b.total ? '' : ''}`);
     txt(s, x + bw / 2, top - 6, short(b.v), 'middle', 'fill:var(--text);font-weight:600');
     const words = b.name.split(' '); txt(s, x + bw / 2, h - 22, words[0], 'middle'); if (words[1]) txt(s, x + bw / 2, h - 9, words.slice(1).join(' '), 'middle');
+  });
+}
+
+function waterfallH(el, steps, o = {}) {
+  let run = 0; const bars = steps.map(st => { if (st.total) { run = st.v; return {...st, from: 0, to: st.v}; } const b = {...st, from: run, to: run + st.v}; run += st.v; return b; });
+  const rh = 30, P = {t: 4, b: 22}, h = P.t + bars.length * rh + P.b, [s, w] = svgEl(el, h);
+  const labW = Math.min(124, w * .36), vals = bars.flatMap(b => [b.from, b.to]), ticks = niceTicks(Math.min(0, ...vals), Math.max(...vals), 3), x0 = ticks[0], x1 = ticks[ticks.length - 1];
+  const R = 46, X = v => labW + (v - x0) / (x1 - x0) * (w - labW - R);
+  ticks.forEach(t => { add(s, 'line', {x1: X(t), x2: X(t), y1: P.t, y2: h - P.b}, 'stroke:var(--grid)'); txt(s, X(t), h - 6, short(t), 'middle'); });
+  add(s, 'line', {x1: X(0), x2: X(0), y1: P.t, y2: h - P.b}, 'stroke:var(--border-strong)');
+  bars.forEach((b, i) => {
+    const y = P.t + i * rh + 7, bh = 16, a = X(Math.min(b.from, b.to)), z = X(Math.max(b.from, b.to));
+    const col = b.total ? (b.v >= 0 ? 'var(--brand-700)' : 'var(--neg)') : b.v >= 0 ? 'var(--pos)' : 'var(--neutral)';
+    if (i) add(s, 'line', {x1: X(bars[i - 1].to), x2: X(bars[i - 1].to), y1: y - 7, y2: y}, 'stroke:var(--border-strong);stroke-dasharray:2 2');
+    txt(s, 0, y + 12, b.name.replace(/\u00ad/g, ''), 'start', `fill:var(--text${b.total ? '' : '-2'});font-size:12px;font-weight:${b.total ? 650 : 500}`);
+    add(s, 'rect', {x: a, y, width: Math.max(2, z - a), height: bh, rx: 3}, `fill:${col}`);
+    txt(s, Math.min(z + 5, w - 2), y + 12, short(b.v), z + 5 > w - 40 ? 'end' : 'start', 'fill:var(--text);font-weight:600;font-size:11.5px');
   });
 }
 
@@ -417,7 +452,7 @@ function renderYears(pg, seg) {
   const labels = idx.map(i => yrs[i] === cys ? cys + ' YTD' : yrs[i]).concat([cys + ' F']);
   const vals = exp.concat([expAt(0, true)]);
   const cats = Y.rows.filter(r => /Variable|Fixed/.test(r.group) && !/Total/.test(r.name) && !ST.excl.has(r.name) && Math.abs(r.y[YI - 1]) > 1500).sort((a, b) => a.y[YI - 1] - b.y[YI - 1]);
-  const show = idx.slice(-6);
+  const show = idx.slice(typeof devKey === 'function' && devKey() === 'phone' ? -4 : -6);   // v96: a phone shows the last 3 years + this year to date
   // sub-categories by year (from the monthly history)
   const SY = {}; Object.entries(DATA.subMonthly || {}).forEach(([m, o]) => { const y = m.slice(0, 4); for (const [k, v] of Object.entries(o)) { if (ST.exclSub?.has(k)) continue; ((SY[k] ||= {})[y] = (SY[k][y] || 0) + v); } });
   const subsOf = c => Object.keys(SY).filter(k => k.startsWith(c + '|')).map(k => k.slice(c.length + 1)).filter(sb => show.some(i => Math.abs(SY[c + '|' + sb][yrs[i]] || 0) >= 1))

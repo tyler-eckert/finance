@@ -146,7 +146,7 @@ function attentionItems() {
   // over budget: last full month, and this month already past its whole-month budget
   const over = (yy, mm) => { const A = actuals(yy, mm, mm).A; return ST.cats.filter(c => /Expense/.test(c.group) && c.name !== 'Tax').map(c => ({c: c.name, a: -(A[c.name] || 0), b: -budgetFor(yy, c.name, mm, mm)})).filter(x => x.b > 0 && x.a > x.b + 50).sort((p, q) => (q.a - q.b) - (p.a - p.b)); };
   const LF = lastFullMonth(), ly = +LF.slice(0, 4), lm = +LF.slice(5, 7), oL = over(ly, lm), oN = ly === y && lm === m ? [] : over(y, m);
-  if (oN.length) out.push({k: 'neg', t: `${MON[m - 1]} so far: ${oN.slice(0, 3).map(x => esc(x.c)).join(', ')}${oN.length > 3 ? ` +${oN.length - 3}` : ''} already over the month’s budget`, s: `${short(sum(oN.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${m};go('budget')`, b: 'Budget'});
+  if (oN.length && !ASOF_FULL) out.push({k: 'neg', t: `${MON[m - 1]} so far: ${oN.slice(0, 3).map(x => esc(x.c)).join(', ')}${oN.length > 3 ? ` +${oN.length - 3}` : ''} already over the month’s budget`, s: `${short(sum(oN.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${m};go('budget')`, b: 'Budget'});
   if (oL.length) out.push({k: 'neg', t: `${MON[lm - 1]}: ${oL.slice(0, 3).map(x => esc(x.c)).join(', ')}${oL.length > 3 ? ` +${oL.length - 3}` : ''} went over budget`, s: `${short(sum(oL.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${lm};go('budget')`, b: 'Review'});
   // bills, loans and tax in the next 14 days (from the weekly digest)
   const P = typeof DG !== 'undefined' ? DG.digests?.[0]?.payload : null;
@@ -167,4 +167,56 @@ function ovAttentionCard() {
   return `<div class="card c-12 att" data-lk="needs-attention"><div class="card-h"><div><h3>Needs attention</h3><div class="sub">${L0.length ? plural(L0.length, 'item') + ' · uncategorized, over budget, bills and tax due soon, data checks' : 'Nothing right now'}</div></div></div>
     ${L0.length ? `<div class="att-l">${L0.map(x => `<button class="att-i ${x.k}" onclick="${x.a}"><span class="att-ic">${icon(ic[x.k])}</span><span class="att-t">${x.t}</span>${x.s ? `<b class="num">${x.s}</b>` : ''}<span class="att-go">${x.b} ›</span></button>`).join('')}</div>`
     : `<div class="att-ok">${icon('check')}<span>All clear — everything is categorized, on budget and nothing is due in the next two weeks.</span></div>`}</div>`;
+}
+
+/* =====================================================================
+   v97 · BUDGET VS. ACTUAL — a simpler default view
+   One period at a time (the month, or the year to date), a three-number summary, then one bar per category:
+   the bar is what was spent, the tick is the budget, red past the tick is over. Over-budget categories come first.
+   The full side-by-side table (with projections) is one tap away under "Table".
+   ===================================================================== */
+let BPER = 'm';                                   // 'm' = the month · 'y' = Jan → the month
+const budView = () => UI.budView || 'bars';
+const BB_MAX = 1.25;                              // the track runs 0 → 125% of budget, so the budget tick sits at 80%
+function budSummaryCard(o) {
+  const {per, mL, y, LIVE, frac, inc, exp, net} = o, lbl = per === 'y' ? `Jan – ${mL} ${y}` : `${mL} ${y}`;
+  const stat = (name, a, b, kind) => { const bb = LIVE ? (per === 'y' ? b.full - b.month * (1 - frac) : null) : b.full, sg = kind === 'exp' ? -1 : 1;
+    const st = bb == null ? `<span class="chip live">● In progress · day ${o.day} of ${o.dim}</span>`
+      : (() => { const v = a - bb; return `<span class="chip ${Math.abs(v) < 1 ? '' : v >= 0 ? 'pos' : 'neg'}">${Math.abs(v) < 1 ? 'On budget' : short(Math.abs(v)) + (kind === 'exp' ? (v >= 0 ? ' under' : ' over') : (v >= 0 ? ' ahead' : ' behind'))}</span>`; })();
+    return `<div class="bs-st"><span class="bs-l">${name}</span><b class="num">${money(sg * a)}</b><span class="bs-b">budget${LIVE && per === 'y' ? ' to date' : ''} ${money(sg * (bb ?? b.full))}</span>${st}</div>`; };
+  return `<div class="card c-12 bs-card" data-lk="budget-summary"><div class="bs-row">
+      ${stat('Income', inc.a, inc.b, 'inc')}${stat('Spending', exp.a, exp.b, 'exp')}${stat('Net', net.a, net.b, 'net')}</div>
+    <div class="bs-per muted">${lbl}${LIVE ? ` · ${mL} isn’t over yet, so it isn’t scored against its whole budget` : ''}</div></div>`;
+}
+function budBarsCard(o) {
+  const {y, m0, m1, LIVE, frac, mL, per} = o, {A, S} = actuals(y, m0, m1);
+  const exp = ST.cats.filter(c => /Expense/.test(c.group) && !ST.excl.has(c.name)).map(c => ({c: c.name, a: -(A[c.name] || 0), b: -budgetFor(y, c.name, m0, m1), bm: -budgetFor(y, c.name, m1, m1)})).filter(r => Math.abs(r.a) >= 1 || r.b >= 1);
+  const incR = ST.cats.filter(c => c.group === 'Income' && !ST.excl.has(c.name)).map(c => ({c: c.name, a: A[c.name] || 0, b: budgetFor(y, c.name, m0, m1), bm: budgetFor(y, c.name, m1, m1), inc: true})).filter(r => Math.abs(r.a) >= 1 || r.b >= 1);
+  // what counts as "on track" while the month is still going: the budget so far (the month's share by days elapsed)
+  const soFar = r => LIVE ? r.b - r.bm * (1 - frac) : r.b;
+  const over = exp.filter(r => r.b > 0 && r.a > r.b + .5).sort((p, q) => (q.a - q.b) - (p.a - p.b));
+  const within = exp.filter(r => r.b > 0 && r.a <= r.b + .5).sort((p, q) => q.a / q.b - p.a / p.b);
+  const nob = exp.filter(r => r.b <= 0 && r.a >= 1).sort((p, q) => q.a - p.a);
+  const subsOf = c => [...new Set(Object.keys(S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1]))].map(sb => ({sb, a: -(S[c + '|' + sb] || 0), b: subBudgetFor(y, c, sb, m0, m1)})).filter(x => Math.abs(x.a) >= 1 || (x.b != null && Math.abs(x.b) >= 1)).map(x => ({...x, b: x.b == null ? null : -x.b})).sort((p, q) => q.a - p.a);
+  const bar = (a, b, inc, pace) => { const f = b > 0 ? a / b : (a > 0 ? BB_MAX : 0), w = Math.min(BB_MAX, Math.max(0, f)) / BB_MAX * 100, isOver = !inc && b > 0 && a > b + .5, isLow = inc && b > 0 && a < b - .5;
+    const cls = isOver ? 'over' : isLow && !LIVE ? 'low' : !inc && pace && b > 0 && a > soFar({b, bm: pace}) + .5 ? 'pace' : '';
+    return `<div class="bb-bar ${b > 0 ? '' : 'nob'}"><i class="${cls}" style="width:${w}%"></i>${b > 0 ? `<em style="left:${100 / BB_MAX}%"></em>` : ''}${LIVE && b > 0 && per === 'm' ? `<u style="left:${frac * 100 / BB_MAX}%" title="${Math.round(frac * 100)}% of ${mL} has gone by"></u>` : ''}</div>`; };
+  const status = (a, b, inc) => { if (!(b > 0)) return `<span class="muted">${inc ? 'not in budget' : 'no budget'}</span>`; const d = b - a;
+    if (inc) return d > .5 ? `<span class="${LIVE ? 'muted' : 'neg'}">${short(d)} to come</span>` : `<span class="pos">${short(-d)} more</span>`;
+    return d >= -.5 ? `<span class="pos">${short(d)} left</span>` : `<span class="neg">${short(-d)} over</span>`; };
+  const row = (r, inc) => { const subs = subsOf(r.c), has = subs.length > 1 || (subs.length === 1 && subs[0].sb), open = has && bOpen.has(r.c);
+    return `<div class="bb-r click ${open ? 'open' : ''}" data-bc="${esc(r.c)}"><div class="bb-n">${has ? `<button class="chev" data-bt="${esc(r.c)}" aria-label="Sub-categories">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span class="bb-nm">${esc(r.c)}</span></div>
+      ${bar(r.a, r.b, inc, r.bm)}<div class="bb-v"><b class="num">${money(r.a)}</b><span class="muted"> of ${r.b > 0 ? money(r.b) : '—'}</span></div><div class="bb-s">${status(r.a, r.b, inc)}</div></div>`
+      + (open ? subs.map(x => `<div class="bb-r sub click" data-bc="${esc(r.c)}" data-bs="${esc(x.sb)}"><div class="bb-n"><span class="chev-sp"></span><span class="bb-nm">${x.sb ? esc(x.sb) : '<i>No sub-category</i>'}</span></div>
+        ${bar(x.a, x.b ?? 0, inc, null)}<div class="bb-v"><b class="num">${money(x.a)}</b>${x.b != null ? `<span class="muted"> of ${money(x.b)}</span>` : ''}</div><div class="bb-s">${x.b != null ? status(x.a, x.b, inc) : ''}</div></div>`).join('') : ''); };
+  const sec = (t, list, inc, note = '') => list.length ? `<div class="bb-h"><span>${t}</span><span class="muted">${list.length} · ${money(sum(list.map(r => r.a)))}${note}</span></div>${list.map(r => row(r, inc)).join('')}` : '';
+  const T = {a: sum(exp.map(r => r.a)), b: sum(exp.map(r => Math.max(0, r.b))), bm: sum(exp.map(r => Math.max(0, r.bm)))};
+  return `<div class="card c-8 bb-card" data-lk="budget-vs-actual"><div class="card-h"><div><h3>Budget vs. actual</h3><div class="sub">${per === 'y' ? `Jan – ${mL} ${y}` : `${mL} ${y}`} · the bar is what you spent, the tick is the budget · tap a category for its transactions</div></div></div>
+    <div class="bb-tot"><div class="bb-tl"><span>All spending</span><b class="num">${money(T.a)}</b><span class="muted">of ${money(T.b)}</span><span class="bb-ts">${status(T.a, T.b, false)}</span></div>${bar(T.a, T.b, false, T.bm)}</div>
+    ${sec('Over budget', over, false)}${sec('Within budget', within, false)}${sec('Spent with no budget', nob, false)}${sec('Income', incR.sort((p, q) => q.a - p.a), true)}
+    ${!exp.length && !incR.length ? '<p class="muted">Nothing in this period yet.</p>' : ''}</div>`;
+}
+function wireBudBars(pg, m0, m1) {
+  $$('.bb-card [data-bt]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.bt; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
+  $$('.bb-card [data-bc]', pg).forEach(r => r.onclick = () => openCatTx(r.dataset.bc, r.dataset.bs, m0, m1));
 }

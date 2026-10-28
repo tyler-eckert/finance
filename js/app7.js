@@ -92,6 +92,9 @@ function applyLayout(page, el) {
     const span = [...w.classList].find(k => /^c-\d+$/.test(k));
     [...w.children].forEach(x => { if (span && ![...x.classList].some(k => /^c-\d+$/.test(k))) x.classList.add(span); g.insertBefore(x, w); }); w.remove(); }));
   if (page === 'overview' && !LAYOUT_EDIT) ovFocus(tagCards(page, el));
+  if (page === 'budget' && !LAYOUT_EDIT && !(UI.budFocus >= 1)) {   // v97: the Budget page was rebuilt — start from its default layout once (old one kept for Undo)
+    const was = clone(UI.layout.budget || null); UI.layoutBak = {...(UI.layoutBak || {}), budget: was}; delete UI.layout.budget; UI.budFocus = 1; SYNC.schedule();
+    if (was) setTimeout(() => toast('Budget vs. actual has a new layout', () => { UI.layout.budget = was; render(); SYNC.schedule(); }), 400); }
   const cards = tagCards(page, el), L = UI.layout[page] || {order: [], hidden: []};
   document.body.classList.toggle('lay-on', LAYOUT_EDIT);
   el.querySelector('.lay-banner')?.remove();

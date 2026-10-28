@@ -1,6 +1,6 @@
 /* ================= shell / routing ================= */
 const PAGES = [
-  {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Balances as of ${mLabel(BS.months[L])} · budget through ${MON[ASOF.m - 1]} ${ASOF.y}`, r: renderOverview},
+  {k: 'overview', n: 'Overview', i: 'home', g: 'Analyze', sub: () => `Through ${mLabel(BS.months[L])}, the last full month${ASOF_FULL ? ` · ${MON[ASOF.m - 1]} so far is on the Spending pages` : ''}`, r: renderOverview},
   {k: 'week', n: 'This week', i: 'week', g: 'Analyze', sub: () => 'Calendars and bills for the next two weeks · the weekly digest', r: renderWeek},
   {k: 'review', n: 'Year in review', i: 'cal', g: 'Analyze', sub: () => 'Recap, goals, notes and the annual deck', r: renderReview},
   {k: 'budget', n: 'Budget vs. actual', m: 'Budget', i: 'budget', g: 'Analyze', sub: () => 'Budget vs. actual · live from your transactions', r: renderBudget},
@@ -67,6 +67,7 @@ function render() {
   if (!secOf(cur)) { const s0 = SECTIONS()[0]; cur = s0.v[0][0]; return render(); }   // a view this person's menu doesn't have (Simple view)
   const sec = secOf(cur); SECLAST[sec.k] = cur;
   $$('.nav-btn, .tabbar button').forEach(b => b.classList.toggle('active', b.dataset.k === sec.k || (b.dataset.k === 'more' && !TABS.includes(sec.k))));
+  if (typeof setAsOf === 'function') setAsOf(cur === 'overview');
   $('#pageTitle').textContent = sec.n; $('#pageSub').textContent = p.sub();
   const vt = $('#vtabs'); if (vt) { vt.innerHTML = sec.v.length > 1 ? `<div class="seg vseg" role="tablist">${sec.v.map(([k, l]) => `<button role="tab" data-v="${k}" aria-selected="${k === cur}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''; vt.classList.toggle('on', sec.v.length > 1); $$('[data-v]', vt).forEach(b => b.onclick = () => go(b.dataset.v)); }
   const y = scrollY; CH = []; ZDASH = cur === 'budget'; try { p.r($('#p-' + cur)); } finally { ZDASH = false; } applyLayout(cur, $('#p-' + cur)); filterBtnSync(); layBtnSync();
