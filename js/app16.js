@@ -176,17 +176,17 @@ function ovAttentionCard() {
    The full side-by-side table (with projections) is one tap away under "Table".
    ===================================================================== */
 let BPER = 'm';                                   // 'm' = the month · 'y' = Jan → the month
-const budView = () => UI.budView || 'bars';
+const budView = () => UI.budViewBy?.[devKey()] || (devKey() === 'phone' ? 'bars' : 'table');   // v98: table on a computer, bars on a phone (each remembers its own choice)
 const BB_MAX = 1.25;                              // the track runs 0 → 125% of budget, so the budget tick sits at 80%
 function budSummaryCard(o) {
   const {per, mL, y, LIVE, frac, inc, exp, net} = o, lbl = per === 'y' ? `Jan – ${mL} ${y}` : `${mL} ${y}`;
   const stat = (name, a, b, kind) => { const bb = LIVE ? (per === 'y' ? b.full - b.month * (1 - frac) : null) : b.full, sg = kind === 'exp' ? -1 : 1;
-    const st = bb == null ? `<span class="chip live">● In progress · day ${o.day} of ${o.dim}</span>`
+    const st = bb == null ? `<span class="chip live" title="Day ${o.day} of ${o.dim}">● In progress</span>`
       : (() => { const v = a - bb; return `<span class="chip ${Math.abs(v) < 1 ? '' : v >= 0 ? 'pos' : 'neg'}">${Math.abs(v) < 1 ? 'On budget' : short(Math.abs(v)) + (kind === 'exp' ? (v >= 0 ? ' under' : ' over') : (v >= 0 ? ' ahead' : ' behind'))}</span>`; })();
     return `<div class="bs-st"><span class="bs-l">${name}</span><b class="num">${money(sg * a)}</b><span class="bs-b">budget${LIVE && per === 'y' ? ' to date' : ''} ${money(sg * (bb ?? b.full))}</span>${st}</div>`; };
   return `<div class="card c-12 bs-card" data-lk="budget-summary"><div class="bs-row">
       ${stat('Income', inc.a, inc.b, 'inc')}${stat('Spending', exp.a, exp.b, 'exp')}${stat('Net', net.a, net.b, 'net')}</div>
-    <div class="bs-per muted">${lbl}${LIVE ? ` · ${mL} isn’t over yet, so it isn’t scored against its whole budget` : ''}</div></div>`;
+    <div class="bs-per muted">${lbl}${LIVE ? ` · day ${o.day} of ${o.dim} · ${mL} isn’t over yet, so it isn’t scored against its whole budget` : ''}</div></div>`;
 }
 function budBarsCard(o) {
   const {y, m0, m1, LIVE, frac, mL, per} = o, {A, S} = actuals(y, m0, m1);

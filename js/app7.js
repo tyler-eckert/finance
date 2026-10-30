@@ -49,7 +49,7 @@ function layLock(page, el) { if (!el) return; const dk = devKey(), L = pageLayou
   pageCards(el).forEach(c => { if (!c.dataset.cid || c.style.display === 'none' || c.classList.contains('lay-hidden')) return; const h = Math.round(c.getBoundingClientRect().height); if (h > 20) K[c.dataset.cid] = h; });
   if (typeof SYNC !== 'undefined') SYNC.schedule(); }
 // tile sizes and compact view are kept separately for a phone-size screen and a computer-size one
-const devKey = () => innerWidth <= 860 ? 'phone' : 'desk';
+const devKey = () => innerWidth <= 640 ? 'phone' : 'desk';   // v98: phone layout only below 641px (was 860)
 const SIZES = {desk: [2, 3, 4, 5, 6, 7, 8, 9, 10, 12], phone: [4, 6, 12]};
 const SIZE_NAME = n => ({2: '⅙', 3: '¼', 4: '⅓', 5: '5/12', 6: '½', 7: '7/12', 8: '⅔', 9: '¾', 10: '⅚', 11: '11/12', 12: 'Full'})[n] || n + '/12';
 const isCompact = () => (UI.compact || {})[devKey()] !== false;   // on unless turned off for this kind of device

@@ -201,6 +201,7 @@ function renderBudget(pg) {
   const tax = rows.find(r => r.c.name === 'Tax')?.a || 0;
   const variance = rows.filter(r => r.c.group !== 'Income' && Math.abs(r.a - r.b) > 1).map(r => ({name: r.c.name, v: r.a - r.b, a: r.a, b: r.b})).sort((a, b) => a.v - b.v);
   const top = variance.length > 10 ? variance.slice(0, 6).concat(variance.slice(-4)) : variance;
+  const WF = `<div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${BPER === 'm' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>`;   // v98: beside the bars, or full width under the table
   pg.innerHTML = `
   <div class="toolbar">${seg}
     <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}</option>`).join('')}</select>
@@ -210,17 +211,18 @@ function renderBudget(pg) {
   <div class="grid g-12">
     ${budSummaryCard({per: BPER, mL: MON[m1 - 1], y, LIVE, frac, day: tD, dim, inc: BPER === 'y' ? {a: yI.a, b: {full: yI.b, month: inc.b}} : {a: inc.a, b: {full: inc.b, month: inc.b}}, exp: BPER === 'y' ? {a: yE.a, b: {full: yE.b, month: exp.b}} : {a: exp.a, b: {full: exp.b, month: exp.b}}, net: BPER === 'y' ? {a: yN.a, b: {full: yN.b, month: net.b}} : {a: net.a, b: {full: net.b, month: net.b}}})}
     ${budView() === 'bars' ? budBarsCard({y, m0: BPER === 'y' ? 1 : m1, m1, LIVE, frac, mL: MON[m1 - 1], per: BPER}) : ''}
-    <div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${BPER === 'm' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>
+    ${budView() === 'bars' ? WF : ''}
     <div class="card c-12 ${budView() === 'table' ? '' : 'bud-hide'}" data-lk="bva-table"><div class="card-h"><div><h3>Budget vs. actual · table</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div>
         <div class="right pj-ctl"><span class="muted">Projection</span><div class="seg sm" id="pjMode"><button data-k="budget" class="${UI.projMode === 'budget' ? 'on' : ''}" title="Actual so far + the budget for the rest of the year">Budget</button><button data-k="smart" class="${UI.projMode !== 'budget' ? 'on' : ''}" title="Actual so far + a blend of budget and how you’ve actually been spending">Smart</button></div>
         ${UI.projMode !== 'budget' ? `<label class="pj-w" title="How much the rest of the year leans on the budget vs. your spending pattern">Budget <b id="pjWv">${Math.round((UI.projW ?? .7) * 100)}%</b><input type="range" id="pjW" min="0" max="100" step="5" value="${Math.round((UI.projW ?? .7) * 100)}"></label>` : ''}</div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
+    ${budView() === 'table' ? WF.replace('c-4', 'c-12') : ''}
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   if ($('#bExpand')) $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
   $$('#bPer button').forEach(b => b.onclick = () => { BPER = b.dataset.p; render(); });
-  $$('#bView button').forEach(b => b.onclick = () => { UI.budView = b.dataset.v; SYNC.schedule(); render(); });
+  $$('#bView button').forEach(b => b.onclick = () => { (UI.budViewBy ||= {})[devKey()] = b.dataset.v; SYNC.schedule(); render(); });
   wireBudBars(pg, BPER === 'y' ? 1 : m1, m1);
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   // % used: every track runs 0–150%, so the 100% tick sits in the same spot on every row
