@@ -158,7 +158,7 @@ function longRange(pg, yearSeg) {
   const pace = c => lfY === CY ? yAct(c, CY) / lfM * 12 : yAct(c, CY);
   const atRet = c => proj(c, retY) / Math.pow(1 + infl, retY - YNOW);
   const body = GROUPS.filter(g => g.k !== 'TTS').map(g => { const L0 = grp(g.k); if (!L0.length) return '';
-    return `<tr class="grp"><td class="stick" colspan="${past.length + fut.length + 5}">${g.l}</td></tr>` + L0.map(r => { const c = r.name, ru = rule(c);
+    return `<tr class="grp"><td colspan="${past.length + fut.length + 5}"><span class="lr-gl">${g.l}</span></td></tr>` + L0.map(r => { const c = r.name, ru = rule(c);
       return `<tr><td class="stick"><button class="link lr-n" data-be="${esc(c)}">${esc(c)}</button></td>${past.map(yy => cell(yAct(c, yy), c)).join('')}${cell(pace(c), c, 'lr-p')}${cell(sum(bVals(c, null, base)), c, 'lr-b')}${fut.map(yy => cell(proj(c, yy), c, 'lr-f')).join('')}${cell(atRet(c), c, 'lr-r')}
         <td class="lr-rule"><label>+<input class="in num lr-g" data-lg="${esc(c)}" value="${(ru.g * 100).toFixed(1).replace(/\.0$/, '')}">%/yr</label><label>ends after <input class="in num lr-e" data-le="${esc(c)}" value="${ru.end || ''}" placeholder="—"></label></td></tr>`; }).join('')
       + `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${past.map(yy => cell(tot(L0, c => yAct(c, yy)))).join('')}${cell(tot(L0, pace), '', 'lr-p')}${cell(tot(L0, c => sum(bVals(c, null, base))), '', 'lr-b')}${fut.map(yy => cell(tot(L0, c => proj(c, yy)), '', 'lr-f')).join('')}${cell(tot(L0, atRet), '', 'lr-r')}<td></td></tr>`; }).join('');

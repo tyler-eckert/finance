@@ -1569,3 +1569,9 @@ body:not(.compact) .card-h .sub{white-space:normal}
 .dg-url.masked{-webkit-text-security:disc;text-security:disc}
 /* v105: chart tooltips sit above drawers and modals (they were hidden behind the budget editor) */
 .tip{z-index:70}
+/* v106: Long range — names get the same left padding and sticky column as Budget setup, plus room on the right */
+.table.lr-t .stick{position:sticky;left:0;background:var(--surface);z-index:2;padding-left:18px!important;min-width:170px;text-align:left}
+.table.lr-t th:last-child,.table.lr-t td:last-child{padding-right:18px}
+.table.lr-t tr.tot .stick,.table.lr-t tr.tot td{background:var(--surface)}
+.table.lr-t tr.grp td{padding-left:0!important}
+.table.lr-t .lr-gl{position:sticky;left:0;display:inline-block;padding-left:18px}
