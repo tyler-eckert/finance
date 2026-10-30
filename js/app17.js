@@ -83,7 +83,7 @@ function drawBudEdit() {
       <div class="mini"><div class="l">Last 12 months</div><div class="v num">${money(sg(H.last12))}</div><div class="ds">${money(sg(H.avg12))}/mo avg</div></div>
       <div class="mini"><div class="l">${y} so far${H.ytdM ? ' · Jan–' + MON[H.ytdM - 1] : ''}</div><div class="v num">${money(sg(H.ytd))}</div><div class="ds">${H.ytdM ? `budget ${money(sg(ytdB))} · ${sg(H.ytd) - sg(ytdB) > 0 === !inc ? '<span class="neg">' : '<span class="pos">'}${short(Math.abs(H.ytd - ytdB))} ${(sg(H.ytd) > sg(ytdB)) === !inc ? 'over' : 'under'}</span>` : 'not started'}</div></div>
       <div class="mini"><div class="l">${y} budget</div><div class="v num" id="beTot">${money(sg(sum(cur)))}</div><div class="ds">${money(sg(sum(cur)) / 12)}/mo</div></div></div>
-    <h4 class="h4">Last 24 months <span class="muted" style="font-weight:500">· actual spending · hover a bar for its budget</span></h4><div class="chart" id="beChart"></div>
+    <h4 class="h4">Last 24 months <span class="muted" style="font-weight:500">· hover a bar for the month's actual and budget</span></h4><div class="chart" id="beChart"></div>
     ${hasSubs ? `<div class="banner" style="margin-top:14px">${icon('info')}<span>${esc(c)} is budgeted by sub-category — edit those lines, or open one below.</span></div>
       <div class="list" style="margin-top:8px">${subBudgetRows(y, c).map(r => `<div class="li click" data-besub="${esc(r.sub)}"><div style="flex:1">${esc(r.sub || 'No sub-category')}</div><b class="num">${money(sg(sum(r.v)))}</b></div>`).join('')}</div>`
     : `<h4 class="h4" style="margin-top:18px">${y} by month</h4>
@@ -179,3 +179,18 @@ function longRange(pg, yearSeg) {
 }
 let BBV = 'month';
 const bbViewSeg = () => `<div class="seg" id="bbView"><button data-v="month" class="${BBV === 'month' ? 'on' : ''}">By month</button><button data-v="long" class="${BBV === 'long' ? 'on' : ''}">Long range</button></div>`;
+
+/* v104: keep Chrome (and password managers) from treating data-entry boxes as sign-in fields.
+   Every input outside the sign-in form gets autocomplete off plus the "ignore me" hints
+   that 1Password, LastPass, Bitwarden and Dashlane look for. */
+(() => {
+  const tag = el => {
+    if (el.closest && el.closest('#loginF')) return;
+    if (el.type === 'password' || /password|username/.test(el.getAttribute('autocomplete') || '')) { el.setAttribute('data-1p-ignore', ''); return; }
+    if (el.getAttribute('autocomplete') !== 'off') el.setAttribute('autocomplete', 'off');
+    el.setAttribute('data-1p-ignore', ''); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-bwignore', ''); el.setAttribute('data-form-type', 'other');
+  };
+  const sweep = root => { if (root.matches && root.matches('input,textarea')) tag(root); root.querySelectorAll && root.querySelectorAll('input,textarea').forEach(tag); };
+  sweep(document);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && sweep(n)))).observe(document.body, {childList: true, subtree: true});
+})();

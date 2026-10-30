@@ -1558,3 +1558,14 @@ body:not(.compact) .card-h .sub{white-space:normal}
 .lr-rule .in{height:28px;width:56px;padding:0 6px;text-align:right;font-size:var(--fs-sm)}
 .lr-n{font-weight:600}
 @media (max-width:640px){.be-grid{grid-template-columns:repeat(3,1fr)}.be-stats{grid-template-columns:1fr 1fr!important}}
+
+/* v103: Budget setup row actions sit beside the name instead of in their own column */
+.table.bb td.stick .tw{display:flex;width:100%;min-width:0}
+.table.bb td.stick .bb-n{white-space:nowrap}
+.table.bb .bb-act{margin-left:auto;display:inline-flex;align-items:center;gap:0;flex:none;padding-left:6px}
+.table.bb .bb-act .mini-btn{width:22px;height:22px}
+.table.bb .bb-act .mini-btn svg{width:14px;height:14px}
+/* v104: calendar links are hidden with a text mask, not a password box, so Chrome doesn't offer to save them */
+.dg-url.masked{-webkit-text-security:disc;text-security:disc}
+/* v105: chart tooltips sit above drawers and modals (they were hidden behind the budget editor) */
+.tip{z-index:70}

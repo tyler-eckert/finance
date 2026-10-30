@@ -119,7 +119,7 @@ function digestAdminCard() {
     <div class="dg-feeds">${DG.feeds.map(f => `<div class="dg-feed" data-fid="${f.id}">
         <input type="color" class="dg-col" value="${esc(f.color)}" data-fk="color" ${ro} title="Colour">
         <input class="in sm" value="${esc(f.label)}" data-fk="label" ${ro} placeholder="Name" style="max-width:180px">
-        <input class="in sm dg-url" type="password" value="${esc(f.url)}" data-fk="url" ${ro} placeholder="webcal://… or https://…ics" autocomplete="off">
+        <input class="in sm dg-url masked" type="text" spellcheck="false" value="${esc(f.url)}" data-fk="url" ${ro} placeholder="webcal://… or https://…ics" autocomplete="off">
         <button class="mini-btn" data-feye title="Show / hide the link">${icon('eye')}</button>
         <label class="tgl" title="Include in the digest"><input type="checkbox" data-fk="enabled" ${f.enabled ? 'checked' : ''} ${ro}></label>
         ${st(f)}
@@ -153,7 +153,7 @@ function wireDigestAdmin(pg) {
     $$('[data-fk]', row).forEach(inp => inp.onchange = async () => { const k = inp.dataset.fk, v = k === 'enabled' ? inp.checked : inp.value.trim();
       if (k === 'url' && !/^(https?|webcal):\/\//i.test(v)) { inp.value = f.url; return toast('The link should start with webcal:// or https://'); }
       const {error} = await FDB.from('calendar_feeds').update({[k]: v}).eq('id', f.id); if (error) return toast('Couldn’t save: ' + error.message); f[k] = v; toast('Saved'); });
-    row.querySelector('[data-feye]').onclick = () => { const u = row.querySelector('.dg-url'); u.type = u.type === 'password' ? 'text' : 'password'; };
+    row.querySelector('[data-feye]').onclick = () => { row.querySelector('.dg-url').classList.toggle('masked'); };
     const del = row.querySelector('[data-fdel]'); if (del) del.onclick = async () => { if (!confirmInline(del, `Remove ${f.label}?`)) return;
       const {error} = await FDB.from('calendar_feeds').delete().eq('id', f.id); if (error) return toast('Couldn’t remove: ' + error.message); DG.feeds = DG.feeds.filter(x => x !== f); render(); toast(`Removed ${f.label}`); };
     const tst = row.querySelector('[data-ftest]'); if (tst) tst.onclick = () => testFeed(f.url, tst);
