@@ -80,9 +80,12 @@ function planStats(kind) {
   const sc = pvSc(), pva = planVsActual(sc), now = kind === 'nw' ? NW : investable(L);
   const ret = sc.p.retire, a10 = ageNow + 10;
   return `<div class="stat-row plan-stats">
-    <div class="mini"><div class="l">${kind === 'nw' ? 'Net worth' : 'Investable'} · ${mShort(LASTM)}</div><div class="v num">${short(now)}</div></div>
-    <div class="mini"><div class="l">Plan · age ${a10} (${YNOW + 10})</div><div class="v num">${short(planAt(sc, a10, kind))}</div></div>
-    <div class="mini"><div class="l">Plan · retire at ${ret}</div><div class="v num">${short(planAt(sc, ret, kind))}</div></div>
+    ${(() => { /* v99: each figure also shows how much it grew, in % and dollars */
+      const was = kind === 'nw' ? BS.netWorth[i12] : investable(i12), p10 = planAt(sc, a10, kind), pR = planAt(sc, ret, kind);
+      const gain = (v, base, lbl) => { const d = v - base; return base ? `<div class="ds gain"><span class="num ${d >= 0 ? 'pos' : 'neg'}">${d >= 0 ? '+' : '−'}${short(Math.abs(d))}</span> · ${pct(d / Math.abs(base), 0)} ${lbl}</div>` : ''; };
+      return `<div class="mini"><div class="l">${kind === 'nw' ? 'Net worth' : 'Investable'} · ${mShort(LASTM)}</div><div class="v num">${short(now)}</div>${gain(now, was, 'past 12 mo')}</div>
+    <div class="mini"><div class="l">Plan · age ${a10} (${YNOW + 10})</div><div class="v num">${short(p10)}</div>${gain(p10, now, 'from today')}</div>
+    <div class="mini"><div class="l">Plan · retire at ${ret}</div><div class="v num">${short(pR)}</div>${gain(pR, now, 'from today')}</div>`; })()}
     <div class="mini"><div class="l">Actual vs plan · since Dec</div><div class="v num ${pva.diff >= 0 ? 'pos' : 'neg'}">${pva.diff >= 0 ? '+' : '−'}${short(Math.abs(pva.diff))}</div><div class="ds" style="font-size:var(--fs-xs);color:var(--text-3)">${pva.diff >= 0 ? 'ahead of' : 'behind'} the ${(sc.p.ret * 100).toFixed(1)}% path</div></div></div>`;
 }
 

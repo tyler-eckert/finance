@@ -1492,3 +1492,16 @@ body:not(.compact) .card-h .sub{white-space:normal}
   .toolbar{flex-wrap:wrap;row-gap:8px}
   .toolbar .in.sel{min-width:130px}
 }
+
+/* v99 · Balances history grid: the row and column you're typing in are highlighted, so it's obvious which account you're on */
+.grid-t tr:focus-within td,.grid-t tr:focus-within td.stick{background:color-mix(in srgb,var(--brand-500) 8%,var(--surface))}
+.grid-t tr:focus-within td.stick{font-weight:650;box-shadow:inset 3px 0 0 var(--brand-500)}
+.grid-t .cell:focus{outline:2px solid var(--brand-500);outline-offset:-2px;background:var(--surface)}
+
+/* v99 · Plan: 12-month $ change under the % chip; growth line under each plan stat */
+.pi-acc{grid-template-columns:minmax(0,1fr) 74px 70px 84px}
+.pi-acc .pc{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.pi-acc .pc small{font-size:var(--fs-xs);font-weight:600}
+.pi-acc-h .pc,.pi-acc.pi-acc-h span:last-child{text-align:right}
+.plan-stats .mini .gain{font-size:var(--fs-xs);color:var(--text-3);margin-top:3px}
+.plan-stats .mini .gain .num{font-weight:650}

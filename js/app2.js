@@ -654,7 +654,7 @@ function renderBalances(pg) {
     const sumG = (list, f) => { const xs = list.map(f); return xs.every(x => x == null) ? null : sum(xs.map(x => x ?? 0)); };
     const vars = (list, sg, signed) => { const g = f => sumG(list, a => { const x = f(a); return x == null ? null : x * (signed ? signOf(a) : 1); });
       return vc(g(a => val(a, A)), g(a => val(a, A - 1)), sg) + vc(g(a => val(a, A)), g(a => prevYA(a, ya)), sg); };
-    return `<div class="card"><div class="card-h"><div><h3>Last 12 months</h3><div class="sub">${mLabel(W[0])} – ${mLabel(W[W.length - 1])} · variances for ${mLabel(months[A])}${A < months.length - 1 ? ` · ${mLabel(months[months.length - 1])} not complete yet, enter it under Month entry` : ''}</div></div></div>
+    return `<div class="card"><div class="card-h"><div><h3>Last 12 months</h3><div class="sub">${mLabel(W[0])} – ${mLabel(W[W.length - 1])} · variances for ${mLabel(months[A])} · Enter = next month, ↑ ↓ = other accounts${A < months.length - 1 ? ` · ${mLabel(months[months.length - 1])} not complete yet, enter it under Month entry` : ''}</div></div></div>
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
         <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
@@ -683,12 +683,19 @@ function renderBalances(pg) {
   $$('#balSeg button').forEach(b => b.onclick = () => { balView = b.dataset.k; render(); });
   if ($('#bmPrev')) { $('#bmPrev').onclick = () => { balM--; render(); }; $('#bmNext').onclick = () => { balM++; render(); }; }
   const parse = s => { const v = String(s).replace(/[$,\s]/g, ''); return v === '' ? null : +v; };
-  $$('.balIn', pg).forEach(inp => { inp.onchange = () => { const a = B.accounts[+inp.closest('.bal-row').dataset.k]; a.v[i] = parse(inp.value); render(); }; inp.onkeydown = e => { if (e.key === 'Enter') { const all = $$('.balIn', pg), n = all.indexOf(inp); inp.blur(); setTimeout(() => $$('.balIn')[n + 1]?.focus(), 30); } }; });
+  $$('.balIn', pg).forEach(inp => { inp.onchange = () => { const a = B.accounts[+inp.closest('.bal-row').dataset.k]; a.v[i] = parse(inp.value); render(); }; inp.onkeydown = e => { if (e.key === 'Enter') { const all = $$('.balIn', pg), nx = all[all.indexOf(inp) + 1], nk = nx?.closest('.bal-row')?.dataset.k; inp.blur(); setTimeout(() => { const t = nk != null ? $(`.bal-row[data-k="${nk}"] .balIn`) : null; if (t) { t.focus(); t.select?.(); } }, 30); } }; });
   $$('.cell', pg).forEach(c => {
     c.onchange = () => { B.accounts[+c.dataset.k].v[+c.dataset.j] = parse(c.value);
       setTimeout(() => { const f = document.activeElement, k = f?.classList?.contains('cell') ? [f.dataset.k, f.dataset.j] : null;   // keep Tab / click target after redraw
         render(); if (k) { const n = $(`.cell[data-k="${k[0]}"][data-j="${k[1]}"]`); if (n) { n.focus(); n.select(); } } }, 0); };
-    c.onkeydown = e => { if (e.key !== 'Enter') return; e.preventDefault(); const col = $$(`.cell[data-j="${c.dataset.j}"]`, pg), n = col[col.indexOf(c) + 1]; (n || c).focus(); n?.select(); };   // Enter = down
+    /* v99 · keys stay on the row you're typing in: Enter / Shift+Enter = next / previous month for the SAME account;
+       ↑ / ↓ = the same month for the account above / below. (Enter used to drop to the next account, which made it easy
+       to type into the wrong row.) */
+    c.onkeydown = e => { const mv = e.key === 'Enter' ? (e.shiftKey ? [0, -1] : [0, 1]) : e.key === 'ArrowDown' ? [1, 0] : e.key === 'ArrowUp' ? [-1, 0] : null; if (!mv) return; e.preventDefault();
+      let n = null;
+      if (mv[0]) { const col = $$(`.cell[data-j="${c.dataset.j}"]`, pg); n = col[col.indexOf(c) + mv[0]]; }
+      else { const row = $$(`.cell[data-k="${c.dataset.k}"]`, pg); n = row[row.indexOf(c) + mv[1]]; }
+      if (n) { n.focus(); n.select(); } else c.select(); };
   });
   if ($('#copyAll')) $('#copyAll').onclick = () => { const was = B.accounts.map(a => a.v[i]); B.accounts.forEach(a => { if (a.v[i] == null && a.v[i - 1] != null) a.v[i] = a.v[i - 1]; }); render(); toast('Carried forward last month for blanks', () => { B.accounts.forEach((a, k) => a.v[i] = was[k]); render(); }); };
   if ($('#pasteBtn')) $('#pasteBtn').onclick = () => openPaste(i);

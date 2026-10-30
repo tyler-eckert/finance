@@ -45,7 +45,9 @@ function renderPlanSimple(pg) {
     ['pre', 'Saving each year until then', -120000, 120000, 5000, v => (v >= 0 ? '+' : '') + short(v) + '/yr'], ['ret', 'Investment return', .04, .10, .0025, v => (v * 100).toFixed(2).replace(/\.?0+$/, '') + '%'],
     ['ss', 'Social Security', 0, 80000, 2500, v => v ? short(v) + '/yr' : 'None']];
   const g12 = (k, j) => { const a = BS[k]?.[i12] || 0, b = BS[k]?.[L] || 0; return a > 0 ? b / a - 1 : null; };
-  const accRow = (n, k, col) => { const c = g12(k); return `<div class="pi-acc"><span class="nm">${esc(n)}</span><span class="sp">${spark(BS[k].slice(-24), col, 70, 22, false)}</span><span class="amt num">${short(BS[k][L])}</span><span class="pc">${c == null ? '<span class="muted">—</span>' : chip(c)}</span></div>`; };
+  // v99: each row shows the 12-month change as a % and in dollars
+  const d12 = k => (BS[k]?.[L] || 0) - (BS[k]?.[i12] || 0), sgn$ = v => (v >= 0 ? '+' : '−') + short(Math.abs(v));
+  const accRow = (n, k, col) => { const c = g12(k), d = d12(k); return `<div class="pi-acc"><span class="nm">${esc(n)}</span><span class="sp">${spark(BS[k].slice(-24), col, 70, 22, false)}</span><span class="amt num">${short(BS[k][L])}</span><span class="pc">${c == null ? '<span class="muted">—</span>' : chip(c)}${c == null ? '' : `<small class="num ${d >= 0 ? 'pos' : 'neg'}">${sgn$(d)}</small>`}</span></div>`; };
   const sub = {all: `Every investment account plus the 529s · plan range from ${esc(sel.name)} · milestones, loan payoffs and each college semester show in their month`,
     inv: `What the retirement plan counts (no 529s) · plan range from ${esc(sel.name)} · milestones paid from savings come out in their month`,
     college: `All 529s · ${money(mo529)}/mo each until college, then each semester’s draw`}[PI_ACCT] || `Expected path at ${(sel.p.ret * 100).toFixed(1)}% a year until you retire · milestones paid from this account come out in their month${PI_ACCT === CTX.flowKey && sel.p.debtSave !== false ? ', freed loan payments go in' : ''}`;
@@ -58,7 +60,7 @@ function renderPlanSimple(pg) {
       <div class="pi-q rh-quick">${Q.map(([k, l, mn, mx, st, f]) => `<div><label>${l} <b id="pq-${k}">${f(sel.p[k])}</b></label><input type="range" min="${mn}" max="${mx}" step="${st}" value="${sel.p[k]}" data-pq="${k}"></div>`).join('')}</div>
       <div class="pi-more"><button class="link hero-link" id="piAdv">More settings & scenarios →</button></div></div>
     <div class="card c-4 kpi"><div class="label"><span class="ico">${icon('invest')}</span>Invested today</div><div class="val num">${short(tot)}</div>
-      <div class="delta">${chip(nz((tot - inv12) / inv12))} past 12 mo</div>
+      <div class="delta">${chip(nz((tot - inv12) / inv12))} <b class="num ${tot - inv12 >= 0 ? 'pos' : 'neg'}" style="margin-left:4px">${(tot - inv12 >= 0 ? '+' : '−') + short(Math.abs(tot - inv12))}</b> past 12 mo <span class="muted">· includes contributions</span></div>
       <div class="pi-accs"><div class="pi-acc pi-acc-h"><span></span><span>24 mo</span><span>Balance</span><span>12 mo</span></div>
         ${accts.map(a => accRow(a.n, a.k, a.group === 'Retirement' ? 'var(--s2)' : 'var(--s1)')).join('')}${DATA.kids.length ? accRow('529s', 'college', 'var(--s5)') : ''}</div></div>
 
