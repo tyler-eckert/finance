@@ -176,7 +176,7 @@ function cashRows(ncol, build, stick = '') {
 const B_HAS = k => ST.bal.accounts.some(a => a.kind === 'account' && a.group === 'Cash' && cashKind(a) === k);
 function renderBudget(pg) {
   if (bMode === 'ytd') bMode = 'month';   // the Month view shows the month and the year to date side by side
-  const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['years', 'Years'], ['actuals', 'Actuals']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const seg = `<div class="seg" id="bSeg">${[['month', 'Month'], ['actuals', 'Actuals'], ['years', 'Years']].map(([k, l]) => `<button data-k="${k}" class="${k === bMode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if (bMode === 'years') { renderYears(pg, seg); budCash(pg); return; }
   if (bMode === 'actuals') { renderActuals(pg, seg); return; }
   const m0 = bMode === 'month' ? bMonth : 1, m1 = bMonth, y = ASOF.y;
@@ -201,16 +201,15 @@ function renderBudget(pg) {
   const tax = rows.find(r => r.c.name === 'Tax')?.a || 0;
   const variance = rows.filter(r => r.c.group !== 'Income' && Math.abs(r.a - r.b) > 1).map(r => ({name: r.c.name, v: r.a - r.b, a: r.a, b: r.b})).sort((a, b) => a.v - b.v);
   const top = variance.length > 10 ? variance.slice(0, 6).concat(variance.slice(-4)) : variance;
-  const WF = `<div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">${BPER === 'm' ? MON[m1 - 1] + ' ' + y : 'Jan – ' + MON[m1 - 1] + ' ' + y}</div></div></div><div class="chart" id="wfChart"></div></div>`;   // v98: beside the bars, or full width under the table
+  const WF = `<div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">Year to date · Jan – ${MON[m1 - 1]} ${y}</div></div></div><div class="chart" id="wfChart"></div></div>`;   // v98: beside the bars, or full width under the table
   pg.innerHTML = `
   <div class="toolbar">${seg}
     <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}</option>`).join('')}</select>
-    <div class="seg" id="bPer"><button data-p="m" class="${BPER === 'm' ? 'on' : ''}">Month</button><button data-p="y" class="${BPER === 'y' ? 'on' : ''}">Year to date</button></div>
     <div style="margin-left:auto;display:flex;gap:8px"><div class="seg" id="bView" title="Bars or the full table"><button data-v="bars" class="${budView() === 'bars' ? 'on' : ''}">Bars</button><button data-v="table" class="${budView() === 'table' ? 'on' : ''}">Table</button></div>${budView() === 'table' ? `<button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button>` : ''}<button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
   ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
   <div class="grid g-12">
-    ${budSummaryCard({per: BPER, mL: MON[m1 - 1], y, LIVE, frac, day: tD, dim, inc: BPER === 'y' ? {a: yI.a, b: {full: yI.b, month: inc.b}} : {a: inc.a, b: {full: inc.b, month: inc.b}}, exp: BPER === 'y' ? {a: yE.a, b: {full: yE.b, month: exp.b}} : {a: exp.a, b: {full: exp.b, month: exp.b}}, net: BPER === 'y' ? {a: yN.a, b: {full: yN.b, month: net.b}} : {a: net.a, b: {full: net.b, month: net.b}}})}
-    ${budView() === 'bars' ? budBarsCard({y, m0: BPER === 'y' ? 1 : m1, m1, LIVE, frac, mL: MON[m1 - 1], per: BPER}) : ''}
+    ${budSummaryCard({per: 'y', mL: MON[m1 - 1], y, LIVE, frac, day: tD, dim, inc: {a: yI.a, b: {full: yI.b, month: inc.b}}, exp: {a: yE.a, b: {full: yE.b, month: exp.b}}, net: {a: yN.a, b: {full: yN.b, month: net.b}}})}
+    ${budView() === 'bars' ? budBarsCard({y, m0: m1, m1, LIVE, frac, mL: MON[m1 - 1], per: 'm'}) : ''}
     ${budView() === 'bars' ? WF : ''}
     <div class="card c-12 ${budView() === 'table' ? '' : 'bud-hide'}" data-lk="bva-table"><div class="card-h"><div><h3>Budget vs. actual · table</h3><div class="sub">${MON[m1 - 1]} and the year to date side by side · expand a category for its sub-categories · tap a line for its transactions</div></div>
         <div class="right pj-ctl"><span class="muted">Projection</span><div class="seg sm" id="pjMode"><button data-k="budget" class="${UI.projMode === 'budget' ? 'on' : ''}" title="Actual so far + the budget for the rest of the year">Budget</button><button data-k="smart" class="${UI.projMode !== 'budget' ? 'on' : ''}" title="Actual so far + a blend of budget and how you’ve actually been spending">Smart</button></div>
@@ -221,9 +220,8 @@ function renderBudget(pg) {
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   if ($('#bExpand')) $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
-  $$('#bPer button').forEach(b => b.onclick = () => { BPER = b.dataset.p; render(); });
   $$('#bView button').forEach(b => b.onclick = () => { (UI.budViewBy ||= {})[devKey()] = b.dataset.v; SYNC.schedule(); render(); });
-  wireBudBars(pg, BPER === 'y' ? 1 : m1, m1);
+  wireBudBars(pg, m1, m1);
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   // % used: every track runs 0–150%, so the 100% tick sits in the same spot on every row
   const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar pb150" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(150, used * 100) / 1.5}%"></i><b class="pb-100"></b></div><span class="muted num pb-l">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
@@ -260,10 +258,10 @@ function renderBudget(pg) {
       const subKeys = [...new Set(Object.keys(AY.S).filter(k => k.startsWith(c + '|')).map(k => k.split('|')[1]))];
       const subs = [...new Set([...r.c.subs.filter(sb => subKeys.includes(sb) || subBudgetFor(y, c, sb, 1, m1) != null), ...subKeys])].filter(sb => Math.abs(AY.S[c + '|' + sb] || 0) >= .5 || subBudgetFor(y, c, sb, 1, m1) != null);
       const has = subs.some(Boolean); if (has) HAS.add(c); const open = has && bOpen.has(c);
-      h += `<tr class="click cat ${open ? 'open' : ''}" data-cat="${esc(c)}"><td><span class="tw">${has ? `<button class="chev" data-tg="${esc(c)}" aria-label="Expand">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span>${esc(c)}</span>${has ? `<span class="cnt">${subs.filter(Boolean).length}</span>` : ''}</span></td>${cells(rr, income)}</tr>`;
+      h += `<tr class="click cat ${open ? 'open' : ''}" data-cat="${esc(c)}"><td><span class="tw">${has ? `<button class="chev" data-tg="${esc(c)}" aria-label="Expand">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span>${esc(c)}</span>${has ? `<span class="cnt">${subs.filter(Boolean).length}</span>` : ''}${CTX.CAN_WRITE ? `<button class="mini-btn bb-ed" data-bed="${esc(c)}" title="Edit this budget">${icon('pencil')}</button>` : ''}</span></td>${cells(rr, income)}</tr>`;
       if (open) subs.sort((p, q) => (AY.S[c + '|' + p] || 0) - (AY.S[c + '|' + q] || 0)).forEach(sb => {
         const bm = subBudgetFor(y, c, sb, m1, m1), by = subBudgetFor(y, c, sb, 1, m1), am = AM.S[c + '|' + sb] || 0, ay = AY.S[c + '|' + sb] || 0;
-        h += `<tr class="click sub" data-cat="${esc(c)}" data-sub="${esc(sb)}"><td><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}</span></td>
+        h += `<tr class="click sub" data-cat="${esc(c)}" data-sub="${esc(sb)}"><td><span class="tw sub-name">${sb ? esc(sb) : '<i class="muted">No sub-category</i>'}${CTX.CAN_WRITE && sb ? `<button class="mini-btn bb-ed" data-bed="${esc(c)}" data-beds="${esc(sb)}" title="Edit this budget">${icon('pencil')}</button>` : ''}</span></td>
           <td class="muted bm">${bm == null ? '' : money(bm)}</td><td>${money(am)}</td>${bm == null ? '<td></td>' : vcell(am - bm)}<td class="muted by">${by == null ? '' : money(by)}</td><td>${money(ay)}</td>${by == null ? '<td></td>' : vcell(ay - by)}${by == null ? '<td class="bar-cell"></td>' : bar(ay, by, income)}${by == null ? '<td class="proj"></td><td class="pj-d"></td>' : proj({ay, rest: m1 < 12 ? subBudgetFor(y, c, sb, m1 + 1, 12) || 0 : 0, fy: subBudgetFor(y, c, sb, 1, 12) || 0})}</tr>`;
       });
   };
@@ -292,7 +290,8 @@ function renderBudget(pg) {
   if ($('#pjW')) { $('#pjW').oninput = e => { $('#pjWv').textContent = e.target.value + '%'; }; $('#pjW').onchange = e => { UI.projW = +e.target.value / 100; SYNC.schedule(); render(); }; }
   $$('#bvaTable .chev').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.tg; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('#bvaTable tr.click').forEach(tr => tr.onclick = () => openCatTx(tr.dataset.cat, tr.dataset.sub, m0, m1));
-  const WY = BPER === 'y', wTax = WY ? (AYk['Tax'] || 0) : tax, wI = WY ? yI.a : inc.a, wF = WY ? yF.a : fx.a, wV = WY ? yV.a : vx.a, wN = WY ? yN.a : net.a;
+  $$('#bvaTable [data-bed]').forEach(b => b.onclick = e => { e.stopPropagation(); openBudEdit(b.dataset.bed, b.dataset.beds, y); });   // v102
+  const WY = true, wTax = WY ? (AYk['Tax'] || 0) : tax, wI = WY ? yI.a : inc.a, wF = WY ? yF.a : fx.a, wV = WY ? yV.a : vx.a, wN = WY ? yN.a : net.a;
   CH.push(() => waterfall($('#wfChart'), [{name: 'Income', v: wI, total: true}, {name: 'Fixed', v: wF}, {name: 'Variable', v: wV - wTax}, ...(ST.excl.has('Tax') ? [] : [{name: 'Tax', v: wTax}]), {name: 'Net', v: wN, total: true}], {height: 260}));
 }
 function openCatTx(cat, sub, m0, m1) {
@@ -787,6 +786,8 @@ function renderBuilder(pg) {
   const years = [PY, CY, CY + 1].filter(y => y >= CY || ST.budget[y]);
   const B = ST.budget[byYear];
   const yearSeg = `<div class="seg" id="bySeg">${years.map(y => `<button data-y="${y}" class="${y === byYear ? 'on' : ''}">${y}${!ST.budget[y] ? ' +' : ''}</button>`).join('')}</div>`;
+  const wireTop = () => { $$('#bySeg button').forEach(b => b.onclick = () => { byYear = +b.dataset.y; render(); }); $$('#bbView button').forEach(b => b.onclick = () => { BBV = b.dataset.v; render(); }); };
+  if (BBV === 'long') { longRange(pg, ''); wireTop(); return; }   // v102: long range
   if (!B) {
     pg.innerHTML = `<div class="toolbar">${yearSeg}</div><div class="card" style="max-width:760px"><div class="card-h"><div><h3>Create the ${byYear} budget</h3><div class="sub">Pick a starting point — every cell stays editable afterwards</div></div></div>
       <div class="opt-grid">${[['copy', 'Copy ' + (byYear - 1) + ' budget', 'Same monthly amounts, including seasonal lines like Tax and Lawn'], ['seasonal', 'Actuals, seasonal', `${Math.min(byYear - 1, CY)} run-rate spread by each category's ${PY} monthly pattern`], ['runrate', 'Actuals, flat', `${byYear - 1} year-to-date average × 12, even each month`], ['blank', 'Start blank', 'Zero everywhere; build up line by line']].map(([k, t, d]) => `<button class="opt" data-k="${k}"><b>${t}</b><span>${d}</span></button>`).join('')}</div></div>`;
@@ -800,27 +801,36 @@ function renderBuilder(pg) {
   const inc = grpTot('Income'), ex = MON.map((_, i) => grpTot('Fixed Expense')[i] + grpTot('Variable Expense')[i]), net = MON.map((_, i) => inc[i] + ex[i]);
   const f = v => v ? Math.round(v).toLocaleString('en-US') : '';
   const cellRow = (vals, attrs, ro) => vals.map((v, i) => `<td>${ro ? `<span class="ro num">${f(v)}</span>` : `<input class="cell num" ${attrs} data-i="${i}" value="${f(v)}" placeholder="0">`}</td>`).join('');
-  let h = `<tr><th class="stick">Category</th>${MON.map(m => `<th>${m}</th>`).join('')}<th>Total</th><th></th></tr>`;
+  // v102: history beside every line — last year's actual, the last 12 months, and a 24-month trend
+  const hx = (c, s) => { const H = hStats(c, s, byYear); return `<td class="num bb-h1" title="${byYear - 1} actual">${H.lyT ? short(Math.abs(H.lyT)) : ''}</td><td class="num bb-h2" title="Last 12 full months">${H.last12 ? short(Math.abs(H.last12)) : ''}</td><td class="bb-h3 hide-sm">${H.v24.some(v => v) ? spark(H.v24.map(v => Math.abs(v)), 'var(--s2)', 64, 18, false) : ''}</td>`; };
+  const nmBtn = (c, s, label, cls = '') => `<button class="link bb-n ${cls}" data-be="${esc(c)}" ${s != null ? `data-bes="${esc(s)}"` : ''} title="Budget editor · history and quick fill">${label}</button>`;
+  let h = `<tr><th class="stick">Category</th>${MON.map(m => `<th>${m}</th>`).join('')}<th>Total</th><th class="bb-h1">${byYear - 1}<span class="lr-sub">actual</span></th><th class="bb-h2">Last 12<span class="lr-sub">months</span></th><th class="hide-sm bb-h3">Trend</th><th></th></tr>`;
   GROUPS.filter(g => g.k !== 'TTS').forEach(g => {
-    h += `<tr class="grp"><td class="stick" colspan="15">${g.l}</td></tr>`;
-    sectioned(g.k, ST.cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="15">${esc(x.hdr)}</td></tr>`; return; } const c = x.c;
+    h += `<tr class="grp"><td class="stick" colspan="18">${g.l}</td></tr>`;
+    sectioned(g.k, ST.cats).forEach(x => { if (x.hdr) { h += `<tr class="sgrp"><td class="stick" colspan="18">${esc(x.hdr)}</td></tr>`; return; } const c = x.c;
       const sbs = subBudgetRows(byYear, c.name), vals = rowVals(c.name), open = bbOpen.has(c.name);
-      h += `<tr class="${sbs.length ? 'has-sub' : ''}"><td class="stick"><span class="tw">${c.subs.length ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${esc(c.name)}</span></td>${cellRow(vals, `data-c="${esc(c.name)}"`, sbs.length)}<td class="num b">${f(sum(vals))}</td><td><button class="mini-btn" data-menu="${esc(c.name)}">${icon('more')}</button></td></tr>`;
-      if (open) c.subs.forEach(s => { const v = SB[c.name + '|' + s]; h += `<tr class="subr"><td class="stick"><span class="tw sub-name">${esc(s)}</span></td>${v ? cellRow(v, `data-c="${esc(c.name)}" data-s="${esc(s)}"`) : `<td colspan="12" style="text-align:left;padding-left:12px"><button class="link" data-addsub="${esc(c.name)}|${esc(s)}">+ Budget this sub-category separately</button></td>`}<td class="num">${v ? f(sum(v)) : ''}</td><td>${v ? `<button class="mini-btn" data-rmsub="${esc(c.name)}|${esc(s)}">${icon('close')}</button>` : ''}</td></tr>`; });
+      h += `<tr class="${sbs.length ? 'has-sub' : ''}"><td class="stick"><span class="tw">${c.subs.length ? `<button class="chev ${open ? 'on' : ''}" data-tg="${esc(c.name)}">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}${nmBtn(c.name, null, esc(c.name))}</span></td>${cellRow(vals, `data-c="${esc(c.name)}"`, sbs.length)}<td class="num b">${f(sum(vals))}</td>${hx(c.name)}<td><button class="mini-btn" data-menu="${esc(c.name)}">${icon('more')}</button></td></tr>`;
+      if (open) c.subs.forEach(s => { const v = SB[c.name + '|' + s]; h += `<tr class="subr"><td class="stick"><span class="tw sub-name">${nmBtn(c.name, s, esc(s), 'sub')}</span></td>${v ? cellRow(v, `data-c="${esc(c.name)}" data-s="${esc(s)}"`) : `<td colspan="12" style="text-align:left;padding-left:12px"><button class="link" data-addsub="${esc(c.name)}|${esc(s)}">+ Budget this sub-category separately</button> <button class="link muted" data-be="${esc(c.name)}" data-bes="${esc(s)}">· set it from history</button></td>`}<td class="num">${v ? f(sum(v)) : ''}</td>${hx(c.name, s)}<td>${v ? `<button class="mini-btn" data-menu="${esc(c.name)}" data-msub="${esc(s)}">${icon('more')}</button><button class="mini-btn" data-rmsub="${esc(c.name)}|${esc(s)}" title="Stop budgeting separately">${icon('close')}</button>` : ''}</td></tr>`; });
     });
-    h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${grpTot(g.k).map(v => `<td class="num">${f(v)}</td>`).join('')}<td class="num">${f(sum(grpTot(g.k)))}</td><td></td></tr>`;
+    h += `<tr class="tot"><td class="stick">Total ${g.l.toLowerCase()}</td>${grpTot(g.k).map(v => `<td class="num">${f(v)}</td>`).join('')}<td class="num">${f(sum(grpTot(g.k)))}</td><td></td><td></td><td class="hide-sm"></td><td></td></tr>`;
   });
-  h += `<tr class="tot net"><td class="stick">Net</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td></td></tr>`;
-  pg.innerHTML = `<div class="toolbar wrap">${yearSeg}<span class="muted" style="font-size:12px">Signed: income positive, expenses negative · Tab or Enter to move · <b>Fill →</b> (or Ctrl+Enter) copies a month to the rest of the year</span>
-    <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" onclick="openCatModal()">${icon('plus')}<span>New category</span></button></div></div>
+  h += `<tr class="tot net"><td class="stick">Net</td>${net.map(v => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${f(v)}</td>`).join('')}<td class="num ${sum(net) < 0 ? 'neg' : 'pos'}">${f(sum(net))}</td><td></td><td></td><td class="hide-sm"></td><td></td></tr>`;
+  pg.innerHTML = `<div class="toolbar wrap">${yearSeg}${bbViewSeg()}<span class="muted" style="font-size:12px">Tap a name for its history and quick fill · Tab or Enter to move · <b>Fill →</b> (Ctrl+Enter) copies a month to the rest of the year</span>
+    <div style="margin-left:auto;display:flex;gap:8px"><button class="btn" id="bbSplit" title="Each category's budget is split across its sub-categories by their share of the last 12 months — category totals don't change">${icon('grid')}<span>Split into sub-categories</span></button><button class="btn" onclick="openCatModal()">${icon('plus')}<span>New category</span></button></div></div>
   <div class="grid g-12">
+    ${needsBudgetCard(byYear)}
     <div class="card c-3 kpi"><div class="label">Planned income</div><div class="val num">${short(sum(inc))}</div></div>
     <div class="card c-3 kpi"><div class="label">Planned spending</div><div class="val num">${short(sum(ex))}</div><div class="delta">${short(sum(ex) / 12)}/mo avg</div></div>
     <div class="card c-6"><div class="card-h" style="margin-bottom:4px"><div><h3>Monthly net</h3><div class="sub">Updates as you type</div></div><div class="right num ${sum(net) < 0 ? 'neg' : 'pos'}" style="font-weight:700">${short(sum(net))} / yr</div></div><div class="chart" id="bbChart"></div></div>
     <div class="card c-12" style="padding:10px 0 4px"><div class="scroll-x"><table class="table bb">${h}</table></div></div>
   </div>
   <div class="menu" id="rowMenu"></div>`;
-  $$('#bySeg button').forEach(b => b.onclick = () => { byYear = +b.dataset.y; render(); });
+  wireTop();
+  $$('[data-be]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); openBudEdit(b.dataset.be, b.dataset.bes, byYear); });
+  if ($('#bbSplit')) $('#bbSplit').onclick = () => { const was = JSON.stringify(ST.subBudget[byYear] || {}); let n = 0, cats = 0; ST.cats.forEach(c => { const k = splitByHistory(c.name, byYear); if (k) { n += k; cats++; } });
+    if (!n) return toast('Nothing to split — categories are already by sub-category, or have no sub-category history'); render(); toast(`Split ${cats} categories into ${n} sub-category lines (totals unchanged)`, () => { ST.subBudget[byYear] = JSON.parse(was); render(); }); };
+  $$('[data-nb]', pg).forEach(b => b.onclick = () => { const [c, s, isSub] = b.dataset.nb.split('|'); openBudEdit(c, isSub === '1' ? s : null, byYear); });
+  if ($('#nbAll')) $('#nbAll').onclick = () => { const L0 = needsBudget(byYear); L0.forEach(x => { const v = suggest(x.c, x.s, byYear, 'avg12'); if (x.s == null) B[x.c] = v; else SB[x.c + '|' + x.s] = v; }); render(); toast(`Added ${L0.length} budget lines at their 12-month average`); };
   $$('.bb .chev', pg).forEach(b => b.onclick = () => { const k = b.dataset.tg; bbOpen.has(k) ? bbOpen.delete(k) : bbOpen.add(k); render(); });
   // ----- cell editing: Tab / Shift+Tab move across (wrapping to the next row), Enter moves down, and
   //       "Fill →" (or Ctrl/⌘+Enter) copies the value into every later month of that row
@@ -856,11 +866,14 @@ function renderBuilder(pg) {
   $$('[data-rmsub]', pg).forEach(b => b.onclick = () => { delete SB[b.dataset.rmsub]; render(); });
   const menu = $('#rowMenu');
   $$('[data-menu]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); const c = b.dataset.menu, r = b.getBoundingClientRect();
-    menu.innerHTML = [['fill', 'Fill Jan across all months'], ['annual', 'Set annual total & spread evenly'], ['season', 'Spread by ' + PY + ' seasonality'], ['actual', 'Use ' + (byYear - 1) + ' run-rate'], ['zero', 'Clear row']].map(([k, l]) => `<button data-a="${k}">${l}</button>`).join('') + '<div class="menu-in" hidden><input class="in" placeholder="Annual total"><button class="btn primary">Set</button></div>';
+    const ms = b.dataset.msub ?? null;
+    menu.innerHTML = [['editor', 'Open the budget editor…'], ['ly', `${byYear - 1} actuals, month by month`], ['lyplus', `${byYear - 1} actuals + 3%`], ['avg12', '12-month average'], ['pace', `${CY} pace`], ['fill', 'Fill Jan across all months'], ['annual', 'Set annual total & spread evenly'], ['season', 'Spread by ' + PY + ' seasonality'], ['zero', 'Clear row']].map(([k, l]) => `<button data-a="${k}">${l}</button>`).join('') + '<div class="menu-in" hidden><input class="in" placeholder="Annual total"><button class="btn primary">Set</button></div>';
     menu.style.top = (r.bottom + 4) + 'px'; menu.style.left = Math.max(8, r.right - 250) + 'px'; menu.classList.add('on');
-    const sign = groupOf(c) === 'Income' ? 1 : -1, row = B[c], cur = rowVals(c);
+    const sign = groupOf(c) === 'Income' ? 1 : -1, row = ms != null ? SB[c + '|' + ms] : B[c], cur = ms != null ? row.slice() : rowVals(c);
     $$('button[data-a]', menu).forEach(x => x.onclick = ev => { ev.stopPropagation(); const a = x.dataset.a;
       if (a === 'annual') { const box = $('.menu-in', menu); box.hidden = false; const inp = $('input', box); inp.value = Math.round(Math.abs(sum(cur))); inp.focus(); inp.select(); $('button', box).onclick = () => { const t = +inp.value.replace(/[$,]/g, '') || 0; for (let i = 0; i < 12; i++) row[i] = sign * Math.round(t / 12); menu.classList.remove('on'); render(); }; return; }
+      if (a === 'editor') { menu.classList.remove('on'); openBudEdit(c, ms, byYear); return; }
+      if (['ly', 'lyplus', 'avg12', 'pace'].includes(a)) { const v = suggest(c, ms, byYear, a); for (let i = 0; i < 12; i++) row[i] = v[i]; menu.classList.remove('on'); render(); return; }
       const tot = Math.abs(sum(cur));
       if (a === 'fill') for (let i = 1; i < 12; i++) row[i] = row[0];
       if (a === 'season') { const p = seasonal(c); for (let i = 0; i < 12; i++) row[i] = sign * Math.round(tot * p[i]); }

@@ -205,9 +205,9 @@ function budBarsCard(o) {
     if (inc) return d > .5 ? `<span class="${LIVE ? 'muted' : 'neg'}">${short(d)} to come</span>` : `<span class="pos">${short(-d)} more</span>`;
     return d >= -.5 ? `<span class="pos">${short(d)} left</span>` : `<span class="neg">${short(-d)} over</span>`; };
   const row = (r, inc) => { const subs = subsOf(r.c), has = subs.length > 1 || (subs.length === 1 && subs[0].sb), open = has && bOpen.has(r.c);
-    return `<div class="bb-r click ${open ? 'open' : ''}" data-bc="${esc(r.c)}"><div class="bb-n">${has ? `<button class="chev" data-bt="${esc(r.c)}" aria-label="Sub-categories">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span class="bb-nm">${esc(r.c)}</span></div>
+    return `<div class="bb-r click ${open ? 'open' : ''}" data-bc="${esc(r.c)}"><div class="bb-n">${has ? `<button class="chev" data-bt="${esc(r.c)}" aria-label="Sub-categories">${icon('chev', 2.4)}</button>` : '<span class="chev-sp"></span>'}<span class="bb-nm">${esc(r.c)}</span>${CTX.CAN_WRITE ? `<button class="mini-btn bb-ed" data-bed="${esc(r.c)}" title="Edit this budget">${icon('pencil')}</button>` : ''}</div>
       ${bar(r.a, r.b, inc, r.bm)}<div class="bb-v"><b class="num">${money(r.a)}</b><span class="muted"> of ${r.b > 0 ? money(r.b) : '—'}</span></div><div class="bb-s">${status(r.a, r.b, inc)}</div></div>`
-      + (open ? subs.map(x => `<div class="bb-r sub click" data-bc="${esc(r.c)}" data-bs="${esc(x.sb)}"><div class="bb-n"><span class="chev-sp"></span><span class="bb-nm">${x.sb ? esc(x.sb) : '<i>No sub-category</i>'}</span></div>
+      + (open ? subs.map(x => `<div class="bb-r sub click" data-bc="${esc(r.c)}" data-bs="${esc(x.sb)}"><div class="bb-n"><span class="chev-sp"></span><span class="bb-nm">${x.sb ? esc(x.sb) : '<i>No sub-category</i>'}</span>${CTX.CAN_WRITE && x.sb ? `<button class="mini-btn bb-ed" data-bed="${esc(r.c)}" data-beds="${esc(x.sb)}" title="Edit this budget">${icon('pencil')}</button>` : ''}</div>
         ${bar(x.a, x.b ?? 0, inc, null)}<div class="bb-v"><b class="num">${money(x.a)}</b>${x.b != null ? `<span class="muted"> of ${money(x.b)}</span>` : ''}</div><div class="bb-s">${x.b != null ? status(x.a, x.b, inc) : ''}</div></div>`).join('') : ''); };
   const sec = (t, list, inc, note = '') => list.length ? `<div class="bb-h"><span>${t}</span><span class="muted">${list.length} · ${money(sum(list.map(r => r.a)))}${note}</span></div>${list.map(r => row(r, inc)).join('')}` : '';
   const T = {a: sum(exp.map(r => r.a)), b: sum(exp.map(r => Math.max(0, r.b))), bm: sum(exp.map(r => Math.max(0, r.bm)))};
@@ -219,4 +219,5 @@ function budBarsCard(o) {
 function wireBudBars(pg, m0, m1) {
   $$('.bb-card [data-bt]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.bt; bOpen.has(k) ? bOpen.delete(k) : bOpen.add(k); render(); });
   $$('.bb-card [data-bc]', pg).forEach(r => r.onclick = () => openCatTx(r.dataset.bc, r.dataset.bs, m0, m1));
+  $$('[data-bed]', pg).forEach(b => b.onclick = e => { e.stopPropagation(); openBudEdit(b.dataset.bed, b.dataset.beds, ASOF.y); });   // v102
 }

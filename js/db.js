@@ -102,7 +102,7 @@ async function start() {
 async function signOut() { await sb.auth.signOut(); location.hash = ''; location.reload(); }
 sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT' && SESSION) location.reload(); if (s) SESSION = s; });
 
-const APP_FILES = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/app14.js', 'js/app15.js', 'js/app16.js', 'js/shell.js'];
+const APP_FILES = ['js/app.js', 'js/app2.js', 'js/app3.js', 'js/app4.js', 'js/app5.js', 'js/app6.js', 'js/app7.js', 'js/app8.js', 'js/app9.js', 'js/app10.js', 'js/app11.js', 'js/app12.js', 'js/app13.js', 'js/app14.js', 'js/app15.js', 'js/app16.js', 'js/app17.js', 'js/shell.js'];
 function preloadApp() {   // fetch every module now (in parallel, into the HTTP cache); loadApp() runs them in order once the data is in
   const v = CFG.version || '';
   APP_FILES.forEach(f => { const l = document.createElement('link'); l.rel = 'preload'; l.as = 'script'; l.href = f + (v ? '?v=' + v : ''); document.head.appendChild(l); });
