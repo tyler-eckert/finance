@@ -300,7 +300,8 @@ function buildData(S) {
   S.merchants.forEach(([k, cid, sid, w, n]) => { const c = catN(cid); if (c) (RULES[k] ||= []).push([c, subN(sid), +w, +n]); });
   for (const k in RULES) RULES[k].sort((a, b) => b[2] - a[2]);
   const userRules = {}; S.rules.forEach(([id, k, t, cid, sid]) => { if (t === 'exact' && catN(cid)) userRules[k] = {cat: catN(cid), sub: subN(sid), id}; });
-  const balMonths = ymRange(`${PY}-01`, ym(today) > lastBM ? ym(today) : lastBM);
+  // v100: the Balances editor holds every month on record (was Jan of last year on), so the history grid can QC old data
+  const balMonths = ymRange(months[0] && months[0] < `${PY}-01` ? months[0] : `${PY}-01`, ym(today) > lastBM ? ym(today) : lastBM);
   const hasKids = new Set(S.accounts.filter(a => a.parent_account_id).map(a => a.parent_account_id));
   const balAccts = S.accounts.filter(a => !a.parent_account_id).map(a => ({name: a.name, group: a.is_liability ? 'Debt' : a.balance_group, inst: a.institution || a.balance_group, v: balMonths.map(m => balBy[a.id]?.[m] ?? null), kind: 'account', id: a.id,
       active: a.is_active !== false, acctKind: a.kind, rollup: hasKids.has(a.id)}))

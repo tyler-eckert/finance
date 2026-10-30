@@ -609,7 +609,8 @@ function drawImport() {
    BALANCES — flexible month-end inputs
    ===================================================================== */
 const BGROUPS = ['Cash', 'Investing', 'Retirement', 'College', 'Debt', 'Other'];
-let balM = null, balView = 'grid', balInactive = false;   // history grid by default: balances go in once a month
+let balM = null, balView = 'grid', balInactive = false;
+const BGF = {from: null, to: null, qc: true};   // v100 · History grid date filter (month keys 'YYYY-MM'; null = last 12 complete months) + highlight suspect values   // history grid by default: balances go in once a month
 const acctLive = (a, i) => a.active !== false && (a.v[i] != null || a.v.slice(Math.max(0, i - 5), i + 1).some(v => v != null && Math.abs(v) >= .5) || (a.v.slice(0, i + 1).filter(v => v != null).pop() || 0) !== 0);
 // rename an account (and its institution label); transactions, the cash plan and every chart follow the new name
 function openRenameAccount(a) {
@@ -639,8 +640,21 @@ function renderBalances(pg) {
   const gridHTML = () => {
     // window = the 12 complete months ending last month
     const nowM = ym(CTX.TODAY);
-    let A = months.length - 1; if (months[A] >= nowM && A > 0) A--;   // the current month isn't over yet — end on the last complete month
-    const jN = A, j0 = Math.max(0, A - 11), W = months.slice(j0, jN + 1);
+    let A0 = months.length - 1; if (months[A0] >= nowM && A0 > 0) A0--;   // the current month isn't over yet — end on the last complete month
+    // v100: From / To filter (variances are for the To month)
+    const ix = m => { const k = months.indexOf(m); return k; };
+    let A = BGF.to && ix(BGF.to) >= 0 ? ix(BGF.to) : A0, j0 = BGF.from && ix(BGF.from) >= 0 ? ix(BGF.from) : Math.max(0, A - 11);
+    if (j0 > A) [j0, A] = [A, j0];
+    const jN = A, W = months.slice(j0, jN + 1);
+    // QC: a value identical to another account's this month or last month (a pasted / shifted row), or a big swing
+    const suspect = (a, j) => { const v = a.v[j]; if (!BGF.qc || v == null || Math.abs(v) < 1) return '';
+      const twin = B.accounts.find(b => b !== a && [j, j - 1, j + 1].some(t => t >= 0 && b.v[t] != null && Math.abs(b.v[t] - v) < .005));
+      if (twin) return `Same value as ${twin.name} in a neighbouring month — a shifted or pasted row?`;
+      const p = a.v[j - 1]; if (p != null && Math.abs(p) >= 1000 && Math.abs(v - p) / Math.abs(p) > .6 && a.group !== 'Cash') return `Changed ${pct((v - p) / Math.abs(p), 0)} from the month before`;
+      return ''; };
+    const years = [...new Set(months.map(m => m.slice(0, 4)))];
+    const preset = (f, t) => (BGF.from || null) === f && (BGF.to || null) === t;
+    const fOpts = sel => months.map(m => `<option value="${m}" ${m === sel ? 'selected' : ''}>${mLabel(m)}</option>`).join('');
     const val = (a, j) => j < 0 ? null : (a.v[j] ?? a.v[j - 1] ?? null);       // same carry-forward rule as net worth
     const ya = A - 12, yaM = ya >= 0 ? months[ya] : (() => { const [y, m] = months[A].split('-'); return `${+y - 1}-${m}`; })();
     const prevYA = (a, j) => { if (j >= 0) return val(a, j); const s = BS && BS[(a.kind === 'loan' ? 'loan:' : 'acct:') + a.id], k = BS?.months?.indexOf(yaM); return s && k >= 0 ? (s[k] ?? null) : null; };
@@ -654,12 +668,19 @@ function renderBalances(pg) {
     const sumG = (list, f) => { const xs = list.map(f); return xs.every(x => x == null) ? null : sum(xs.map(x => x ?? 0)); };
     const vars = (list, sg, signed) => { const g = f => sumG(list, a => { const x = f(a); return x == null ? null : x * (signed ? signOf(a) : 1); });
       return vc(g(a => val(a, A)), g(a => val(a, A - 1)), sg) + vc(g(a => val(a, A)), g(a => prevYA(a, ya)), sg); };
-    return `<div class="card"><div class="card-h"><div><h3>Last 12 months</h3><div class="sub">${mLabel(W[0])} – ${mLabel(W[W.length - 1])} · variances for ${mLabel(months[A])} · Enter = next month, ↑ ↓ = other accounts${A < months.length - 1 ? ` · ${mLabel(months[months.length - 1])} not complete yet, enter it under Month entry` : ''}</div></div></div>
+    const nSus = BGF.qc ? VA.reduce((t, a) => t + W.reduce((u, m, x) => u + (suspect(a, x + j0) ? 1 : 0), 0), 0) : 0;
+    return `<div class="card bg-card"><div class="card-h"><div><h3>${!BGF.from && !BGF.to ? 'Last 12 months' : `${mLabel(W[0])} – ${mLabel(W[W.length - 1])}`}</h3><div class="sub">${W.length} months · variances for ${mLabel(months[A])} · Enter = next month, ↑ ↓ = other accounts${!BGF.to && A < months.length - 1 ? ` · ${mLabel(months[months.length - 1])} not complete yet, enter it under Month entry` : ''}</div></div></div>
+      <div class="bg-flt">
+        <div class="seg sm" id="bgPre"><button data-pf="" data-pt="" class="${preset(null, null) ? 'on' : ''}">Last 12 mo</button>${years.slice().reverse().map(y => { const f = months.find(m => m.startsWith(y)), t = [...months].reverse().find(m => m.startsWith(y)); return `<button data-pf="${f}" data-pt="${t}" class="${preset(f, t) ? 'on' : ''}">${y}</button>`; }).join('')}<button data-pf="${months[0]}" data-pt="${months[A0]}" class="${preset(months[0], months[A0]) ? 'on' : ''}">All</button></div>
+        <label class="bg-l">From <select class="in sel sm" id="bgFrom">${fOpts(W[0])}</select></label>
+        <label class="bg-l">To <select class="in sel sm" id="bgTo">${fOpts(months[A])}</select></label>
+        <label class="tgl bg-qc"><input type="checkbox" id="bgQc" ${BGF.qc ? 'checked' : ''}> Highlight suspect values${BGF.qc ? ` <b class="${nSus ? 'neg' : 'pos'}">${nSus || 'none'}</b>` : ''}</label></div>
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
         <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
         return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : short(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn acct-ren" data-ren-a="${kOf(a)}" title="Rename">${icon('edit')}</button>` : ''}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
-          return `<td class="${j === A ? 'anc' : ''}"><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
+          const sus = suspect(a, j);
+          return `<td class="${j === A ? 'anc' : ''} ${sus ? 'sus' : ''}" ${sus ? `title="${esc(sus)}"` : ''}><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
           ${vc(val(a, A), val(a, A - 1), sg)}${vc(val(a, A), prevYA(a, ya), sg)}</tr>`).join(''); }).join('')}
       <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${short(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;
   };
@@ -684,6 +705,9 @@ function renderBalances(pg) {
   if ($('#bmPrev')) { $('#bmPrev').onclick = () => { balM--; render(); }; $('#bmNext').onclick = () => { balM++; render(); }; }
   const parse = s => { const v = String(s).replace(/[$,\s]/g, ''); return v === '' ? null : +v; };
   $$('.balIn', pg).forEach(inp => { inp.onchange = () => { const a = B.accounts[+inp.closest('.bal-row').dataset.k]; a.v[i] = parse(inp.value); render(); }; inp.onkeydown = e => { if (e.key === 'Enter') { const all = $$('.balIn', pg), nx = all[all.indexOf(inp) + 1], nk = nx?.closest('.bal-row')?.dataset.k; inp.blur(); setTimeout(() => { const t = nk != null ? $(`.bal-row[data-k="${nk}"] .balIn`) : null; if (t) { t.focus(); t.select?.(); } }, 30); } }; });
+  $$('#bgPre button', pg).forEach(b => b.onclick = () => { BGF.from = b.dataset.pf || null; BGF.to = b.dataset.pt || null; render(); });
+  if ($('#bgFrom')) { $('#bgFrom').onchange = e => { BGF.from = e.target.value; BGF.to ||= $('#bgTo').value; render(); }; $('#bgTo').onchange = e => { BGF.to = e.target.value; BGF.from ||= $('#bgFrom').value; render(); }; }
+  if ($('#bgQc')) $('#bgQc').onchange = e => { BGF.qc = e.target.checked; render(); };
   $$('.cell', pg).forEach(c => {
     c.onchange = () => { B.accounts[+c.dataset.k].v[+c.dataset.j] = parse(c.value);
       setTimeout(() => { const f = document.activeElement, k = f?.classList?.contains('cell') ? [f.dataset.k, f.dataset.j] : null;   // keep Tab / click target after redraw
