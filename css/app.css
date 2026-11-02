@@ -1638,3 +1638,12 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 .drawer{overscroll-behavior:contain;overflow-x:hidden;touch-action:pan-y}
 .scrim{touch-action:none}
 .drawer .chart{touch-action:pan-y}
+
+/* v110: Balances › History grid — tighter rows, whole dollars (no k / M), wider variance columns to fit them */
+.table.grid-t td,.table.grid-t th{padding-top:1px;padding-bottom:1px}
+.table.grid-t .cell{height:24px;padding:0 5px}
+.table.grid-t tr.grp td{padding-top:8px;padding-bottom:2px}
+.table.grid-t tr.tot td{padding-top:4px;padding-bottom:4px}
+.grid-t .vm1,.grid-t .vy1{width:100px;min-width:100px;max-width:100px}
+.grid-t .vy1{right:72px}.grid-t .vm2{right:172px}.grid-t .vm1{right:244px}
+.grid-t td.var-c,.grid-t td.gtot{font-variant-numeric:tabular-nums}

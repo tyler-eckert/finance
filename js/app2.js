@@ -664,7 +664,7 @@ function renderBalances(pg) {
       const c = slot();
       if (cur == null || prv == null) return `<td class="num muted var-c ${c}1">${cur != null && prv == null ? 'new' : '—'}</td><td class="num muted var-c ${c}2"></td>`;
       const d = cur - prv, cls = d === 0 ? 'muted' : d * sg > 0 ? 'pos' : 'neg';
-      return `<td class="num var-c ${c}1 ${cls}">${d === 0 ? '$0' : (d > 0 ? '+' : '') + short(d)}</td><td class="num var-c ${c}2 ${cls}">${prv ? pct(d / Math.abs(prv), 1) : ''}</td>`;
+      return `<td class="num var-c ${c}1 ${cls}">${d === 0 ? '$0' : (d > 0 ? '+' : '') + money(d)}</td><td class="num var-c ${c}2 ${cls}">${prv ? pct(d / Math.abs(prv), 1) : ''}</td>`;
     };
     const sumG = (list, f) => { const xs = list.map(f); return xs.every(x => x == null) ? null : sum(xs.map(x => x ?? 0)); };
     const vars = (list, sg, signed) => { const g = f => sumG(list, a => { const x = f(a); return x == null ? null : x * (signed ? signOf(a) : 1); });
@@ -679,11 +679,11 @@ function renderBalances(pg) {
       <div class="scroll-x"><table class="table grid-t"><tr><th class="stick">Account</th>${W.map((m, x) => `<th class="${x + j0 === A ? 'anc' : ''}">${mShort(m)}</th>`).join('')}
         <th class="var-h vm1" title="Month over month">MoM $<span>vs ${mShort(months[A - 1] || yaM)}</span></th><th class="var-h vm2">MoM %<span>&nbsp;</span></th><th class="var-h vy1" title="Same month a year ago">YoY $<span>vs ${mShort(yaM)}</span></th><th class="var-h vy2">YoY %<span>&nbsp;</span></th></tr>
       ${groups.map(g => { const ga = VA.filter(a => a.group === g), sg = g === 'Debt' ? -1 : 1;
-        return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : short(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn acct-ren" data-ren-a="${kOf(a)}" title="Rename">${icon('edit')}</button>` : ''}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
+        return `<tr class="grp"><td class="stick">${g}</td>${W.map((m, x) => { const t = sumG(ga, a => val(a, x + j0)); return `<td class="num gtot ${x + j0 === A ? 'anc' : ''}">${t == null ? '' : money(t)}</td>`; }).join('')}${vars(ga, sg, false)}</tr>` + ga.map(a => `<tr><td class="nowrap stick ind">${esc(a.name)}${a.kind === 'account' && CTX.CAN_WRITE ? `<button class="mini-btn acct-ren" data-ren-a="${kOf(a)}" title="Rename">${icon('edit')}</button>` : ''}</td>${W.map((m, x) => { const j = x + j0, v = a.v[j];
           const sus = suspect(a, j);
           return `<td class="${j === A ? 'anc' : ''} ${sus ? 'sus' : ''}" ${sus ? `title="${esc(sus)}"` : ''}><input class="cell num" ${a.rollup ? 'readonly' : ''} data-k="${kOf(a)}" data-j="${j}" value="${v != null ? Math.round(v).toLocaleString() : ''}" placeholder="—"></td>`; }).join('')}
           ${vc(val(a, A), val(a, A - 1), sg)}${vc(val(a, A), prevYA(a, ya), sg)}</tr>`).join(''); }).join('')}
-      <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${short(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;
+      <tr class="tot"><td class="stick">Net worth (tracked)</td>${W.map((m, x) => `<td class="num ${x + j0 === A ? 'anc' : ''}">${money(nw(x + j0))}</td>`).join('')}${vars(B.accounts, 1, true)}</tr></table></div></div>`;
   };
   const chk = typeof checksCard === 'function' ? checksCard() : '';
   pg.innerHTML = `${chk ? `<div class="grid g-12" style="margin-bottom:18px">${chk}</div>` : ''}
