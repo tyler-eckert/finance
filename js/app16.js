@@ -26,7 +26,7 @@ async function saveTaxt(id, v) {
   const settings = {...(CTX.household.settings || {}), tax_treat: {...TAXT_SET(), [id]: v}};
   const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
   if (error) return toast('Couldn’t save: ' + error.message);
-  CTX.household.settings = settings; if (CTX.settings) CTX.settings.tax_treat = settings.tax_treat; render();
+  Object.assign(CTX.settings, settings); CTX.household.settings = CTX.settings; render();   // v113: keep one shared settings object
 }
 
 /* ---------------- the numbers ---------------- */

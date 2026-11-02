@@ -278,7 +278,7 @@ function renderAdmin(pg) {
   $('#dPy').onchange = $('#dFs').onchange = () => render();
   if ($('#hhDef')) $('#hhDef').onclick = async () => { const settings = {...(CTX.household.settings || {}), ui: {density: UI.density, layout: UI.layout}};
     const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
-    if (error) return toast('Couldn’t save: ' + error.message); CTX.household.settings = settings; render(); toast('Saved as the household default for everyone without their own layout'); };
+    if (error) return toast('Couldn’t save: ' + error.message); Object.assign(CTX.settings, settings); CTX.household.settings = CTX.settings; render(); toast('Saved as the household default for everyone without their own layout'); };
   wireAutomation();
   if (typeof wireDigestAdmin === 'function') wireDigestAdmin(pg);
   if ($('#useDef')) $('#useDef').onclick = () => { const d = clone(CTX.household.settings.ui); UI.density = {...UI_DEFAULT.density, ...d.density}; UI.layout = d.layout || {}; applyDensity(); render(); toast('Using the household default'); };

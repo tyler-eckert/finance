@@ -137,11 +137,11 @@ function needsBudgetCard(y) {
 }
 
 /* ---------- 5 · long range ---------- */
-const BPLAN = () => CTX.household?.settings?.budget_plan || {};
+const BPLAN = () => CTX.settings?.budget_plan || {};
 async function saveBPlan(p) {
-  const settings = {...(CTX.household.settings || {}), budget_plan: p};
-  const {error} = await sb.schema('finance').from('households').update({settings}).eq('id', CTX.HH);
-  if (error) return toast('Couldn’t save: ' + error.message); CTX.household.settings = settings; render();
+  // v113: save just this one setting (writing the whole settings object could overwrite a newer change made elsewhere)
+  const {error} = await FDB.rpc('set_household_setting', {p_household: CTX.HH, p_key: 'budget_plan', p_value: p});
+  if (error) return toast('Couldn’t save: ' + error.message); CTX.settings.budget_plan = p; render();
 }
 function longRange(pg, yearSeg) {
   const P = BPLAN(), infl = SCN[0]?.p.infl ?? .025, base = ST.budget[CY + 1] ? CY + 1 : CY, LF = lastFullMonth(), lfY = +LF.slice(0, 4), lfM = +LF.slice(5, 7);

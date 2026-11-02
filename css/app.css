@@ -1653,3 +1653,10 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 /* v112: paycheck withholding */
 .wh-t td{vertical-align:top}.wh-t .amt-in{min-width:0;max-width:150px}
 .wh-t th span{display:block;font-weight:500;text-transform:none;letter-spacing:0;font-size:var(--fs-2xs);color:var(--text-3)}
+/* v114: Paycheck withholding — headings sit over their boxes: typed-in columns left, computed amounts right, rows centred */
+.wh-t td{vertical-align:middle}
+.table.wh-t th{text-align:left;vertical-align:bottom}
+.table.wh-t th:nth-child(3),.table.wh-t th:nth-child(4),.table.wh-t td:nth-child(3),.table.wh-t td:nth-child(4){text-align:right}
+.wh-t td:nth-child(2) .amt-in,.wh-t td:nth-child(5) .amt-in,.wh-t td:nth-child(7) .amt-in{width:150px;max-width:none}
+.wh-t td:nth-child(3),.wh-t td:nth-child(4){padding-right:22px;white-space:nowrap}
+.wh-t td:nth-child(6) .in{width:150px!important}
