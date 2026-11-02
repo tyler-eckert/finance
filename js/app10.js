@@ -219,11 +219,11 @@ function renderReview(pg) {
     NOTES().push(n); noteSave(n, true).then(() => { render(); setTimeout(() => $(`[data-nadd="${scope}|${yy}"]`)?.focus(), 30); }); });
   $$('[data-nadd]', pg).forEach(i => i.onblur = () => { if (i.value.trim()) i.onkeydown({key: 'Enter'}); });
   $$('[data-ntitle]', pg).forEach(i => i.oninput = () => { const n = byId(i.dataset.ntitle); if (n) { n.title = i.value; noteSave(n); } });
-  $$('[data-ndone]', pg).forEach(c => c.onchange = () => { const n = byId(c.dataset.ndone); if (n) { n.status = c.checked ? 'done' : 'planned'; noteSave(n, true); render(); } });
+  $$('[data-ndone]', pg).forEach(c => c.onchange = () => { const n = byId(c.dataset.ndone); if (n) { n.status = c.checked ? 'done' : 'planned'; noteSave(n, true); renderAt(c, `[data-ndone="${c.dataset.ndone}"]`); } });
   $$('[data-ndel]', pg).forEach(b => b.onclick = () => { const n = byId(b.dataset.ndel); if (!n) return; n.title = ''; n.body = ''; n.status = null; noteSave(n, true).then(render); });
-  $$('[data-lst]', pg).forEach(s => s.onchange = () => { noteSet('large', s.dataset.lst, y, {status: s.value}); setTimeout(render, 30); });
+  $$('[data-lst]', pg).forEach(s => s.onchange = () => { noteSet('large', s.dataset.lst, y, {status: s.value}); renderAt(s, `[data-lst="${s.dataset.lst}"]`); });
   $$('[data-ldesc]', pg).forEach(i => i.oninput = () => noteSet('large', i.dataset.ldesc, y, {title: i.value}));
-  $$('[data-bk]', pg).forEach(s => s.onchange = () => { RVS().buckets[s.dataset.bk] = s.value; RV.open = s.value; saveReviewSettings(); render(); });
+  $$('[data-bk]', pg).forEach(s => s.onchange = () => { RVS().buckets[s.dataset.bk] = s.value; RV.open = s.value; saveReviewSettings(); renderAt(s, `[data-bk="${CSS.escape(s.dataset.bk)}"]`); });
   if ($('#rvMin')) $('#rvMin').onchange = e => { RVS().largeMin = +e.target.value; saveReviewSettings(); render(); };
   if ($('#rvTitle')) $('#rvTitle').onchange = e => { RVS().title = e.target.value.trim(); saveReviewSettings(); };
   if ($('#rvClose')) $('#rvClose').onchange = e => { RVS().closing = e.target.value.trim(); saveReviewSettings(); };

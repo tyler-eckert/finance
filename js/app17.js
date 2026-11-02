@@ -220,3 +220,13 @@ function wireBvaNotes(pg) {
   });
   $$('[data-bnm]', pg).forEach(b => b.onclick = () => { bMonth = +b.dataset.bnm; render(); scrollTo({top: 0, behavior: 'smooth'}); });
 }
+
+/* v109: re-draw the page but keep the control you just used exactly where it was on screen (and keep focus on it),
+   instead of jumping — the Year in review's want / need picks re-draw the whole page. */
+function renderAt(el, sel) {
+  const top = el.getBoundingClientRect().top, sx = scrollX;
+  render();
+  const fix = () => { const n = document.querySelector(sel); if (!n) return; const d = n.getBoundingClientRect().top - top; if (Math.abs(d) > 1) scrollTo({top: scrollY + d, left: sx}); };
+  fix(); requestAnimationFrame(() => { fix(); setTimeout(fix, 80); });
+  const n = document.querySelector(sel); if (n && n.focus) n.focus({preventScroll: true});
+}

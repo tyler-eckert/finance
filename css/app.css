@@ -1631,3 +1631,10 @@ body:not(.compact) .card-h .sub{white-space:normal}
 /* in a narrow tile, the amount and link drop under the text instead of squeezing it to one word per line */
 .att{container-type:inline-size}
 @container (max-width:560px){.att-i{flex-wrap:wrap;row-gap:2px}.att-t{flex-basis:calc(100% - 40px)}.att-i>b{margin-left:40px}.att-go{margin-left:auto}}
+
+/* v109: while a side panel is open the page behind it can't scroll, and the panel itself only scrolls up and down
+   (on an iPhone it could be dragged around sideways and the page underneath moved with it) */
+html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
+.drawer{overscroll-behavior:contain;overflow-x:hidden;touch-action:pan-y}
+.scrim{touch-action:none}
+.drawer .chart{touch-action:pan-y}

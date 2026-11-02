@@ -342,7 +342,7 @@ function renderOverview(pg) {
   const chkN = typeof dataChecks === 'function' ? dataChecks().list.filter(c => c.sev === 'bad').length : 0;
   pg.innerHTML = `${chkN ? `<div class="banner" style="margin-bottom:14px">${icon('warn')}<span><b>${chkN} data check${chkN > 1 ? 's' : ''}</b> need${chkN > 1 ? '' : 's'} a look — some balances may be off, which would skew net worth.</span><button class="btn" style="height:30px;margin-left:auto" onclick="go('balances')">Review</button></div>` : ''}
   <div class="grid g-12">
-    ${typeof ovAttentionCard === 'function' ? ovAttentionCard() : ''}
+    ${CTX.CAN_WRITE && typeof ovAttentionCard === 'function' ? ovAttentionCard() : ''}
     <div class="card hero c-6">
       <div class="kpi"><div class="label hero-top"><span>Net worth · ${mLabel(BS.months[L])}</span><button class="link hero-link" onclick="go('plan')">Open plan →</button></div>
       <div class="val num">${money(NW)}</div>
