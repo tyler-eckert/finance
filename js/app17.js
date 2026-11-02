@@ -194,3 +194,29 @@ const bbViewSeg = () => `<div class="seg" id="bbView"><button data-v="month" cla
   sweep(document);
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && sweep(n)))).observe(document.body, {childList: true, subtree: true});
 })();
+
+/* v107: month notes on Budget vs. actual — the same note as Home › "Notes for {month}", so writing in either place shows in both.
+   Over-budget chips drop a "Category (over $X): " line in to start a thought; earlier months' notes sit underneath. */
+const mKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+const monthHasNote = (y, m) => !!(noteText('month', mKey(y, m), null) || '').trim();
+function bvaNotesCard(y, m1, rows) {
+  const M = mKey(y, m1);
+  const over = rows.filter(r => /Expense/.test(r.c.group) && r.b < 0 && r.a < r.b - .5).map(r => ({c: r.c.name, d: r.b - r.a})).sort((p, q) => q.d - p.d).slice(0, 8);
+  const prior = NOTES().filter(n => n.scope === 'month' && n.ref < M && n.ref.startsWith(String(y)) && (n.body || '').trim()).sort((a, b) => b.ref.localeCompare(a.ref));
+  return `<div class="card c-12 bn-card" data-lk="bva-notes"><div class="card-h"><div><h3>Notes for ${mLabel(M)}</h3><div class="sub">Your review notes · the same note as Home › Overview, and it rolls into the Year in review</div></div></div>
+    ${CTX.CAN_WRITE && over.length ? `<div class="bn-chips"><span class="muted">Over budget · tap to start a note</span>${over.map(o => `<button class="bn-chip" data-bn="${esc(o.c)}" data-bnd="${Math.round(o.d)}">${esc(o.c)} <b>+${short(o.d)}</b></button>`).join('')}</div>` : ''}
+    ${noteBox('month', M, null, 'e.g. Entertainment: concert tickets for the anniversary · Other: one-off pool permit · School: fall fees, done until January', 4)}
+    ${prior.length ? `<div class="bn-prior"><div class="bn-ph">Earlier this year</div>${prior.map(n => `<button class="bn-p" data-bnm="${+n.ref.slice(5, 7)}"><span class="bn-pm">${MON[+n.ref.slice(5, 7) - 1]}</span><span class="bn-pb">${esc(n.body.trim())}</span></button>`).join('')}</div>` : ''}
+  </div>`;
+}
+function wireBvaNotes(pg) {
+  wireNotes(pg);
+  const ta = $('.bn-card textarea', pg); if (!ta) return;
+  $$('[data-bn]', pg).forEach(b => b.onclick = () => {
+    const line = `${b.dataset.bn} (over ${money(+b.dataset.bnd)}): `, v = ta.value.replace(/\s+$/, '');
+    if (!v.split('\n').some(l => l.startsWith(b.dataset.bn + ' ('))) { ta.value = (v ? v + '\n' : '') + line; ta.dispatchEvent(new Event('input')); }
+    ta.focus(); const i = ta.value.indexOf('\n', ta.value.indexOf(line)); ta.setSelectionRange(i < 0 ? ta.value.length : i, i < 0 ? ta.value.length : i);
+    ta.style.height = 'auto'; ta.style.height = Math.max(ta.scrollHeight + 2, 96) + 'px';
+  });
+  $$('[data-bnm]', pg).forEach(b => b.onclick = () => { bMonth = +b.dataset.bnm; render(); scrollTo({top: 0, behavior: 'smooth'}); });
+}

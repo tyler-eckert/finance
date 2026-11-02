@@ -1575,3 +1575,59 @@ body:not(.compact) .card-h .sub{white-space:normal}
 .table.lr-t tr.tot .stick,.table.lr-t tr.tot td{background:var(--surface)}
 .table.lr-t tr.grp td{padding-left:0!important}
 .table.lr-t .lr-gl{position:sticky;left:0;display:inline-block;padding-left:18px}
+
+/* v107: Budget vs. actual bars on phones — one line of numbers, one full-width bar.
+   Every bar is the same width, so the budget ticks line up down the page, and rows are ~30% shorter. */
+@media (max-width:640px){
+  .bb-r{grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"n v s" "b b b";column-gap:10px;row-gap:7px;padding:9px 2px 10px}
+  .bb-r.sub{padding-left:2px}.bb-r.sub .bb-n{padding-left:20px}
+  .bb-n{gap:4px}.bb-nm{font-size:var(--fs-sm)}
+  .bb-r .bb-ed{display:none}   /* the editor is a tap away in Settings › Budget; the name gets the room */
+  .bb-bar{height:6px}.bb-bar em{top:-4px;bottom:-4px}
+  .bb-v{font-size:var(--fs-xs);font-variant-numeric:tabular-nums}.bb-v b{font-size:var(--fs-sm);font-weight:650}
+  .bb-s{font-size:var(--fs-2xs);font-weight:650;min-width:0}
+  .bb-s>span{display:inline-block;padding:2px 7px;border-radius:var(--r-pill);background:var(--surface-2);white-space:nowrap}
+  .bb-s>span.neg{background:color-mix(in srgb,var(--neg) 12%,transparent)}
+  .bb-s>span.pos{background:color-mix(in srgb,var(--pos) 12%,transparent)}
+  .bb-s>span.muted{background:transparent;padding-right:0}
+  .bb-h{padding-top:14px}
+}
+
+/* v107: notes on Budget vs. actual */
+.bn-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px}
+.bn-chips>.muted{font-size:var(--fs-xs);margin-right:2px}
+.bn-chip{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:var(--r-pill);border:1px solid var(--border-strong);background:var(--surface);font:inherit;font-size:var(--fs-xs);font-weight:600;color:var(--text);cursor:pointer;transition:background var(--dur-1) var(--ease),border-color var(--dur-1) var(--ease)}
+.bn-chip b{color:var(--neg-ink,var(--neg));font-weight:700}
+.bn-chip:hover{background:var(--surface-2);border-color:var(--brand-500)}
+.bn-prior{margin-top:14px;border-top:1px solid var(--border);padding-top:10px}
+.bn-ph{font-size:var(--fs-2xs);font-weight:700;letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--text-3);margin-bottom:4px}
+.bn-p{display:grid;grid-template-columns:44px 1fr;gap:10px;width:100%;text-align:left;padding:8px 6px;border-radius:var(--r-sm);font:inherit;font-size:var(--fs-sm);color:var(--text);background:none;border:0;cursor:pointer}
+.bn-p+.bn-p{border-top:1px solid var(--border)}
+.bn-p:hover{background:var(--surface-2)}
+.bn-pm{font-weight:700;color:var(--brand-600)}
+.bn-pb{white-space:pre-wrap;color:var(--text-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+@media (max-width:640px){
+  .bn-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin:0 -16px 10px;padding:0 16px 2px}
+  body.compact .bn-chips{margin:0 -13px 10px;padding:0 13px 2px}
+  .bn-chips::-webkit-scrollbar{display:none}
+  .bn-chips>.muted{display:none}
+  .bn-chip{flex:none}
+}
+
+/* v108: clear items from Needs attention */
+.att-row{display:flex;align-items:center;gap:2px;border-radius:var(--r-sm)}
+.att-row:hover{background:var(--surface-2)}
+.att-row .att-i:hover,.att-row .att-i:focus-visible{background:none}
+.att-x{flex:none;width:30px;height:30px;display:grid;place-items:center;border:0;background:none;border-radius:50%;color:var(--text-3);cursor:pointer;opacity:.55;transition:opacity var(--dur-1) var(--ease),background var(--dur-1) var(--ease),color var(--dur-1) var(--ease)}
+.att-x svg{width:14px;height:14px}
+.att-row:hover .att-x,.att-x:focus-visible{opacity:1}
+.att-x:hover{background:var(--surface-3);color:var(--text)}
+.att-ft{display:flex;justify-content:flex-end;padding:6px 10px 0}
+.att-rs{font-size:var(--fs-sm)}
+.att-ok .att-rs{margin-left:auto}
+@media (hover:none){.att-x{opacity:.8}}
+@media (max-width:640px){.att-row{align-items:flex-start}.att-x{margin-top:7px}}
+.att-row .att-i{flex:1;min-width:0}
+/* in a narrow tile, the amount and link drop under the text instead of squeezing it to one word per line */
+.att{container-type:inline-size}
+@container (max-width:560px){.att-i{flex-wrap:wrap;row-gap:2px}.att-t{flex-basis:calc(100% - 40px)}.att-i>b{margin-left:40px}.att-go{margin-left:auto}}

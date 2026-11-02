@@ -142,32 +142,50 @@ function attentionItems() {
   const out = [], today = CTX.TODAY, y = +today.slice(0, 4), m = +today.slice(5, 7);
   // uncategorized
   const unc = ST.tx.filter(t => !t.splits && !t.cat && t.d >= CTX.SINCE);   // the recent window, not years-old leftovers
-  if (unc.length) out.push({k: 'warn', t: `${plural(unc.length, 'uncategorized transaction')}`, s: money(sum(unc.map(t => t.amt))), a: `TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='';go('tx')`, b: 'Categorize'});
+  if (unc.length) out.push({id: 'unc', sig: unc.length, k: 'warn', t: `${plural(unc.length, 'uncategorized transaction')}`, s: money(sum(unc.map(t => t.amt))), a: `TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='';go('tx')`, b: 'Categorize'});
   // over budget: last full month, and this month already past its whole-month budget
   const over = (yy, mm) => { const A = actuals(yy, mm, mm).A; return ST.cats.filter(c => /Expense/.test(c.group) && c.name !== 'Tax').map(c => ({c: c.name, a: -(A[c.name] || 0), b: -budgetFor(yy, c.name, mm, mm)})).filter(x => x.b > 0 && x.a > x.b + 50).sort((p, q) => (q.a - q.b) - (p.a - p.b)); };
   const LF = lastFullMonth(), ly = +LF.slice(0, 4), lm = +LF.slice(5, 7), oL = over(ly, lm), oN = ly === y && lm === m ? [] : over(y, m);
-  if (oN.length && !ASOF_FULL) out.push({k: 'neg', t: `${MON[m - 1]} so far: ${oN.slice(0, 3).map(x => esc(x.c)).join(', ')}${oN.length > 3 ? ` +${oN.length - 3}` : ''} already over the month’s budget`, s: `${short(sum(oN.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${m};go('budget')`, b: 'Budget'});
-  if (oL.length) out.push({k: 'neg', t: `${MON[lm - 1]}: ${oL.slice(0, 3).map(x => esc(x.c)).join(', ')}${oL.length > 3 ? ` +${oL.length - 3}` : ''} went over budget`, s: `${short(sum(oL.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${lm};go('budget')`, b: 'Review'});
+  if (oN.length && !ASOF_FULL) out.push({id: `overN:${y}-${m}`, sig: oN.map(x => x.c).join(','), k: 'neg', t: `${MON[m - 1]} so far: ${oN.slice(0, 3).map(x => esc(x.c)).join(', ')}${oN.length > 3 ? ` +${oN.length - 3}` : ''} already over the month’s budget`, s: `${short(sum(oN.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${m};go('budget')`, b: 'Budget'});
+  if (oL.length) out.push({id: `overL:${LF}`, sig: oL.map(x => x.c).join(','), k: 'neg', t: `${MON[lm - 1]}: ${oL.slice(0, 3).map(x => esc(x.c)).join(', ')}${oL.length > 3 ? ` +${oL.length - 3}` : ''} went over budget`, s: `${short(sum(oL.map(x => x.a - x.b)))} over`, a: `bMode='month';bMonth=${lm};go('budget')`, b: 'Review'});
   // bills, loans and tax in the next 14 days (from the weekly digest)
   const P = typeof DG !== 'undefined' ? DG.digests?.[0]?.payload : null;
   if (P) { const due = P.bills.filter(b => b.date >= today && b.why !== 'milestone').sort((a, b) => a.date.localeCompare(b.date)), tax = due.filter(b => b.why === 'tax'), rest = due.filter(b => b.why !== 'tax');
-    tax.forEach(b => out.push({k: 'info', t: `Tax: ${esc(b.name)} · ${dgDay(b.date).short} ${dgDay(b.date).md}`, s: b.amount ? money(b.amount) : '', a: `go('taxes')`, b: 'Taxes'}));
-    if (rest.length) out.push({k: 'info', t: `${plural(rest.length, 'bill')} due by ${dgDay(rest[rest.length - 1].date).md}: ${rest.slice(0, 3).map(b => esc(b.name)).join(', ')}${rest.length > 3 ? '…' : ''}`, s: money(sum(rest.map(b => b.amount || 0))), a: `go('week')`, b: 'This week'}); }
+    tax.forEach(b => out.push({id: `tax:${b.name}:${b.date}`, sig: b.amount || 0, k: 'info', t: `Tax: ${esc(b.name)} · ${dgDay(b.date).short} ${dgDay(b.date).md}`, s: b.amount ? money(b.amount) : '', a: `go('taxes')`, b: 'Taxes'}));
+    if (rest.length) out.push({id: 'bills', sig: rest.map(b => b.name + '@' + b.date).join(','), k: 'info', t: `${plural(rest.length, 'bill')} due by ${dgDay(rest[rest.length - 1].date).md}: ${rest.slice(0, 3).map(b => esc(b.name)).join(', ')}${rest.length > 3 ? '…' : ''}`, s: money(sum(rest.map(b => b.amount || 0))), a: `go('week')`, b: 'This week'}); }
   // estimated tax due within 30 days (in case the digest isn't set up)
   if (!P || !P.bills.some(b => b.why === 'tax')) { const dues = [[y, 1, 15], [y, 4, 15], [y, 6, 15], [y, 9, 15], [y + 1, 1, 15]].map(([a, b, c]) => `${a}-${String(b).padStart(2, '0')}-${c}`);
     const nx = dues.find(d => d >= today), days = nx ? Math.round((new Date(nx) - new Date(today)) / 864e5) : 99;
-    if (days <= 30) out.push({k: 'info', t: `Estimated taxes due ${MON[+nx.slice(5, 7) - 1]} ${+nx.slice(8, 10)} · Federal, Oklahoma, New Mexico`, s: `${days} days`, a: `go('taxes')`, b: 'Taxes'}); }
+    if (days <= 30) out.push({id: `est:${nx}`, sig: 1, k: 'info', t: `Estimated taxes due ${MON[+nx.slice(5, 7) - 1]} ${+nx.slice(8, 10)} · Federal, Oklahoma, New Mexico`, s: `${days} days`, a: `go('taxes')`, b: 'Taxes'}); }
   // data checks
   const bad = typeof dataChecks === 'function' ? dataChecks().list.filter(c => c.sev === 'bad') : [];
-  if (bad.length) out.push({k: 'warn', t: `${plural(bad.length, 'data check')} — balances may be off`, s: '', a: `go('balances')`, b: 'Review'});
+  if (bad.length) out.push({id: 'checks', sig: bad.length, k: 'warn', t: `${plural(bad.length, 'data check')} — balances may be off`, s: '', a: `go('balances')`, b: 'Review'});
   return out;
 }
+/* v108: clear an item with × (or all of them). A cleared item stays gone until it changes —
+   a new uncategorized transaction, another category going over, a different bill list — then it comes back.
+   Kept per person with the rest of the screen settings, so clearing yours doesn't clear your wife's. */
+const ATT_HIDE = () => (UI.attHide ||= {});
+const attSig = x => String(x.sig ?? '');
 function ovAttentionCard() {
-  const L0 = attentionItems(), ic = {neg: 'warn', warn: 'warn', info: 'info'};
-  return `<div class="card c-12 att" data-lk="needs-attention"><div class="card-h"><div><h3>Needs attention</h3><div class="sub">${L0.length ? plural(L0.length, 'item') + ' · uncategorized, over budget, bills and tax due soon, data checks' : 'Nothing right now'}</div></div></div>
-    ${L0.length ? `<div class="att-l">${L0.map(x => `<button class="att-i ${x.k}" onclick="${x.a}"><span class="att-ic">${icon(ic[x.k])}</span><span class="att-t">${x.t}</span>${x.s ? `<b class="num">${x.s}</b>` : ''}<span class="att-go">${x.b} ›</span></button>`).join('')}</div>`
-    : `<div class="att-ok">${icon('check')}<span>All clear — everything is categorized, on budget and nothing is due in the next two weeks.</span></div>`}</div>`;
+  const ALL = attentionItems(), H = ATT_HIDE(), ic = {neg: 'warn', warn: 'warn', info: 'info'};
+  Object.keys(H).forEach(id => { if (!ALL.some(x => x.id === id)) delete H[id]; });   // forget items that have gone away on their own
+  const L0 = ALL.filter(x => H[x.id] == null || H[x.id] !== attSig(x)), nHid = ALL.length - L0.length;
+  const restore = nHid ? `<button class="link att-rs" data-attrs>Show ${plural(nHid, 'cleared item')}</button>` : '';
+  return `<div class="card c-12 att" data-lk="needs-attention"><div class="card-h"><div><h3>Needs attention</h3><div class="sub">${L0.length ? plural(L0.length, 'item') + ' · uncategorized, over budget, bills and tax due soon, data checks' : nHid ? 'All cleared' : 'Nothing right now'}</div></div>
+      ${L0.length > 1 ? `<div class="right"><button class="btn sm att-ca" data-attall>Clear all</button></div>` : ''}</div>
+    ${L0.length ? `<div class="att-l">${L0.map(x => `<div class="att-row"><button class="att-i ${x.k}" onclick="${x.a}"><span class="att-ic">${icon(ic[x.k])}</span><span class="att-t">${x.t}</span>${x.s ? `<b class="num">${x.s}</b>` : ''}<span class="att-go">${x.b} ›</span></button><button class="att-x" data-attx="${esc(x.id)}" data-atts="${esc(attSig(x))}" title="Clear · it comes back if it changes" aria-label="Clear this item">${icon('close')}</button></div>`).join('')}</div>${restore ? `<div class="att-ft">${restore}</div>` : ''}`
+    : `<div class="att-ok">${icon('check')}<span>${nHid ? 'All clear — you’ve cleared everything for now.' : 'All clear — everything is categorized, on budget and nothing is due in the next two weeks.'}</span>${restore}</div>`}</div>`;
 }
+document.addEventListener('click', e => {
+  const x = e.target.closest('[data-attx],[data-attall],[data-attrs]'); if (!x) return;
+  e.stopPropagation(); const H = ATT_HIDE(), was = {...H};
+  if (x.dataset.attx != null) H[x.dataset.attx] = x.dataset.atts;
+  else if (x.dataset.attall != null) attentionItems().forEach(i => { H[i.id] = attSig(i); });
+  else { Object.keys(H).forEach(k => delete H[k]); SYNC.schedule(); render(); return; }
+  SYNC.schedule(); render();
+  toast(x.dataset.attall != null ? 'Cleared · items come back when they change' : 'Cleared', () => { UI.attHide = was; SYNC.schedule(); render(); });
+}, true);
 
 /* =====================================================================
    v97 · BUDGET VS. ACTUAL — a simpler default view

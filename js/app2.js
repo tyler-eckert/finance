@@ -204,7 +204,7 @@ function renderBudget(pg) {
   const WF = `<div class="card c-4" data-lk="where-the-money-went"><div class="card-h"><div><h3>Where the money went</h3><div class="sub">Year to date · Jan – ${MON[m1 - 1]} ${y}</div></div></div><div class="chart" id="wfChart"></div></div>`;   // v98: beside the bars, or full width under the table
   pg.innerHTML = `
   <div class="toolbar">${seg}
-    <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}</option>`).join('')}</select>
+    <select class="in sel" id="bMonthSel">${MON.slice(0, ASOF.m).map((m, i) => `<option value="${i + 1}" ${i + 1 === bMonth ? 'selected' : ''}>${bMode === 'month' ? m + ' ' + y : 'Jan – ' + m + ' ' + y}${monthHasNote(y, i + 1) ? ' ✎' : ''}</option>`).join('')}</select>
     <div style="margin-left:auto;display:flex;gap:8px"><div class="seg" id="bView" title="Bars or the full table"><button data-v="bars" class="${budView() === 'bars' ? 'on' : ''}">Bars</button><button data-v="table" class="${budView() === 'table' ? 'on' : ''}">Table</button></div>${budView() === 'table' ? `<button class="btn" id="bExpand">${icon('chev')}<span>${bOpen.size ? 'Collapse all' : 'Expand all'}</span></button>` : ''}<button class="btn" onclick="go('builder')">${icon('grid')}<span>Edit budget</span></button></div></div>
   ${exclBanner()}${uncN ? `<div class="banner">${icon('warn')}<span><b>${uncN} uncategorized</b> transactions (${money(unc)}) in this period.</span><button class="btn" style="height:30px;margin-left:auto" onclick="TXF.cat='';TXF.sub='*';TXF.unc=true;TXF.month='${y}-${String(m1).padStart(2, '0')}';go('tx')">Review</button></div>` : ''}
   <div class="grid g-12">
@@ -216,12 +216,14 @@ function renderBudget(pg) {
         ${UI.projMode !== 'budget' ? `<label class="pj-w" title="How much the rest of the year leans on the budget vs. your spending pattern">Budget <b id="pjWv">${Math.round((UI.projW ?? .7) * 100)}%</b><input type="range" id="pjW" min="0" max="100" step="5" value="${Math.round((UI.projW ?? .7) * 100)}"></label>` : ''}</div></div>
       <div class="scroll-x"><table class="table bva" id="bvaTable"></table></div></div>
     ${budView() === 'table' ? WF.replace('c-4', 'c-12') : ''}
+    ${bMode === 'month' ? bvaNotesCard(y, m1, rows) : ''}
   </div>`;
   $$('#bSeg button').forEach(b => b.onclick = () => { bMode = b.dataset.k; render(); });
   $('#bMonthSel').onchange = e => { bMonth = +e.target.value; render(); };
   if ($('#bExpand')) $('#bExpand').onclick = () => { if (bOpen.size) bOpen.clear(); else HAS.forEach(n => bOpen.add(n)); render(); };
   $$('#bView button').forEach(b => b.onclick = () => { (UI.budViewBy ||= {})[devKey()] = b.dataset.v; SYNC.schedule(); render(); });
   wireBudBars(pg, m1, m1);
+  wireBvaNotes(pg);
   const vcell = (v, inc) => Math.abs(v) < 1 ? '<td class="muted"><span class="zd">$---</span></td>' : `<td class="${v > 0 ? 'pos' : 'neg'}">${v > 0 ? '+' : '−'}${money(Math.abs(v)).replace('−', '')}</td>`;
   // % used: every track runs 0–150%, so the 100% tick sits in the same spot on every row
   const bar = (a, b, income) => { const used = b ? a / b : (a ? 2 : 0), over = income ? used < 1 : used > 1; return `<td class="bar-cell"><div style="display:flex;align-items:center;gap:8px"><div class="pbar pb150" style="flex:1"><i class="${over ? 'over' : ''}" style="width:${Math.min(150, used * 100) / 1.5}%"></i><b class="pb-100"></b></div><span class="muted num pb-l">${b ? Math.round(used * 100) + '%' : '—'}</span></div></td>`; };
