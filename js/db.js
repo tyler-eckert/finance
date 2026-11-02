@@ -432,7 +432,8 @@ const SYNC = {
     S.scn = new Map(SCN.map((s, i) => [s.id, JSON.stringify([s.name, s.note || '', s.p, s.show !== false, i])]));
     S.ledger = new Map(TX.ledger.map(l => [l.id, JSON.stringify([l.d, l.ty, l.j, l.type, l.q, l.method, l.amt, l.conf, l.note])]));
     S.taxy = new Map(); ['FED', 'OK', 'NM'].forEach(j => { S.taxy.set(`${CTX.PY}|${j}`, JSON.stringify([+TX.prior[j] || 0, +TX.credit[j] || 0])); });
-    S.taxw = new Map(); ['FED', 'OK', 'NM'].forEach(j => { const w = TX.wh?.[j] || {}; S.taxw.set(`${CTX.CY}|${j}`, JSON.stringify([w.ytd ?? null, w.asof || null])); });
+    S.taxw = new Map(); ['FED', 'OK', 'NM'].forEach(j => { const w = TX.wh?.[j] || {}; S.taxw.set(`${CTX.CY}|${j}`, JSON.stringify([w.ytd ?? null, w.asof || null]));
+      const p = TX.whPY?.[j]; S.taxw.set(`${CTX.PY}|${j}`, JSON.stringify([p ? +p : null, p ? `${CTX.PY}-12-31` : null])); });   // v112: last year's W-2 withholding
     S.plan = new Map((ST.planned || []).map(p => [p.id, JSON.stringify([p.name, p.due, p.amount, p.fund, p.notes || '', p.status || 'planned'])]));
     S.prefs = new Map([['p', JSON.stringify(prefsNow())]]);
     return S;
