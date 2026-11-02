@@ -1647,3 +1647,5 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 .grid-t .vm1,.grid-t .vy1{width:100px;min-width:100px;max-width:100px}
 .grid-t .vy1{right:72px}.grid-t .vm2{right:172px}.grid-t .vm1{right:244px}
 .grid-t td.var-c,.grid-t td.gtot{font-variant-numeric:tabular-nums}
+/* v111: every number in the History grid is the same size — the Net worth row and the group-row changes matched up with the cells */
+.table.grid-t tr.tot td,.table.grid-t tr.grp td.var-c,.table.grid-t td.var-c{font-size:var(--fs-sm)}
