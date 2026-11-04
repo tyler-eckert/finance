@@ -81,9 +81,8 @@ function renderWeek(pg) {
       <div class="dg-days">${days1.map(dayCard).join('')}</div></div>
     ${days2.length ? `<div class="card c-8" data-lk="digest-week2"><div class="card-h"><div><h3>Coming up the week after</h3><div class="sub">${dgRange(days2[0].date, days2[days2.length - 1].date)}${P.totals.week2 ? ' · ' + money(P.totals.week2) + ' in bills' : ''}</div></div></div>
       <div class="dg-list">${days2.filter(d => d.events.length || d.bills.length).map(d => `<div class="dg-li"><div class="dg-ld"><b>${dgDay(d.date).short}</b><span>${dgDay(d.date).md}</span></div><div style="flex:1;min-width:0">${d.events.map(evRow).join('')}${d.bills.map(billRow).join('')}</div></div>`).join('') || '<p class="muted">Nothing on the calendars yet.</p>'}</div></div>` : ''}
-    <div class="card c-4" data-lk="digest-notes"><div class="card-h"><div><h3>Notes for the week</h3><div class="sub">For the two of you · saved with this digest</div></div></div>
-      <textarea class="in dg-notes" id="wkNotes" rows="8" placeholder="Who’s driving to practice, what to book, bills to move…" ${w ? '' : 'disabled'}>${esc(D0.notes || '')}</textarea>
-      <div class="muted" id="wkSaved" style="font-size:var(--fs-xs);margin-top:6px">${D0.notes ? 'Saved' : ''}</div></div>
+    <div class="card c-4" data-lk="digest-notes"><div class="card-h"><div><h3>Notes for the week</h3><div class="sub">For the two of you · saved with this digest</div></div><div class="right muted" id="wkSaved" style="font-size:var(--fs-xs);align-self:flex-start">${D0.notes ? 'Saved' : ''}</div></div>
+      <textarea class="in dg-notes" id="wkNotes" rows="8" placeholder="Who’s driving to practice, what to book, bills to move…" ${w ? '' : 'disabled'}>${esc(D0.notes || '')}</textarea></div>
   </div>`;
   wireWeek(pg, D0);
 }

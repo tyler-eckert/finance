@@ -1660,3 +1660,7 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 .wh-t td:nth-child(2) .amt-in,.wh-t td:nth-child(5) .amt-in,.wh-t td:nth-child(7) .amt-in{width:150px;max-width:none}
 .wh-t td:nth-child(3),.wh-t td:nth-child(4){padding-right:22px;white-space:nowrap}
 .wh-t td:nth-child(6) .in{width:150px!important}
+/* v115: Notes for the week — "Saved" sits beside the title and the box fills the tile */
+.card[data-lk="digest-notes"]{display:flex;flex-direction:column}
+.card[data-lk="digest-notes"] .card-h{flex:none}
+.card[data-lk="digest-notes"] #wkNotes{flex:1;min-height:120px}
