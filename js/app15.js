@@ -67,7 +67,7 @@ function renderWeek(pg) {
   const bills1 = P.bills.filter(b => b.date <= wk1End && b.why !== 'milestone'), cover = P.checking ? P.checking.balance - P.totals.week1 : null;
   const bad = P.calendars.filter(c => !c.ok);
   pg.innerHTML = tools + `<div class="grid g-12">
-    <div class="card hero c-8"><div class="label hero-top"><span>Weekly digest · ${dgRange(P.from, P.to)}</span>${D0.emailed_at ? `<span class="chip">Emailed ${fmtD(D0.emailed_at.slice(0, 10))}</span>` : ''}</div>
+    <div class="card hero c-8" data-lk="weekly-digest"><div class="label hero-top"><span>Weekly digest · ${dgRange(P.from, P.to)}</span>${D0.emailed_at ? `<span class="chip">Emailed ${fmtD(D0.emailed_at.slice(0, 10))}</span>` : ''}</div>
       <div class="val num" style="font-size:var(--fs-4xl)">${dgRange(P.from, wk1End)}</div>
       <div class="hero-grid"><div>Events this week<b class="num">${P.counts.week1Events}</b></div><div>Bills this week<b class="num">${P.totals.week1 ? money(P.totals.week1) : '—'}</b></div><div>The week after<b class="num">${P.totals.week2 ? money(P.totals.week2) : '—'}</b></div>
         ${P.checking ? `<div>Checking · ${esc(P.checking.asOf)}<b class="num">${short(P.checking.balance)}</b></div>` : ''}</div>

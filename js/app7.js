@@ -18,6 +18,19 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const UI = (() => { const base = clone(CTX.household.settings?.ui || UI_DEFAULT), mine = CTX.prefs.ui;
   const u = mine ? {...base, ...clone(mine)} : base; u.density = {...UI_DEFAULT.density, ...(u.density || {})}; u.layout ||= {}; return u; })();
 let LAYOUT_EDIT = false;
+/* v116 · layouts that work on every computer. Pages laid out with free placement stored each tile's row and column in pixels-worth
+   of grid rows, and "Done" pinned every tile's height in pixels — both measured on one screen, so another screen got gaps and
+   staggered tiles. Turn those into a plain reading order (top-to-bottom, left-to-right, as you arranged them), keep each tile's
+   width as a share of the page, and let rows reflow on any screen. Runs once. */
+(() => { if (UI.layoutV >= 116) return; let changed = false;
+  Object.values(UI.layout || {}).forEach(L => { if (!L || typeof L !== 'object') return;
+    ['desk', 'phone'].forEach(dk => { const pos = L.pos?.[dk];
+      if (L.free?.[dk] && pos && Object.keys(pos).length) {
+        const placed = Object.entries(pos).sort((a, b) => a[1].r - b[1].r || a[1].c - b[1].c).map(([k]) => k);
+        const old = L.orderBy?.[dk] || L.order || [];
+        (L.orderBy ||= {})[dk] = [...placed, ...old.filter(k => !placed.includes(k))]; changed = true; } });
+    if (L.free) { delete L.free; changed = true; } if (L.pos) { delete L.pos; changed = true; } if (L.lock) { delete L.lock; changed = true; } if (L.tall) { delete L.tall; changed = true; } });
+  UI.layoutV = 116; if (changed) setTimeout(() => typeof SYNC !== 'undefined' && SYNC.schedule(), 0); })();
 const DENSITY = [{k: 'compact', l: 'Compact', py: 5, fs: 13}, {k: 'cozy', l: 'Cozy', py: 7, fs: 13.5}, {k: 'comfortable', l: 'Comfortable', py: 10, fs: 14}];
 function applyDensity() {
   const r = document.documentElement.style;
@@ -45,7 +58,7 @@ function resetPageDev(page) { const L = UI.layout[page]; if (!L) return; const d
 /* Locked tiles: when Layout closes, every tile's height on the page is saved (per device). Outside Layout a tile never gets
    SHORTER than that height, so nothing below it jumps up; since v77 it grows when its contents need more room instead of
    clipping or scrolling inside. Open Layout to resize — closing it saves the new sizes. */
-function layLock(page, el) { if (!el) return; const dk = devKey(), L = pageLayout(page), K = ((L.lock ||= {})[dk] = {});
+function layLock(page, el) { return;   /* v116: heights are no longer pinned in pixels (they didn't carry between screens) */ if (!el) return; const dk = devKey(), L = pageLayout(page), K = ((L.lock ||= {})[dk] = {});
   pageCards(el).forEach(c => { if (!c.dataset.cid || c.style.display === 'none' || c.classList.contains('lay-hidden')) return; const h = Math.round(c.getBoundingClientRect().height); if (h > 20) K[c.dataset.cid] = h; });
   if (typeof SYNC !== 'undefined') SYNC.schedule(); }
 // tile sizes and compact view are kept separately for a phone-size screen and a computer-size one
@@ -100,14 +113,14 @@ function applyLayout(page, el) {
   el.querySelector('.lay-banner')?.remove();
   if (LAYOUT_EDIT) {
     const b = document.createElement('div'); b.className = 'lay-banner';
-    b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right or bottom edge (or use − / +) to resize it, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp" title="Tiles pack into any empty space, and you can drop a tile anywhere"><input type="checkbox" id="layFree" ${L.free?.[devKey()] ? 'checked' : ''}> Free placement</label><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
+    b.innerHTML = `${icon('layout')}<span><b>Customizing this page on ${devKey() === 'phone' ? 'phones' : 'computers'}.</b> Drag the handle to move a card (arrows on a phone), drag its right edge (or use − / +) to set its width, the eye to hide it. Double-click an edge to reset it. Sizes are saved separately for phone and computer.</span><span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="lay-cmp"><input type="checkbox" id="layCompact" ${isCompact() ? 'checked' : ''}> Compact view</label><button class="btn" id="layReset">Reset page</button><button class="btn primary" id="layDone">Done</button></span>`;
     el.prepend(b);
     $('#layDone').onclick = () => { layLock(page, el); LAYOUT_EDIT = false; layBtnSync(); render(); toast('Layout saved · tiles keep at least these heights'); };
     $('#layReset').onclick = () => { const was = clone(UI.layout[page] || {}); resetPageDev(page); render(); toast('Page layout reset', () => { UI.layout[page] = was; render(); }); };
-    $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
+    if ($('#layFree')) $('#layFree').onchange = e => { const lay = pageLayout(page); (lay.free ||= {})[devKey()] = e.target.checked; if (!e.target.checked && lay.pos) delete lay.pos[devKey()]; render(); };
     $('#layCompact').onchange = e => { (UI.compact ||= {})[devKey()] = e.target.checked; applyCompact(); render(); };
   }
-  const dk = devKey(), SZ = L.size?.[dk] || {}, TL = L.tall?.[dk] || {}, FREE = !!L.free?.[dk], POS = L.pos?.[dk] || {};
+  const dk = devKey(), SZ = L.size?.[dk] || {}, TL = L.tall?.[dk] || {}, FREE = false, POS = L.pos?.[dk] || {};
   const grids = [...new Set(cards.map(c => c.el.parentElement))]; grids.forEach(g => g.classList.toggle('free', FREE));
   // effective order: the saved order, with any card it doesn't know yet (new or renamed) slotted in after the card before it on the page
   const keys = cards.map(c => c.k), ORD = LGET(L, 'order').filter(k => keys.includes(k));
@@ -119,7 +132,8 @@ function applyLayout(page, el) {
     if (FREE && POS[c.k]) { const n = spanOf(c.el), col = Math.max(1, Math.min(13 - n, POS[c.k].c)); c.el.style.gridColumn = `${col} / span ${n}`; c.el.dataset.pin = POS[c.k].r; if (fr) c.el.style.gridRow = `${POS[c.k].r} / span ${fr}`; }
     c.el.dataset.extra = TL[c.k] || ''; c.el.style.height = ''; c.el.style.minHeight = ''; c.el.classList.remove('lay-tall-scroll');
     c.el.style.alignSelf = TL[c.k] ? 'start' : '';   // a card with its own height doesn't stretch to its row
-    const LKH = !LAYOUT_EDIT && L.lock?.[dk]?.[c.k]; c.el.classList.toggle('lay-locked', !!LKH);
+    const LKH = false;   // v116: no pixel-height locks — heights follow the content on every screen
+    c.el.classList.toggle('lay-locked', !!LKH);
     // v77: a locked tile keeps AT LEAST its saved height (nothing below it jumps up), but grows when its content needs more — it never clips
     if (LKH) { c.el.style.minHeight = LKH + 'px'; c.el.style.alignSelf = 'start'; }
     if (!LAYOUT_EDIT) fitMinWidth(c.el, FREE);
@@ -426,7 +440,8 @@ function freeDrag(e, page, el, c, dk) {
   addEventListener('pointermove', move, {passive: false}); addEventListener('pointerup', up); addEventListener('pointercancel', up); addEventListener('scroll', onScroll, {passive: true});
 }
 function fitTallCards(el) {
-  pageCards(el).forEach(c => { const ex = +(c.dataset.extra || 0); if (!ex || c.querySelector('.chart') || c.classList.contains('lay-locked')) return;
+  pageCards(el).forEach(c => { const ex = 0;   // v116: no pixel heights — a tile is as tall as its content (and its row)
+    if (!ex || c.querySelector('.chart') || c.classList.contains('lay-locked')) return;
     c.style.alignSelf = 'start'; const nat = c.getBoundingClientRect().height;   // stays 'start': its height is its own, not its row's
     if (ex > 0) c.style.minHeight = (nat + ex) + 'px'; else { c.style.height = Math.max(90, nat + ex) + 'px'; c.classList.add('lay-tall-scroll'); } });
   packFree(el);

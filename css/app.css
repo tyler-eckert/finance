@@ -1664,3 +1664,7 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 .card[data-lk="digest-notes"]{display:flex;flex-direction:column}
 .card[data-lk="digest-notes"] .card-h{flex:none}
 .card[data-lk="digest-notes"] #wkNotes{flex:1;min-height:120px}
+
+/* v116: tiles flow and pack — a gap left by a short tile is filled by the next one that fits, on any screen width */
+.grid.g-12{grid-auto-flow:row dense}
+.lay-rh{display:none!important}   /* v116: the bottom-edge height handle is retired with pixel heights */
