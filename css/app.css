@@ -1668,3 +1668,6 @@ html:has(#scrim.on),html:has(#scrim.on) body{overflow:hidden}
 /* v116: tiles flow and pack — a gap left by a short tile is filled by the next one that fits, on any screen width */
 .grid.g-12{grid-auto-flow:row dense}
 .lay-rh{display:none!important}   /* v116: the bottom-edge height handle is retired with pixel heights */
+/* v117: masonry on computers — tiles are their natural height and stack up under each other */
+.grid.mason,body.compact .grid.mason{grid-auto-rows:8px;row-gap:0;grid-auto-flow:row dense}
+.grid.mason>.card{align-self:start}

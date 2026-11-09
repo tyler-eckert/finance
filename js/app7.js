@@ -402,7 +402,24 @@ function freeLayout(g) {
     put(b, best.col, best.row); placed.push({...b, col: best.col, row: best.row}); if (b.k[0] !== '~') { P[b.k] = {c: best.col, r: best.row}; added = true; } });
   if (added && typeof SYNC !== 'undefined') SYNC.schedule();
 }
+/* v117 · masonry: each tile is exactly as tall as its content and tiles pack up underneath each other, in your order, on any
+   screen width. The page grid gets 8px rows; a tile spans as many as its height needs (measured live, so a chart drawing in or a
+   window resize re-packs it). Nothing about heights is saved — it's worked out on each screen. */
+const MASON_RO = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(es => es.forEach(e => masonFit(e.target))) : null;
+function masonFit(c) { const g = c.parentElement; if (!g?.classList.contains('mason')) return;
+  const gap = parseFloat(getComputedStyle(g).columnGap) || 0, h = c.getBoundingClientRect().height;
+  const n = Math.max(1, Math.ceil((h + gap) / FREE_ROW)); if (c.style.gridRow !== `span ${n}`) { c.dataset.mrows = n; c.style.gridRow = `span ${n}`; } }
+function packMasonry(el) {
+  const on = devKey() === 'desk';
+  [...el.querySelectorAll('.grid.g-12')].filter(g => !g.closest('.card') && !g.classList.contains('free')).forEach(g => {
+    g.classList.toggle('mason', on);
+    [...g.children].filter(c => c.classList.contains('card')).forEach(c => {
+      if (!on) { c.style.gridRow = ''; delete c.dataset.mrows; return; }
+      masonFit(c); if (MASON_RO && !c._mro) { c._mro = 1; MASON_RO.observe(c); } });
+  });
+}
 function packFree(el) {
+  packMasonry(el);
   [...el.querySelectorAll('.grid.free')].forEach(g => { const gap = parseFloat(getComputedStyle(g).columnGap) || 0;
     [...g.children].filter(c => c.classList.contains('card')).forEach(c => { const n = Math.max(1, Math.ceil((c.getBoundingClientRect().height + gap) / FREE_ROW)); c.dataset.rows = n; FREE_ROWS[el.id + '|' + c.dataset.cid] = n; });
     freeLayout(g); });
