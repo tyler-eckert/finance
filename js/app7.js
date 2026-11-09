@@ -405,17 +405,33 @@ function freeLayout(g) {
 /* v117 · masonry: each tile is exactly as tall as its content and tiles pack up underneath each other, in your order, on any
    screen width. The page grid gets 8px rows; a tile spans as many as its height needs (measured live, so a chart drawing in or a
    window resize re-packs it). Nothing about heights is saved — it's worked out on each screen. */
-const MASON_RO = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(es => es.forEach(e => masonFit(e.target))) : null;
-function masonFit(c) { const g = c.parentElement; if (!g?.classList.contains('mason')) return;
-  const gap = parseFloat(getComputedStyle(g).columnGap) || 0, h = c.getBoundingClientRect().height;
-  const n = Math.max(1, Math.ceil((h + gap) / FREE_ROW)); if (c.style.gridRow !== `span ${n}`) { c.dataset.mrows = n; c.style.gridRow = `span ${n}`; } }
+const MASON_RO = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(es => es.forEach(e => { const c = e.target, g = c.parentElement;
+  if (!g?.classList.contains('mason') || g._mbusy) return;
+  if (Math.abs(c.getBoundingClientRect().height - (c._mh || 0)) > 1 && !g._mq) { g._mq = 1; requestAnimationFrame(() => { g._mq = 0; masonGrid(g); }); } })) : null;
+/* pack one grid: 1) every tile at its natural height, 2) a tile with a small gap under it (because a wider tile below has to clear
+   a taller neighbour) grows to meet the tile below, so the page has no odd holes. Big gaps are left alone rather than padding a tile. */
+function masonGrid(g) {
+  const cards = [...g.children].filter(c => c.classList.contains('card') && c.style.display !== 'none'); if (!cards.length) return;
+  g._mbusy = 1;
+  const gap = parseFloat(getComputedStyle(g).columnGap) || 0, span = h => Math.max(1, Math.ceil((h + gap) / FREE_ROW));
+  cards.forEach(c => { c.style.minHeight = ''; });
+  cards.forEach(c => { c.style.gridRow = `span ${span(c.getBoundingClientRect().height)}`; });
+  const R = new Map(cards.map(c => [c, c.getBoundingClientRect()]));
+  cards.forEach(c => { const r = R.get(c);
+    const below = cards.filter(o => o !== c && R.get(o).top >= r.bottom - 1 && R.get(o).left < r.right - 1 && R.get(o).right > r.left + 1);
+    if (!below.length) return;
+    const next = Math.min(...below.map(o => R.get(o).top)), fill = next - gap - r.bottom;
+    if (fill > 2 && fill <= 220) { c.style.minHeight = (r.height + fill) + 'px'; c.style.gridRow = `span ${span(r.height + fill)}`; } });
+  cards.forEach(c => { c._mh = c.getBoundingClientRect().height; });
+  requestAnimationFrame(() => { g._mbusy = 0; });
+}
 function packMasonry(el) {
   const on = devKey() === 'desk';
   [...el.querySelectorAll('.grid.g-12')].filter(g => !g.closest('.card') && !g.classList.contains('free')).forEach(g => {
     g.classList.toggle('mason', on);
-    [...g.children].filter(c => c.classList.contains('card')).forEach(c => {
-      if (!on) { c.style.gridRow = ''; delete c.dataset.mrows; return; }
-      masonFit(c); if (MASON_RO && !c._mro) { c._mro = 1; MASON_RO.observe(c); } });
+    const cards = [...g.children].filter(c => c.classList.contains('card'));
+    if (!on) { cards.forEach(c => { c.style.gridRow = ''; c.style.minHeight = ''; }); return; }
+    masonGrid(g); cards.forEach(c => { if (MASON_RO && !c._mro) { c._mro = 1; MASON_RO.observe(c); } });
   });
 }
 function packFree(el) {
